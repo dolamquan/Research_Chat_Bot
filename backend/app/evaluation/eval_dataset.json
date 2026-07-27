@@ -1,0 +1,17 @@
+[
+  {
+    "id": "rag_definition",
+    "question": "What is retrieval augmented generation?",
+    "expected_answer": "Retrieval augmented generation is a method where a system retrieves relevant external context and uses it to help a language model generate a grounded answer."
+  },
+  {
+    "id": "retrieval_purpose",
+    "question": "Why does retrieval help language models answer questions?",
+    "expected_answer": "Retrieval helps by providing relevant document context so the model can answer using information that may not be in its parameters or current prompt."
+  },
+  {
+    "id": "reranking_purpose",
+    "question": "Why is reranking useful in a RAG pipeline?",
+    "expected_answer": "Reranking is useful because it reorders initially retrieved chunks by relevance so the final prompt contains the strongest evidence."
+  }
+]

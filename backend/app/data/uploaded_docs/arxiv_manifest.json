@@ -1,0 +1,962 @@
+{
+  "2108.13934v2": {
+    "filename": "2108.13934v2_robust_retrieval_augmented_generation_for_zero-shot_slot_filling.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2108.13934v2",
+    "title": "Robust Retrieval Augmented Generation for Zero-shot Slot Filling"
+  },
+  "2109.11085v1": {
+    "filename": "2109.11085v1_towards_universal_dense_retrieval_for_open-domain_question_answering.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2109.11085v1",
+    "title": "Towards Universal Dense Retrieval for Open-domain Question Answering"
+  },
+  "2210.02627v1": {
+    "filename": "2210.02627v1_improving_the_domain_adaptation_of_retrieval_augmented_generation_rag_models_for.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2210.02627v1",
+    "title": "Improving the Domain Adaptation of Retrieval Augmented Generation (RAG) Models for Open Domain Question Answering"
+  },
+  "2210.05156v2": {
+    "filename": "2210.05156v2_task-aware_specialization_for_efficient_and_robust_dense_retrieval_for_open-doma.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2210.05156v2",
+    "title": "Task-Aware Specialization for Efficient and Robust Dense Retrieval for Open-Domain Question Answering"
+  },
+  "2305.06983v2": {
+    "filename": "2305.06983v2_active_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2305.06983v2",
+    "title": "Active Retrieval Augmented Generation"
+  },
+  "2307.06985v10": {
+    "filename": "2307.06985v10_retrieval_augmented_generation_using_engineering_design_knowledge.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2307.06985v10",
+    "title": "Retrieval Augmented Generation using Engineering Design Knowledge"
+  },
+  "2308.00479v1": {
+    "filename": "2308.00479v1_retrieval_augmented_generation_and_representative_vector_summarization_for_large.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2308.00479v1",
+    "title": "Retrieval Augmented Generation and Representative Vector Summarization for large unstructured textual data in Medical Education"
+  },
+  "2309.15217v2": {
+    "filename": "2309.15217v2_ragas_automated_evaluation_of_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2309.15217v2",
+    "title": "Ragas: Automated Evaluation of Retrieval Augmented Generation"
+  },
+  "2309.16035v3": {
+    "filename": "2309.16035v3_mkrag_medical_knowledge_retrieval_augmented_generation_for_medical_question_answ.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2309.16035v3",
+    "title": "MKRAG: Medical Knowledge Retrieval Augmented Generation for Medical Question Answering"
+  },
+  "2311.04177v1": {
+    "filename": "2311.04177v1_enhancing_llm_intelligence_with_arm-rag_auxiliary_rationale_memory_for_retrieval.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2311.04177v1",
+    "title": "Enhancing LLM Intelligence with ARM-RAG: Auxiliary Rationale Memory for Retrieval Augmented Generation"
+  },
+  "2312.05708v1": {
+    "filename": "2312.05708v1_context_tuning_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2312.05708v1",
+    "title": "Context Tuning for Retrieval Augmented Generation"
+  },
+  "2312.07796v1": {
+    "filename": "2312.07796v1_harnessing_retrieval-augmented_generation_rag_for_uncovering_knowledge_gaps.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2312.07796v1",
+    "title": "Harnessing Retrieval-Augmented Generation (RAG) for Uncovering Knowledge Gaps"
+  },
+  "2312.10904v2": {
+    "filename": "2312.10904v2_dynamic_retrieval_augmented_generation_of_ontologies_using_artificial_intelligen.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2312.10904v2",
+    "title": "Dynamic Retrieval Augmented Generation of Ontologies using Artificial Intelligence (DRAGON-AI)"
+  },
+  "2401.15884v3": {
+    "filename": "2401.15884v3_corrective_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2401.15884v3",
+    "title": "Corrective Retrieval Augmented Generation"
+  },
+  "2402.05131v3": {
+    "filename": "2402.05131v3_financial_report_chunking_for_effective_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2402.05131v3",
+    "title": "Financial Report Chunking for Effective Retrieval Augmented Generation"
+  },
+  "2402.08416v1": {
+    "filename": "2402.08416v1_pandora_jailbreak_gpts_by_retrieval_augmented_generation_poisoning.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2402.08416v1",
+    "title": "Pandora: Jailbreak GPTs by Retrieval Augmented Generation Poisoning"
+  },
+  "2402.11794v1": {
+    "filename": "2402.11794v1_unveiling_the_magic_investigating_attention_distillation_in_retrieval-augmented.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2402.11794v1",
+    "title": "Unveiling the Magic: Investigating Attention Distillation in Retrieval-augmented Generation"
+  },
+  "2402.11891v1": {
+    "filename": "2402.11891v1_feb4rag_evaluating_federated_search_in_the_context_of_retrieval_augmented_genera.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2402.11891v1",
+    "title": "FeB4RAG: Evaluating Federated Search in the Context of Retrieval Augmented Generation"
+  },
+  "2402.17497v2": {
+    "filename": "2402.17497v2_rear_a_relevance-aware_retrieval-augmented_framework_for_open-domain_question_an.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2402.17497v2",
+    "title": "REAR: A Relevance-Aware Retrieval-Augmented Framework for Open-Domain Question Answering"
+  },
+  "2403.00820v1": {
+    "filename": "2403.00820v1_retrieval_augmented_generation_systems_automatic_dataset_creation_evaluation_and.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2403.00820v1",
+    "title": "Retrieval Augmented Generation Systems: Automatic Dataset Creation, Evaluation and Boolean Agent Setup"
+  },
+  "2403.04256v1": {
+    "filename": "2403.04256v1_federated_recommendation_via_hybrid_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2403.04256v1",
+    "title": "Federated Recommendation via Hybrid Retrieval Augmented Generation"
+  },
+  "2403.10081v3": {
+    "filename": "2403.10081v3_dragin_dynamic_retrieval_augmented_generation_based_on_the_information_needs_of.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2403.10081v3",
+    "title": "DRAGIN: Dynamic Retrieval Augmented Generation based on the Information Needs of Large Language Models"
+  },
+  "2403.15450v1": {
+    "filename": "2403.15450v1_loops_on_retrieval_augmented_generation_lorag.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2403.15450v1",
+    "title": "Loops On Retrieval Augmented Generation (LoRAG)"
+  },
+  "2404.00610v1": {
+    "filename": "2404.00610v1_rq-rag_learning_to_refine_queries_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2404.00610v1",
+    "title": "RQ-RAG: Learning to Refine Queries for Retrieval Augmented Generation"
+  },
+  "2404.02022v3": {
+    "filename": "2404.02022v3_improving_retrieval_augmented_open-domain_question-answering_with_vectorized_con.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2404.02022v3",
+    "title": "Improving Retrieval Augmented Open-Domain Question-Answering with Vectorized Contexts"
+  },
+  "2404.08189v1": {
+    "filename": "2404.08189v1_reducing_hallucination_in_structured_outputs_via_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2404.08189v1",
+    "title": "Reducing hallucination in structured outputs via Retrieval-Augmented Generation"
+  },
+  "2405.02816v1": {
+    "filename": "2405.02816v1_stochastic_rag_end-to-end_retrieval-augmented_generation_through_expected_utilit.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2405.02816v1",
+    "title": "Stochastic RAG: End-to-End Retrieval-Augmented Generation through Expected Utility Maximization"
+  },
+  "2405.13002v1": {
+    "filename": "2405.13002v1_duetrag_collaborative_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2405.13002v1",
+    "title": "DuetRAG: Collaborative Retrieval-Augmented Generation"
+  },
+  "2405.13792v2": {
+    "filename": "2405.13792v2_xrag_extreme_context_compression_for_retrieval-augmented_generation_with_one_tok.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2405.13792v2",
+    "title": "xRAG: Extreme Context Compression for Retrieval-augmented Generation with One Token"
+  },
+  "2405.15436v1": {
+    "filename": "2405.15436v1_hybrid_context_retrieval_augmented_generation_pipeline_llm-augmented_knowledge_g.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2405.15436v1",
+    "title": "Hybrid Context Retrieval Augmented Generation Pipeline: LLM-Augmented Knowledge Graphs and Vector Database for Accreditation Reporting Assistance"
+  },
+  "2405.16506v3": {
+    "filename": "2405.16506v3_grag_graph_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2405.16506v3",
+    "title": "GRAG: Graph Retrieval-Augmented Generation"
+  },
+  "2405.17706v1": {
+    "filename": "2405.17706v1_video_enriched_retrieval_augmented_generation_using_aligned_video_captions.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2405.17706v1",
+    "title": "Video Enriched Retrieval Augmented Generation Using Aligned Video Captions"
+  },
+  "2405.19893v1": {
+    "filename": "2405.19893v1_similarity_is_not_all_you_need_endowing_retrieval_augmented_generation_with_mult.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2405.19893v1",
+    "title": "Similarity is Not All You Need: Endowing Retrieval Augmented Generation with Multi Layered Thoughts"
+  },
+  "2406.13249v2": {
+    "filename": "2406.13249v2_r_2ag_incorporating_retrieval_information_into_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2406.13249v2",
+    "title": "R^2AG: Incorporating Retrieval Information into Retrieval Augmented Generation"
+  },
+  "2406.14162v4": {
+    "filename": "2406.14162v4_diras_efficient_llm_annotation_of_document_relevance_in_retrieval_augmented_gene.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2406.14162v4",
+    "title": "DIRAS: Efficient LLM Annotation of Document Relevance in Retrieval Augmented Generation"
+  },
+  "2406.14938v1": {
+    "filename": "2406.14938v1_towards_retrieval_augmented_generation_over_large_video_libraries.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2406.14938v1",
+    "title": "Towards Retrieval Augmented Generation over Large Video Libraries"
+  },
+  "2406.15187v2": {
+    "filename": "2406.15187v2_uda_a_benchmark_suite_for_retrieval_augmented_generation_in_real-world_document.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2406.15187v2",
+    "title": "UDA: A Benchmark Suite for Retrieval Augmented Generation in Real-world Document Analysis"
+  },
+  "2407.03955v1": {
+    "filename": "2407.03955v1_meta-prompting_optimized_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2407.03955v1",
+    "title": "Meta-prompting Optimized Retrieval-augmented Generation"
+  },
+  "2407.04925v1": {
+    "filename": "2407.04925v1_ramo_retrieval-augmented_generation_for_enhancing_moocs_recommendations.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2407.04925v1",
+    "title": "RAMO: Retrieval-Augmented Generation for Enhancing MOOCs Recommendations"
+  },
+  "2407.08223v2": {
+    "filename": "2407.08223v2_speculative_rag_enhancing_retrieval_augmented_generation_through_drafting.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2407.08223v2",
+    "title": "Speculative RAG: Enhancing Retrieval Augmented Generation through Drafting"
+  },
+  "2407.08275v1": {
+    "filename": "2407.08275v1_beyond_benchmarks_evaluating_embedding_model_similarity_for_retrieval_augmented.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2407.08275v1",
+    "title": "Beyond Benchmarks: Evaluating Embedding Model Similarity for Retrieval Augmented Generation Systems"
+  },
+  "2407.12216v2": {
+    "filename": "2407.12216v2_mindful-rag_a_study_of_points_of_failure_in_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2407.12216v2",
+    "title": "Mindful-RAG: A Study of Points of Failure in Retrieval Augmented Generation"
+  },
+  "2407.15569v2": {
+    "filename": "2407.15569v2_an_empirical_study_of_retrieval_augmented_generation_with_chain-of-thought.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2407.15569v2",
+    "title": "An Empirical Study of Retrieval Augmented Generation with Chain-of-Thought"
+  },
+  "2407.15748v1": {
+    "filename": "2407.15748v1_morse_bridging_the_gap_in_cybersecurity_expertise_with_retrieval_augmented_gener.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2407.15748v1",
+    "title": "MoRSE: Bridging the Gap in Cybersecurity Expertise with Retrieval Augmented Generation"
+  },
+  "2407.21712v1": {
+    "filename": "2407.21712v1_adaptive_retrieval-augmented_generation_for_conversational_systems.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2407.21712v1",
+    "title": "Adaptive Retrieval-Augmented Generation for Conversational Systems"
+  },
+  "2408.01084v2": {
+    "filename": "2408.01084v2_adaptive_contrastive_decoding_in_retrieval-augmented_generation_for_handling_noi.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2408.01084v2",
+    "title": "Adaptive Contrastive Decoding in Retrieval-Augmented Generation for Handling Noisy Contexts"
+  },
+  "2408.01869v1": {
+    "filename": "2408.01869v1_malade_orchestration_of_llm-powered_agents_with_retrieval_augmented_generation_f.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2408.01869v1",
+    "title": "MALADE: Orchestration of LLM-powered Agents with Retrieval Augmented Generation for Pharmacovigilance"
+  },
+  "2408.02545v1": {
+    "filename": "2408.02545v1_rag_foundry_a_framework_for_enhancing_llms_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2408.02545v1",
+    "title": "RAG Foundry: A Framework for Enhancing LLMs for Retrieval Augmented Generation"
+  },
+  "2408.02854v4": {
+    "filename": "2408.02854v4_creating_a_taxonomy_for_retrieval_augmented_generation_applications.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2408.02854v4",
+    "title": "Creating a Taxonomy for Retrieval Augmented Generation Applications"
+  },
+  "2408.07425v1": {
+    "filename": "2408.07425v1_exploring_retrieval_augmented_generation_in_arabic.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2408.07425v1",
+    "title": "Exploring Retrieval Augmented Generation in Arabic"
+  },
+  "2408.08444v2": {
+    "filename": "2408.08444v2_w-rag_weakly_supervised_dense_retrieval_in_rag_for_open-domain_question_answerin.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2408.08444v2",
+    "title": "W-RAG: Weakly Supervised Dense Retrieval in RAG for Open-domain Question Answering"
+  },
+  "2408.08901v1": {
+    "filename": "2408.08901v1_bayesian_inference_to_improve_quality_of_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2408.08901v1",
+    "title": "Bayesian inference to improve quality of Retrieval Augmented Generation"
+  },
+  "2409.11279v1": {
+    "filename": "2409.11279v1_p-rag_progressive_retrieval_augmented_generation_for_planning_on_embodied_everyd.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2409.11279v1",
+    "title": "P-RAG: Progressive Retrieval Augmented Generation For Planning on Embodied Everyday Task"
+  },
+  "2409.12140v2": {
+    "filename": "2409.12140v2_morag_--_multi-fusion_retrieval_augmented_generation_for_human_motion.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2409.12140v2",
+    "title": "MoRAG -- Multi-Fusion Retrieval Augmented Generation for Human Motion"
+  },
+  "2409.13483v1": {
+    "filename": "2409.13483v1_a_multimodal_dense_retrieval_approach_for_speech-based_open-domain_question_answ.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2409.13483v1",
+    "title": "A Multimodal Dense Retrieval Approach for Speech-Based Open-Domain Question Answering"
+  },
+  "2409.13707v1": {
+    "filename": "2409.13707v1_retrieval_augmented_generation-based_incident_resolution_recommendation_system_f.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2409.13707v1",
+    "title": "Retrieval Augmented Generation-Based Incident Resolution Recommendation System for IT Support"
+  },
+  "2409.15566v1": {
+    "filename": "2409.15566v1_gem-rag_graphical_eigen_memories_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2409.15566v1",
+    "title": "GEM-RAG: Graphical Eigen Memories For Retrieval Augmented Generation"
+  },
+  "2409.15815v1": {
+    "filename": "2409.15815v1_asthmabot_multi-modal_multi-lingual_retrieval_augmented_generation_for_asthma_pa.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2409.15815v1",
+    "title": "AsthmaBot: Multi-modal, Multi-Lingual Retrieval Augmented Generation For Asthma Patient Support"
+  },
+  "2410.00004v2": {
+    "filename": "2410.00004v2_retro-li_small-scale_retrieval_augmented_generation_supporting_noisy_similarity.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2410.00004v2",
+    "title": "Retro-li: Small-Scale Retrieval Augmented Generation Supporting Noisy Similarity Searches and Domain Shift Generalization"
+  },
+  "2410.03771v1": {
+    "filename": "2410.03771v1_seesay_an_assistive_device_for_the_visually_impaired_using_retrieval_augmented_g.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2410.03771v1",
+    "title": "SeeSay: An Assistive Device for the Visually Impaired Using Retrieval Augmented Generation"
+  },
+  "2410.14167v1": {
+    "filename": "2410.14167v1_optimizing_retrieval-augmented_generation_with_elasticsearch_for_enhanced_questi.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2410.14167v1",
+    "title": "Optimizing Retrieval-Augmented Generation with Elasticsearch for Enhanced Question-Answering Systems"
+  },
+  "2410.14479v1": {
+    "filename": "2410.14479v1_backdoored_retrievers_for_prompt_injection_attacks_on_retrieval_augmented_genera.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2410.14479v1",
+    "title": "Backdoored Retrievers for Prompt Injection Attacks on Retrieval Augmented Generation of Large Language Models"
+  },
+  "2410.15944v1": {
+    "filename": "2410.15944v1_developing_retrieval_augmented_generation_rag_based_llm_systems_from_pdfs_an_exp.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2410.15944v1",
+    "title": "Developing Retrieval Augmented Generation (RAG) based LLM Systems from PDFs: An Experience Report"
+  },
+  "2410.20598v2": {
+    "filename": "2410.20598v2_r_3ag_first_workshop_on_refined_and_reliable_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2410.20598v2",
+    "title": "R^3AG: First Workshop on Refined and Reliable Retrieval Augmented Generation"
+  },
+  "2411.02832v2": {
+    "filename": "2411.02832v2_persianrag_a_retrieval-augmented_generation_system_for_persian_language.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2411.02832v2",
+    "title": "PersianRAG: A Retrieval-Augmented Generation System for Persian Language"
+  },
+  "2411.08891v4": {
+    "filename": "2411.08891v4_reliable_decision_making_via_calibration_oriented_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2411.08891v4",
+    "title": "Reliable Decision Making via Calibration Oriented Retrieval Augmented Generation"
+  },
+  "2411.11895v1": {
+    "filename": "2411.11895v1_deploying_large_language_models_with_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2411.11895v1",
+    "title": "Deploying Large Language Models With Retrieval Augmented Generation"
+  },
+  "2411.16133v2": {
+    "filename": "2411.16133v2_context_awareness_gate_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2411.16133v2",
+    "title": "Context Awareness Gate For Retrieval Augmented Generation"
+  },
+  "2411.16523v2": {
+    "filename": "2411.16523v2_lab-rag_label_boosted_retrieval_augmented_generation_for_radiology_report_genera.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2411.16523v2",
+    "title": "LaB-RAG: Label Boosted Retrieval Augmented Generation for Radiology Report Generation"
+  },
+  "2411.18583v1": {
+    "filename": "2411.18583v1_automated_literature_review_using_nlp_techniques_and_llm-based_retrieval-augment.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2411.18583v1",
+    "title": "Automated Literature Review Using NLP Techniques and LLM-Based Retrieval-Augmented Generation"
+  },
+  "2412.02563v1": {
+    "filename": "2412.02563v1_semantic_tokens_in_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2412.02563v1",
+    "title": "Semantic Tokens in Retrieval Augmented Generation"
+  },
+  "2412.05838v1": {
+    "filename": "2412.05838v1_a_collaborative_multi-agent_approach_to_retrieval-augmented_generation_across_di.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2412.05838v1",
+    "title": "A Collaborative Multi-Agent Approach to Retrieval-Augmented Generation Across Diverse Data"
+  },
+  "2412.12300v3": {
+    "filename": "2412.12300v3_unanswerability_evaluation_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2412.12300v3",
+    "title": "Unanswerability Evaluation for Retrieval Augmented Generation"
+  },
+  "2412.13163v2": {
+    "filename": "2412.13163v2_c-fedrag_a_confidential_federated_retrieval-augmented_generation_system.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2412.13163v2",
+    "title": "C-FedRAG: A Confidential Federated Retrieval-Augmented Generation System"
+  },
+  "2412.14457v1": {
+    "filename": "2412.14457v1_visa_retrieval_augmented_generation_with_visual_source_attribution.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2412.14457v1",
+    "title": "VISA: Retrieval Augmented Generation with Visual Source Attribution"
+  },
+  "2412.15246v1": {
+    "filename": "2412.15246v1_accelerating_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2412.15246v1",
+    "title": "Accelerating Retrieval-Augmented Generation"
+  },
+  "2412.15404v1": {
+    "filename": "2412.15404v1_a_retrieval-augmented_generation_framework_for_academic_literature_navigation_in.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2412.15404v1",
+    "title": "A Retrieval-Augmented Generation Framework for Academic Literature Navigation in Data Science"
+  },
+  "2412.16701v3": {
+    "filename": "2412.16701v3_alzheimerrag_multimodal_retrieval_augmented_generation_for_clinical_use_cases_us.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2412.16701v3",
+    "title": "AlzheimerRAG: Multimodal Retrieval Augmented Generation for Clinical Use Cases using PubMed articles"
+  },
+  "2412.18431v2": {
+    "filename": "2412.18431v2_gear_graph-enhanced_agent_for_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2412.18431v2",
+    "title": "GeAR: Graph-enhanced Agent for Retrieval-augmented Generation"
+  },
+  "2501.00332v1": {
+    "filename": "2501.00332v1_main-rag_multi-agent_filtering_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2501.00332v1",
+    "title": "MAIN-RAG: Multi-Agent Filtering Retrieval-Augmented Generation"
+  },
+  "2501.03995v1": {
+    "filename": "2501.03995v1_rag-check_evaluating_multimodal_retrieval_augmented_generation_performance.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2501.03995v1",
+    "title": "RAG-Check: Evaluating Multimodal Retrieval Augmented Generation Performance"
+  },
+  "2501.04006v1": {
+    "filename": "2501.04006v1_advancing_similarity_search_with_genai_a_retrieval_augmented_generation_approach.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2501.04006v1",
+    "title": "Advancing Similarity Search with GenAI: A Retrieval Augmented Generation Approach"
+  },
+  "2501.04695v1": {
+    "filename": "2501.04695v1_re-ranking_the_context_for_multimodal_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2501.04695v1",
+    "title": "Re-ranking the Context for Multimodal Retrieval Augmented Generation"
+  },
+  "2501.05475v1": {
+    "filename": "2501.05475v1_retrieval-augmented_generation_by_evidence_retroactivity_in_llms.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2501.05475v1",
+    "title": "Retrieval-Augmented Generation by Evidence Retroactivity in LLMs"
+  },
+  "2501.07793v1": {
+    "filename": "2501.07793v1_unsupervised_query_routing_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2501.07793v1",
+    "title": "Unsupervised Query Routing for Retrieval Augmented Generation"
+  },
+  "2501.09292v3": {
+    "filename": "2501.09292v3_to_retrieve_or_not_to_retrieve_uncertainty_detection_for_dynamic_retrieval_augme.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2501.09292v3",
+    "title": "To Retrieve or Not to Retrieve? Uncertainty Detection for Dynamic Retrieval Augmented Generation"
+  },
+  "2501.11929v1": {
+    "filename": "2501.11929v1_aloftrag_automatic_local_fine_tuning_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2501.11929v1",
+    "title": "ALoFTRAG: Automatic Local Fine Tuning for Retrieval Augmented Generation"
+  },
+  "2501.15470v2": {
+    "filename": "2501.15470v2_cogplanner_unveiling_the_potential_of_agentic_multimodal_retrieval_augmented_gen.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2501.15470v2",
+    "title": "CogPlanner: Unveiling the Potential of Agentic Multimodal Retrieval Augmented Generation with Planning"
+  },
+  "2501.15915v1": {
+    "filename": "2501.15915v1_parametric_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2501.15915v1",
+    "title": "Parametric Retrieval Augmented Generation"
+  },
+  "2502.00306v2": {
+    "filename": "2502.00306v2_riddle_me_this_stealthy_membership_inference_for_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2502.00306v2",
+    "title": "Riddle Me This! Stealthy Membership Inference for Retrieval-Augmented Generation"
+  },
+  "2502.01113v3": {
+    "filename": "2502.01113v3_gfm-rag_graph_foundation_model_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2502.01113v3",
+    "title": "GFM-RAG: Graph Foundation Model for Retrieval Augmented Generation"
+  },
+  "2502.01549v1": {
+    "filename": "2502.01549v1_videorag_retrieval-augmented_generation_with_extreme_long-context_videos.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2502.01549v1",
+    "title": "VideoRAG: Retrieval-Augmented Generation with Extreme Long-Context Videos"
+  },
+  "2502.06864v1": {
+    "filename": "2502.06864v1_knowledge_graph-guided_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2502.06864v1",
+    "title": "Knowledge Graph-Guided Retrieval Augmented Generation"
+  },
+  "2502.14727v1": {
+    "filename": "2502.14727v1_wavrag_audio-integrated_retrieval_augmented_generation_for_spoken_dialogue_model.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2502.14727v1",
+    "title": "WavRAG: Audio-Integrated Retrieval Augmented Generation for Spoken Dialogue Models"
+  },
+  "2502.14902v2": {
+    "filename": "2502.14902v2_pathrag_pruning_graph-based_retrieval_augmented_generation_with_relational_paths.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2502.14902v2",
+    "title": "PathRAG: Pruning Graph-based Retrieval Augmented Generation with Relational Paths"
+  },
+  "2502.15722v1": {
+    "filename": "2502.15722v1_open-source_retrieval_augmented_generation_framework_for_retrieving_accurate_med.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2502.15722v1",
+    "title": "Open-Source Retrieval Augmented Generation Framework for Retrieving Accurate Medication Insights from Formularies for African Healthcare Workers"
+  },
+  "2502.17874v2": {
+    "filename": "2502.17874v2_neural_graph_matching_improves_retrieval_augmented_generation_in_molecular_machi.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2502.17874v2",
+    "title": "Neural Graph Matching Improves Retrieval Augmented Generation in Molecular Machine Learning"
+  },
+  "2502.18470v5": {
+    "filename": "2502.18470v5_spatial-rag_spatial_retrieval_augmented_generation_for_real-world_geospatial_rea.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2502.18470v5",
+    "title": "Spatial-RAG: Spatial Retrieval Augmented Generation for Real-World Geospatial Reasoning Questions"
+  },
+  "2502.20541v1": {
+    "filename": "2502.20541v1_nanogpt_a_query-driven_large_language_model_retrieval-augmented_generation_syste.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2502.20541v1",
+    "title": "NANOGPT: A Query-Driven Large Language Model Retrieval-Augmented Generation System for Nanotechnology Research"
+  },
+  "2503.02922v1": {
+    "filename": "2503.02922v1_optimizing_open-domain_question_answering_with_graph-based_retrieval_augmented_g.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2503.02922v1",
+    "title": "Optimizing open-domain question answering with graph-based retrieval augmented generation"
+  },
+  "2503.05464v2": {
+    "filename": "2503.05464v2_automatic_teaching_platform_on_vision_language_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2503.05464v2",
+    "title": "Automatic Teaching Platform on Vision Language Retrieval Augmented Generation"
+  },
+  "2503.14649v2": {
+    "filename": "2503.14649v2_rago_systematic_performance_optimization_for_retrieval-augmented_generation_serv.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2503.14649v2",
+    "title": "RAGO: Systematic Performance Optimization for Retrieval-Augmented Generation Serving"
+  },
+  "2503.16581v1": {
+    "filename": "2503.16581v1_investigating_retrieval-augmented_generation_in_quranic_studies_a_study_of_13_op.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2503.16581v1",
+    "title": "Investigating Retrieval-Augmented Generation in Quranic Studies: A Study of 13 Open-Source Large Language Models"
+  },
+  "2503.23013v1": {
+    "filename": "2503.23013v1_dat_dynamic_alpha_tuning_for_hybrid_retrieval_in_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2503.23013v1",
+    "title": "DAT: Dynamic Alpha Tuning for Hybrid Retrieval in Retrieval-Augmented Generation"
+  },
+  "2503.23421v1": {
+    "filename": "2503.23421v1_a_multi-agent_onboarding_assistant_based_on_large_language_models_retrieval_augm.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2503.23421v1",
+    "title": "A Multi-agent Onboarding Assistant based on Large Language Models, Retrieval Augmented Generation, and Chain-of-Thought"
+  },
+  "2504.01840v2": {
+    "filename": "2504.01840v2_lrage_legal_retrieval_augmented_generation_evaluation_tool.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2504.01840v2",
+    "title": "LRAGE: Legal Retrieval Augmented Generation Evaluation Tool"
+  },
+  "2504.01883v1": {
+    "filename": "2504.01883v1_corag_collaborative_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2504.01883v1",
+    "title": "CoRAG: Collaborative Retrieval-Augmented Generation"
+  },
+  "2504.05731v1": {
+    "filename": "2504.05731v1_retrieval_augmented_generation_with_collaborative_filtering_for_personalized_tex.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2504.05731v1",
+    "title": "Retrieval Augmented Generation with Collaborative Filtering for Personalized Text Generation"
+  },
+  "2504.08748v1": {
+    "filename": "2504.08748v1_a_survey_of_multimodal_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2504.08748v1",
+    "title": "A Survey of Multimodal Retrieval-Augmented Generation"
+  },
+  "2504.08893v1": {
+    "filename": "2504.08893v1_knowledge_graph-extended_retrieval_augmented_generation_for_question_answering.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2504.08893v1",
+    "title": "Knowledge Graph-extended Retrieval Augmented Generation for Question Answering"
+  },
+  "2504.10529v1": {
+    "filename": "2504.10529v1_heterag_a_heterogeneous_retrieval-augmented_generation_framework_with_decoupled.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2504.10529v1",
+    "title": "HeteRAG: A Heterogeneous Retrieval-augmented Generation Framework with Decoupled Knowledge Representations"
+  },
+  "2504.14917v1": {
+    "filename": "2504.14917v1_polyrag_integrating_polyviews_into_retrieval-augmented_generation_for_medical_ap.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2504.14917v1",
+    "title": "POLYRAG: Integrating Polyviews into Retrieval-Augmented Generation for Medical Applications"
+  },
+  "2505.00443v1": {
+    "filename": "2505.00443v1_distributed_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2505.00443v1",
+    "title": "Distributed Retrieval-Augmented Generation"
+  },
+  "2505.04680v1": {
+    "filename": "2505.04680v1_retrieval_augmented_generation_evaluation_for_health_documents.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2505.04680v1",
+    "title": "Retrieval Augmented Generation Evaluation for Health Documents"
+  },
+  "2505.04846v1": {
+    "filename": "2505.04846v1_hiperrag_high-performance_retrieval_augmented_generation_for_scientific_insights.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2505.04846v1",
+    "title": "HiPerRAG: High-Performance Retrieval Augmented Generation for Scientific Insights"
+  },
+  "2505.07917v2": {
+    "filename": "2505.07917v2_efficient_and_reproducible_biomedical_question_answering_using_retrieval_augment.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2505.07917v2",
+    "title": "Efficient and Reproducible Biomedical Question Answering using Retrieval Augmented Generation"
+  },
+  "2505.08450v2": {
+    "filename": "2505.08450v2_iterkey_iterative_keyword_generation_with_llms_for_enhanced_retrieval_augmented.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2505.08450v2",
+    "title": "IterKey: Iterative Keyword Generation with LLMs for Enhanced Retrieval Augmented Generation"
+  },
+  "2505.13129v1": {
+    "filename": "2505.13129v1_optimizing_retrieval_augmented_generation_for_object_constraint_language.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2505.13129v1",
+    "title": "Optimizing Retrieval Augmented Generation for Object Constraint Language"
+  },
+  "2505.18906v2": {
+    "filename": "2505.18906v2_federated_retrieval-augmented_generation_a_systematic_mapping_study.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2505.18906v2",
+    "title": "Federated Retrieval-Augmented Generation: A Systematic Mapping Study"
+  },
+  "2505.21072v5": {
+    "filename": "2505.21072v5_faithfulness-aware_uncertainty_quantification_for_fact-checking_the_output_of_re.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2505.21072v5",
+    "title": "Faithfulness-Aware Uncertainty Quantification for Fact-Checking the Output of Retrieval Augmented Generation"
+  },
+  "2506.06962v3": {
+    "filename": "2506.06962v3_ar-rag_autoregressive_retrieval_augmentation_for_image_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2506.06962v3",
+    "title": "AR-RAG: Autoregressive Retrieval Augmentation for Image Generation"
+  },
+  "2506.10380v2": {
+    "filename": "2506.10380v2_tablerag_a_retrieval_augmented_generation_framework_for_heterogeneous_document_r.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2506.10380v2",
+    "title": "TableRAG: A Retrieval Augmented Generation Framework for Heterogeneous Document Reasoning"
+  },
+  "2506.10844v1": {
+    "filename": "2506.10844v1_ciir_liverag_2025_optimizing_multi-agent_retrieval_augmented_generation_through.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2506.10844v1",
+    "title": "CIIR@LiveRAG 2025: Optimizing Multi-Agent Retrieval Augmented Generation through Self-Training"
+  },
+  "2506.12071v2": {
+    "filename": "2506.12071v2_t_2_-ragbench_text-and-table_benchmark_for_evaluating_retrieval-augmented_genera.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2506.12071v2",
+    "title": "T$^2$-RAGBench: Text-and-Table Benchmark for Evaluating Retrieval-Augmented Generation"
+  },
+  "2506.20963v2": {
+    "filename": "2506.20963v2_erarag_efficient_and_incremental_retrieval_augmented_generation_for_growing_corp.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2506.20963v2",
+    "title": "EraRAG: Efficient and Incremental Retrieval Augmented Generation for Growing Corpora"
+  },
+  "2506.21931v2": {
+    "filename": "2506.21931v2_arag_agentic_retrieval_augmented_generation_for_personalized_recommendation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2506.21931v2",
+    "title": "ARAG: Agentic Retrieval Augmented Generation for Personalized Recommendation"
+  },
+  "2506.22644v1": {
+    "filename": "2506.22644v1_evaluating_hybrid_retrieval_augmented_generation_using_dynamic_test_sets_liverag.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2506.22644v1",
+    "title": "Evaluating Hybrid Retrieval Augmented Generation using Dynamic Test Sets: LiveRAG Challenge"
+  },
+  "2507.04069v1": {
+    "filename": "2507.04069v1_beyond_independent_passages_adaptive_passage_combination_retrieval_for_retrieval.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2507.04069v1",
+    "title": "Beyond Independent Passages: Adaptive Passage Combination Retrieval for Retrieval Augmented Open-Domain Question Answering"
+  },
+  "2507.05863v1": {
+    "filename": "2507.05863v1_kerag_r_knowledge-enhanced_retrieval-augmented_generation_for_recommendation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2507.05863v1",
+    "title": "KERAG_R: Knowledge-Enhanced Retrieval-Augmented Generation for Recommendation"
+  },
+  "2507.06838v2": {
+    "filename": "2507.06838v2_shifting_from_ranking_to_set_selection_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2507.06838v2",
+    "title": "Shifting from Ranking to Set Selection for Retrieval Augmented Generation"
+  },
+  "2507.12840v1": {
+    "filename": "2507.12840v1_bridging_the_gap_leveraging_retrieval-augmented_generation_to_better_understand.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2507.12840v1",
+    "title": "Bridging the Gap: Leveraging Retrieval-Augmented Generation to Better Understand Public Concerns about Vaccines"
+  },
+  "2507.16826v1": {
+    "filename": "2507.16826v1_a_query-aware_multi-path_knowledge_graph_fusion_approach_for_enhancing_retrieval.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2507.16826v1",
+    "title": "A Query-Aware Multi-Path Knowledge Graph Fusion Approach for Enhancing Retrieval-Augmented Generation in Large Language Models"
+  },
+  "2507.21125v1": {
+    "filename": "2507.21125v1_rate_an_llm-powered_retrieval_augmented_generation_technology-extraction_pipelin.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2507.21125v1",
+    "title": "RATE: An LLM-Powered Retrieval Augmented Generation Technology-Extraction Pipeline"
+  },
+  "2507.23334v2": {
+    "filename": "2507.23334v2_must-rag_musical_text_question_answering_with_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2507.23334v2",
+    "title": "MUST-RAG: MUSical Text Question Answering with Retrieval Augmented Generation"
+  },
+  "2508.03553v1": {
+    "filename": "2508.03553v1_multirag_a_knowledge-guided_framework_for_mitigating_hallucination_in_multi-sour.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2508.03553v1",
+    "title": "MultiRAG: A Knowledge-guided Framework for Mitigating Hallucination in Multi-source Retrieval Augmented Generation"
+  },
+  "2508.05647v1": {
+    "filename": "2508.05647v1_query-aware_graph_neural_networks_for_enhanced_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2508.05647v1",
+    "title": "Query-Aware Graph Neural Networks for Enhanced Retrieval-Augmented Generation"
+  },
+  "2508.05650v1": {
+    "filename": "2508.05650v1_omnibench-rag_a_multi-domain_evaluation_platform_for_retrieval-augmented_generat.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2508.05650v1",
+    "title": "OmniBench-RAG: A Multi-Domain Evaluation Platform for Retrieval-Augmented Generation Tools"
+  },
+  "2508.05652v1": {
+    "filename": "2508.05652v1_lessons_from_a_large_language_model-based_outdoor_trail_recommendation_chatbot_w.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2508.05652v1",
+    "title": "Lessons from A Large Language Model-based Outdoor Trail Recommendation Chatbot with Retrieval Augmented Generation"
+  },
+  "2508.09460v1": {
+    "filename": "2508.09460v1_towards_self-cognitive_exploration_metacognitive_knowledge_graph_retrieval_augme.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2508.09460v1",
+    "title": "Towards Self-cognitive Exploration: Metacognitive Knowledge Graph Retrieval Augmented Generation"
+  },
+  "2508.16007v2": {
+    "filename": "2508.16007v2_data_auctions_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2508.16007v2",
+    "title": "Data Auctions for Retrieval Augmented Generation"
+  },
+  "2508.20131v1": {
+    "filename": "2508.20131v1_argrag_explainable_retrieval_augmented_generation_using_quantitative_bipolar_arg.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2508.20131v1",
+    "title": "ArgRAG: Explainable Retrieval Augmented Generation using Quantitative Bipolar Argumentation"
+  },
+  "2509.01030v2": {
+    "filename": "2509.01030v2_identifying_origins_of_place_names_via_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2509.01030v2",
+    "title": "Identifying Origins of Place Names via Retrieval Augmented Generation"
+  },
+  "2509.04820v1": {
+    "filename": "2509.04820v1_fishing_for_answers_exploring_one-shot_vs._iterative_retrieval_strategies_for_re.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2509.04820v1",
+    "title": "Fishing for Answers: Exploring One-shot vs. Iterative Retrieval Strategies for Retrieval Augmented Generation"
+  },
+  "2509.19567v2": {
+    "filename": "2509.19567v2_retrieval_augmented_generation_based_context_discovery_for_asr.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2509.19567v2",
+    "title": "Retrieval Augmented Generation based context discovery for ASR"
+  },
+  "2509.21237v1": {
+    "filename": "2509.21237v1_query-centric_graph_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2509.21237v1",
+    "title": "Query-Centric Graph Retrieval Augmented Generation"
+  },
+  "2509.21336v1": {
+    "filename": "2509.21336v1_hetarag_hybrid_deep_retrieval-augmented_generation_across_heterogeneous_data_sto.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2509.21336v1",
+    "title": "HetaRAG: Hybrid Deep Retrieval-Augmented Generation across Heterogeneous Data Stores"
+  },
+  "2510.01600v2": {
+    "filename": "2510.01600v2_a_comparison_of_independent_and_joint_fine-tuning_strategies_for_retrieval-augme.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2510.01600v2",
+    "title": "A Comparison of Independent and Joint Fine-tuning Strategies for Retrieval-Augmented Generation"
+  },
+  "2510.14271v1": {
+    "filename": "2510.14271v1_less_is_more_denoising_knowledge_graphs_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2510.14271v1",
+    "title": "Less is More: Denoising Knowledge Graphs For Retrieval Augmented Generation"
+  },
+  "2510.15682v1": {
+    "filename": "2510.15682v1_squai_scientific_question-answering_with_multi-agent_retrieval-augmented_generat.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2510.15682v1",
+    "title": "SQuAI: Scientific Question-Answering with Multi-Agent Retrieval-Augmented Generation"
+  },
+  "2510.17354v1": {
+    "filename": "2510.17354v1_towards_mixed-modal_retrieval_for_universal_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2510.17354v1",
+    "title": "Towards Mixed-Modal Retrieval for Universal Retrieval-Augmented Generation"
+  },
+  "2510.22344v1": {
+    "filename": "2510.22344v1_fair-rag_faithful_adaptive_iterative_refinement_for_retrieval-augmented_generati.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2510.22344v1",
+    "title": "FAIR-RAG: Faithful Adaptive Iterative Refinement for Retrieval-Augmented Generation"
+  },
+  "2510.24402v1": {
+    "filename": "2510.24402v1_metadata-driven_retrieval-augmented_generation_for_financial_question_answering.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2510.24402v1",
+    "title": "Metadata-Driven Retrieval-Augmented Generation for Financial Question Answering"
+  },
+  "2510.24870v2": {
+    "filename": "2510.24870v2_seeing_through_the_mirage_evaluating_multimodal_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2510.24870v2",
+    "title": "Seeing Through the MiRAGE: Evaluating Multimodal Retrieval Augmented Generation"
+  },
+  "2511.00678v1": {
+    "filename": "2511.00678v1_repairing_responsive_layout_failures_using_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2511.00678v1",
+    "title": "Repairing Responsive Layout Failures Using Retrieval Augmented Generation"
+  },
+  "2511.01059v1": {
+    "filename": "2511.01059v1_efficient_test-time_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2511.01059v1",
+    "title": "Efficient Test-Time Retrieval Augmented Generation"
+  },
+  "2512.00367v1": {
+    "filename": "2512.00367v1_breaking_it_down_domain-aware_semantic_segmentation_for_retrieval_augmented_gene.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2512.00367v1",
+    "title": "Breaking It Down: Domain-Aware Semantic Segmentation for Retrieval Augmented Generation"
+  },
+  "2512.14313v1": {
+    "filename": "2512.14313v1_dynamic_context_selection_for_retrieval-augmented_generation_mitigating_distract.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2512.14313v1",
+    "title": "Dynamic Context Selection for Retrieval-Augmented Generation: Mitigating Distractors and Positional Bias"
+  },
+  "2512.20626v2": {
+    "filename": "2512.20626v2_megarag_multimodal_knowledge_graph-based_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2512.20626v2",
+    "title": "MegaRAG: Multimodal Knowledge Graph-Based Retrieval Augmented Generation"
+  },
+  "2601.04568v2": {
+    "filename": "2601.04568v2_neurosymbolic_retrievers_for_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2601.04568v2",
+    "title": "Neurosymbolic Retrievers for Retrieval-augmented Generation"
+  },
+  "2601.05254v3": {
+    "filename": "2601.05254v3_tagrag_tag-guided_hierarchical_knowledge_graph_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2601.05254v3",
+    "title": "TagRAG: Tag-guided Hierarchical Knowledge Graph Retrieval-Augmented Generation"
+  },
+  "2601.05264v1": {
+    "filename": "2601.05264v1_engineering_the_rag_stack_a_comprehensive_review_of_the_architecture_and_trust_f.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2601.05264v1",
+    "title": "Engineering the RAG Stack: A Comprehensive Review of the Architecture and Trust Frameworks for Retrieval-Augmented Generation Systems"
+  },
+  "2601.08670v1": {
+    "filename": "2601.08670v1_parallel_context-of-experts_decoding_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2601.08670v1",
+    "title": "Parallel Context-of-Experts Decoding for Retrieval Augmented Generation"
+  },
+  "2601.13222v2": {
+    "filename": "2601.13222v2_incorporating_q_a_nuggets_into_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2601.13222v2",
+    "title": "Incorporating Q&A Nuggets into Retrieval-Augmented Generation"
+  },
+  "2601.18886v1": {
+    "filename": "2601.18886v1_xprovence_zero-cost_multilingual_context_pruning_for_retrieval-augmented_generat.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2601.18886v1",
+    "title": "XProvence: Zero-Cost Multilingual Context Pruning for Retrieval-Augmented Generation"
+  },
+  "2602.03652v1": {
+    "filename": "2602.03652v1_ragturk_best_practices_for_retrieval_augmented_generation_in_turkish.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2602.03652v1",
+    "title": "RAGTurk: Best Practices for Retrieval Augmented Generation in Turkish"
+  },
+  "2602.07739v2": {
+    "filename": "2602.07739v2_hyprag_hyperbolic_dense_retrieval_for_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2602.07739v2",
+    "title": "HypRAG: Hyperbolic Dense Retrieval for Retrieval Augmented Generation"
+  },
+  "2602.10271v3": {
+    "filename": "2602.10271v3_mldocrag_multimodal_long-context_document_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2602.10271v3",
+    "title": "MLDocRAG: Multimodal Long-Context Document Retrieval Augmented Generation"
+  },
+  "2602.17216v1": {
+    "filename": "2602.17216v1_ntlrag_narrative_topic_labels_derived_with_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2602.17216v1",
+    "title": "NTLRAG: Narrative Topic Labels derived with Retrieval Augmented Generation"
+  },
+  "2603.00511v1": {
+    "filename": "2603.00511v1_multimodal_adaptive_retrieval_augmented_generation_through_internal_representati.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2603.00511v1",
+    "title": "Multimodal Adaptive Retrieval Augmented Generation through Internal Representation Learning"
+  },
+  "2603.02153v1": {
+    "filename": "2603.02153v1_scaling_retrieval_augmented_generation_with_rag_fusion_lessons_from_an_industry.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2603.02153v1",
+    "title": "Scaling Retrieval Augmented Generation with RAG Fusion: Lessons from an Industry Deployment"
+  },
+  "2603.04647v1": {
+    "filename": "2603.04647v1_coordinated_semantic_alignment_and_evidence_constraints_for_retrieval-augmented.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2603.04647v1",
+    "title": "Coordinated Semantic Alignment and Evidence Constraints for Retrieval-Augmented Generation with Large Language Models"
+  },
+  "2603.07233v1": {
+    "filename": "2603.07233v1_retrieval-augmented_generation_for_predicting_cellular_responses_to_gene_perturb.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2603.07233v1",
+    "title": "Retrieval-Augmented Generation for Predicting Cellular Responses to Gene Perturbation"
+  },
+  "2603.09891v1": {
+    "filename": "2603.09891v1_overview_of_the_trec_2025_retrieval_augmented_generation_rag_track.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2603.09891v1",
+    "title": "Overview of the TREC 2025 Retrieval Augmented Generation (RAG) Track"
+  },
+  "2603.16169v1": {
+    "filename": "2603.16169v1_open-source_reproduction_and_explainability_analysis_of_corrective_retrieval_aug.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2603.16169v1",
+    "title": "Open-Source Reproduction and Explainability Analysis of Corrective Retrieval Augmented Generation"
+  },
+  "2603.20309v1": {
+    "filename": "2603.20309v1_bubblerag_evidence-driven_retrieval-augmented_generation_for_black-box_knowledge.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2603.20309v1",
+    "title": "BubbleRAG: Evidence-Driven Retrieval-Augmented Generation for Black-Box Knowledge Graphs"
+  },
+  "2603.26668v2": {
+    "filename": "2603.26668v2_bridge-rag_an_abstract_bridge_tree_based_retrieval_augmented_generation_algorith.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2603.26668v2",
+    "title": "Bridge-RAG: An Abstract Bridge Tree Based Retrieval Augmented Generation Algorithm"
+  },
+  "2604.19899v1": {
+    "filename": "2604.19899v1_a_reproducibility_study_of_metacognitive_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2604.19899v1",
+    "title": "A Reproducibility Study of Metacognitive Retrieval-Augmented Generation"
+  },
+  "2604.22757v1": {
+    "filename": "2604.22757v1_stratrag_a_multi-hop_retrieval_evaluation_dataset_for_retrieval-augmented_genera.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2604.22757v1",
+    "title": "StratRAG: A Multi-Hop Retrieval Evaluation Dataset for Retrieval-Augmented Generation Systems"
+  },
+  "2604.22843v1": {
+    "filename": "2604.22843v1_structure_guided_retrieval-augmented_generation_for_factual_queries.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2604.22843v1",
+    "title": "Structure Guided Retrieval-Augmented Generation for Factual Queries"
+  },
+  "2605.00957v1": {
+    "filename": "2605.00957v1_i_don_t_know_--_towards_appropriate_trust_with_certainty-aware_retrieval_augment.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2605.00957v1",
+    "title": "\"I Don't Know\" -- Towards Appropriate Trust with Certainty-Aware Retrieval Augmented Generation"
+  },
+  "2605.05244v1": {
+    "filename": "2605.05244v1_towards_dependable_retrieval-augmented_generation_using_factual_confidence_predi.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2605.05244v1",
+    "title": "Towards Dependable Retrieval-Augmented Generation Using Factual Confidence Prediction"
+  },
+  "2605.12335v1": {
+    "filename": "2605.12335v1_ehr-ragp_retrieval-augmented_prototype-guided_foundation_model_for_electronic_he.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2605.12335v1",
+    "title": "EHR-RAGp: Retrieval-Augmented Prototype-Guided Foundation Model for Electronic Health Records"
+  },
+  "2605.18769v1": {
+    "filename": "2605.18769v1_clusterrag_cluster-based_collaborative_filtering_for_personalized_retrieval-augm.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2605.18769v1",
+    "title": "ClusterRAG: Cluster-Based Collaborative Filtering for Personalized Retrieval-Augmented Generation"
+  },
+  "2605.20123v1": {
+    "filename": "2605.20123v1_bird_a_bidirectional_ranking_defense_mechanism_for_retrieval_augmented_generatio.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2605.20123v1",
+    "title": "BiRD: A Bidirectional Ranking Defense Mechanism for Retrieval Augmented Generation"
+  },
+  "2605.24366v1": {
+    "filename": "2605.24366v1_structure-aware_rag_structured_retrieval_augmented_generation_from_noisy_data_fo.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2605.24366v1",
+    "title": "Structure-Aware RAG: Structured Retrieval Augmented Generation from Noisy Data for Conversational Agents"
+  },
+  "2605.27444v1": {
+    "filename": "2605.27444v1_a_systematic_evaluation_of_retrieval-augmented_generation_and_language_models_fo.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2605.27444v1",
+    "title": "A Systematic Evaluation of Retrieval-Augmented Generation and Language Models for Space Operations"
+  },
+  "2605.29956v1": {
+    "filename": "2605.29956v1_uncertainty_quantification_for_multimodal_retrieval_augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2605.29956v1",
+    "title": "Uncertainty Quantification for Multimodal Retrieval Augmented Generation"
+  },
+  "2606.03307v2": {
+    "filename": "2606.03307v2_generalizing_graph_foundation_models_via_hyperbolic_retrieval-augmented_generati.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2606.03307v2",
+    "title": "Generalizing Graph Foundation Models via Hyperbolic Retrieval-Augmented Generation"
+  },
+  "2606.30093v1": {
+    "filename": "2606.30093v1_efficient_retrieval-augmented_generation_via_token_co-occurrence_graphs.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2606.30093v1",
+    "title": "Efficient Retrieval-Augmented Generation via Token Co-occurrence Graphs"
+  },
+  "2607.01852v1": {
+    "filename": "2607.01852v1_evaluating_chunking_strategies_for_retrieval-augmented_generation_on_academic_te.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2607.01852v1",
+    "title": "Evaluating Chunking Strategies for Retrieval-Augmented Generation on Academic Texts"
+  },
+  "2607.11159v1": {
+    "filename": "2607.11159v1_ngm-rag_neural_graph_matching_based_retrieval-augmented_generation.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2607.11159v1",
+    "title": "NGM-RAG: Neural Graph Matching based Retrieval-Augmented Generation"
+  },
+  "2607.14095v1": {
+    "filename": "2607.14095v1_hg-rag_hierarchy-guided_retrieval-augmented_generation_for_structured_knowledge.pdf",
+    "pdf_url": "https://arxiv.org/pdf/2607.14095v1",
+    "title": "HG-RAG: Hierarchy-Guided Retrieval-Augmented Generation for Structured Knowledge Graphs"
+  }
+}

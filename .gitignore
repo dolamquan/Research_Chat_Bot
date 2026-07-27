@@ -1,0 +1,33 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+*.log
+
+# Local generated data
+backend/app/data/qdrant_data/
+backend/app/data/qdrant_storage/
+backend/app/data/evaluation_runs/
+backend/app/data/*.sqlite3
+backend/app/data/*.db
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+

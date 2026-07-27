@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-dotenv
+qdrant-client
+sentence-transformers
+langchain
+langchain-community
+langchain-openai
+pypdf
+numpy
+scikit-learn
+requests
+
