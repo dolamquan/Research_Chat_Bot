@@ -32,10 +32,13 @@ import {
   getDocumentDetail,
   getHealth,
   getIngestionJobs,
+  getVisualImageUrl,
   ingestUrlPaper,
+  searchArxivPapers,
   sendAgentChat,
   sendChat,
 } from "./api";
+import { CrawlerView } from "./components/CrawlerView";
 import { DocumentReader } from "./components/DocumentReader";
 import { PaperLibraryView } from "./components/PaperLibraryView";
 import { ResearchPanel } from "./components/ResearchPanel";
@@ -47,6 +50,7 @@ import type {
   ClusterGraph,
   Article,
   ArticleDomain,
+  ArxivPaper,
   ChatHistoryItem,
   ChatSession,
   DocumentDetail,
@@ -154,8 +158,52 @@ function FormattedText({ content }: { content: string }) {
   );
 }
 
+function contextLabel(source: Source, index: number): string {
+  if (source.document_type === "visual_asset" || source.image_url) {
+    return source.page ? `Figure/image - p.${source.page}` : "Figure/image";
+  }
+  if (source.selection) return source.page ? `PDF selection - p.${source.page}` : "PDF selection";
+  return source.title || source.source || `Context ${index + 1}`;
+}
+
+function MessageContextCard({ source, index }: { source: Source; index: number }) {
+  const imageUrl =
+    typeof source.image_url === "string" ? getVisualImageUrl(source.image_url) : "";
+  const text = typeof source.text === "string" ? source.text : "";
+
+  return (
+    <div className="w-full rounded border border-primary/25 bg-primary/10 overflow-hidden">
+      {imageUrl && (
+        <div className="border-b border-primary/20 bg-background/60">
+          <img
+            src={imageUrl}
+            alt={source.title || "Pinned visual context"}
+            className="max-h-36 w-full object-contain"
+          />
+        </div>
+      )}
+      <div className="px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-primary">
+            Referencing
+          </span>
+          <span className="min-w-0 truncate text-[11px] font-medium text-foreground">
+            {contextLabel(source, index)}
+          </span>
+        </div>
+        {text && (
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-3">
+            {text}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function MessageBubble({ message }: { message: Message }) {
   const isUser = message.role === "user";
+  const pinnedSources = message.pinnedSources || [];
 
   return (
     <div
@@ -175,6 +223,17 @@ function MessageBubble({ message }: { message: Message }) {
           isUser ? "items-end" : "items-start"
         }`}
       >
+        {isUser && pinnedSources.length > 0 && (
+          <div className="w-full space-y-2">
+            {pinnedSources.map((source, index) => (
+              <MessageContextCard
+                key={`${sourceKey(source)}:${index}`}
+                source={source}
+                index={index}
+              />
+            ))}
+          </div>
+        )}
         <div
           className={`rounded-lg px-4 py-3 text-sm ${
             isUser
@@ -216,8 +275,17 @@ export default function App() {
   const [pinnedSources, setPinnedSources] = useState<Source[]>([]);
   const [contextMode, setContextMode] = useState<ContextMode>("retrieval");
   const [input, setInput] = useState("");
-  const [activeView, setActiveView] = useState<"chat" | "library">("chat");
+  const [activeView, setActiveView] = useState<"chat" | "library" | "crawler">("chat");
   const [librarySearch, setLibrarySearch] = useState("");
+  const [crawlerDescription, setCrawlerDescription] = useState("");
+  const [crawlerCategory, setCrawlerCategory] = useState("");
+  const [crawlerSortBy, setCrawlerSortBy] = useState<"relevance" | "newest" | "last_updated">("relevance");
+  const [crawlerMaxResults, setCrawlerMaxResults] = useState(10);
+  const [crawlerResults, setCrawlerResults] = useState<ArxivPaper[]>([]);
+  const [crawlerQuery, setCrawlerQuery] = useState("");
+  const [crawlerStatus, setCrawlerStatus] = useState("");
+  const [isCrawlerSearching, setIsCrawlerSearching] = useState(false);
+  const [addingCrawlerPaperId, setAddingCrawlerPaperId] = useState<string>();
   const [isTyping, setIsTyping] = useState(false);
   const [agentMode, setAgentMode] = useState(false);
   const [backendOnline, setBackendOnline] = useState(false);
@@ -611,6 +679,85 @@ export default function App() {
     }
   }
 
+  async function searchCrawler() {
+    const description = crawlerDescription.trim();
+    if (!description || isCrawlerSearching) return;
+
+    setIsCrawlerSearching(true);
+    setCrawlerStatus("Searching arXiv...");
+    setCrawlerQuery("");
+
+    try {
+      const result = await searchArxivPapers({
+        description,
+        category: crawlerCategory.trim() || undefined,
+        sort_by: crawlerSortBy,
+        max_results: crawlerMaxResults,
+      });
+      setCrawlerResults(result.papers);
+      setCrawlerQuery(result.query);
+      setCrawlerStatus(
+        result.papers.length
+          ? `Found ${result.papers.length} related arXiv papers.`
+          : "No arXiv papers matched that description.",
+      );
+      setBackendOnline(true);
+    } catch (error) {
+      setCrawlerStatus(
+        error instanceof Error
+          ? `Could not search arXiv: ${error.message}`
+          : "Could not search arXiv.",
+      );
+      setBackendOnline(false);
+    } finally {
+      setIsCrawlerSearching(false);
+    }
+  }
+
+  async function addCrawlerPaper(paper: ArxivPaper) {
+    if (addingCrawlerPaperId) return;
+
+    setAddingCrawlerPaperId(paper.arxiv_id);
+    setCrawlerStatus(`Queuing ${paper.title} for indexing...`);
+
+    try {
+      const result = await ingestUrlPaper({
+        url: paper.url || paper.pdf_url,
+        title: paper.title,
+        domain: paperDomain.trim() || "research",
+        category: paper.categories[0] || paperCategory.trim() || "uncategorized",
+        tags: paper.categories,
+      });
+
+      setIngestionJobs((current) => [result.job, ...current].slice(0, 8));
+      setCrawlerStatus(`Queued ${paper.title}. Track progress in ingestion jobs.`);
+      setBackendOnline(true);
+
+      try {
+        const [domainsResult, articlesResult, libraryResult, jobsResult] = await Promise.all([
+          getArticleDomains(),
+          getArticles({ limit: 5 }),
+          getArticles({ limit: 500 }),
+          getIngestionJobs(8),
+        ]);
+        setArticleDomains(domainsResult.domains);
+        setRecentArticles(articlesResult.articles);
+        setLibraryArticles(libraryResult.articles);
+        setIngestionJobs(jobsResult.jobs);
+      } catch {
+        // The ingestion job is still queued even if the sidebar refresh fails.
+      }
+    } catch (error) {
+      setCrawlerStatus(
+        error instanceof Error
+          ? `Could not add paper: ${error.message}`
+          : "Could not add paper.",
+      );
+    } finally {
+      setAddingCrawlerPaperId(undefined);
+    }
+  }
+
   async function rebuildCurrentTopology() {
     if (isBuildingTopology) return;
 
@@ -640,10 +787,12 @@ export default function App() {
     if (!question || isTyping) return;
 
     const history = messages.map(({ role, content }) => ({ role, content }));
+    const pinnedSourcesForMessage = [...pinnedSources];
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: "user",
       content: question,
+      pinnedSources: pinnedSourcesForMessage,
       timestamp: new Date(),
     };
 
@@ -666,7 +815,7 @@ export default function App() {
         sessionId: activeSessionId,
         question,
         chatHistory: history,
-        pinnedSources,
+        pinnedSources: pinnedSourcesForMessage,
         clusterId: selectedCluster?.cluster_id,
         documentSource: selectedDocument?.source,
         domain: selectedDomain || undefined,
@@ -780,6 +929,26 @@ export default function App() {
     : selectedCluster?.cluster_label || "All indexed papers";
   const activeScopeLabel = scopeLabelFor(selectedDomain, selectedCategory);
   const scopeIsFiltered = Boolean(selectedDomain || selectedCategory);
+  const headerTitle =
+    activeView === "crawler"
+      ? "Crawler"
+      : activeView === "library"
+        ? "Paper Library"
+        : scopeLabel;
+  const headerSubtitle =
+    activeView === "crawler"
+      ? "arXiv paper discovery"
+      : activeView === "library"
+        ? "Indexed papers and ingestion status"
+        : selectedDocument
+          ? contextMode === "whole_document"
+            ? "Whole-paper context"
+            : "Article-only retrieval"
+          : selectedCluster
+            ? "Cluster retrieval"
+            : scopeIsFiltered
+              ? `${activeScopeLabel} retrieval`
+              : "Full collection retrieval";
 
   return (
     <div
@@ -807,6 +976,130 @@ export default function App() {
           </div>
         </div>
 
+        <div className="p-3 shrink-0 border-b border-border">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground px-1 mb-2">
+            Workspace
+          </p>
+          <div className="space-y-1">
+            <button
+              type="button"
+              onClick={() => setActiveView("chat")}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+                activeView === "chat"
+                  ? "border-primary/25 bg-primary/10 text-primary"
+                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+              }`}
+            >
+              <MessageSquare size={14} />
+              <span className="text-xs font-medium">Chat</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("library")}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+                activeView === "library"
+                  ? "border-primary/25 bg-primary/10 text-primary"
+                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+              }`}
+            >
+              <FileText size={14} />
+              <span className="text-xs font-medium">Paper Library</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("crawler")}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+                activeView === "crawler"
+                  ? "border-primary/25 bg-primary/10 text-primary"
+                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+              }`}
+            >
+              <Search size={14} />
+              <span className="text-xs font-medium">Crawler</span>
+            </button>
+          </div>
+        </div>
+
+        {activeView === "chat" && (
+          <div className="px-3 pb-3 shrink-0 border-b border-border">
+            <div className="h-8 px-1 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setHistoryOpen((value) => !value)}
+                className="min-w-0 flex-1 flex items-center gap-2 text-left"
+              >
+                <History size={12} className="text-primary" />
+                <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Past chats
+                </span>
+                <span className="ml-auto text-muted-foreground">
+                  {historyOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                </span>
+              </button>
+              <button
+                type="button"
+                title="Start new chat"
+                onClick={startNewChat}
+                className="w-6 h-6 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-secondary"
+              >
+                <Plus size={12} />
+              </button>
+            </div>
+
+            {historyOpen && (
+              <div className="max-h-52 overflow-y-auto space-y-1">
+                {chatSessions.length === 0 ? (
+                  <p className="px-1 py-2 text-[11px] text-muted-foreground">
+                    No saved chats yet.
+                  </p>
+                ) : (
+                  chatSessions.slice(0, 10).map((session) => {
+                    const active = activeSessionId === session.id;
+
+                    return (
+                      <div
+                        key={session.id}
+                        className={`group flex items-center gap-1 rounded border ${
+                          active
+                            ? "border-primary/35 bg-primary/10"
+                            : "border-transparent hover:border-border hover:bg-secondary"
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => void loadChatSession(session.id)}
+                          className="min-w-0 flex-1 px-2 py-2 text-left flex items-center gap-2"
+                        >
+                          <MessageSquare
+                            size={12}
+                            className={active ? "text-primary" : "text-muted-foreground"}
+                          />
+                          <span
+                            className={`min-w-0 truncate text-[11px] ${
+                              active ? "text-primary" : "text-foreground"
+                            }`}
+                          >
+                            {session.title}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          title="Delete chat"
+                          onClick={() => void removeChatSession(session.id)}
+                          className="mr-1 w-6 h-6 rounded flex items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
+                        >
+                          <X size={11} />
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeView === "chat" && (
         <div className="p-3 shrink-0">
           <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground px-1 mb-2">
             Scope
@@ -997,7 +1290,9 @@ export default function App() {
             </div>
           )}
         </div>
+        )}
 
+        {activeView === "library" && (
         <form
           className="px-3 pb-3 shrink-0 border-b border-border space-y-2"
           onSubmit={(event) => {
@@ -1083,7 +1378,9 @@ export default function App() {
             </p>
           )}
         </form>
+        )}
 
+        {(activeView === "library" || activeView === "crawler") && (
         <div className="px-3 pb-3 shrink-0 border-b border-border">
           <div className="h-8 px-1 flex items-center gap-2">
             <button
@@ -1159,8 +1456,9 @@ export default function App() {
             </div>
           )}
         </div>
+        )}
 
-        <div className="px-3 pb-3 shrink-0 border-b border-border">
+        <div className="hidden">
           <div className="h-8 px-1 flex items-center gap-2">
             <button
               type="button"
@@ -1237,13 +1535,15 @@ export default function App() {
           )}
         </div>
 
-        <TopologyPanel
-          graph={graph}
-          selectedCluster={selectedCluster}
-          onSelectCluster={chooseCluster}
-          onClear={clearCluster}
-          onExpand={() => setTopologyExplorerOpen(true)}
-        />
+        {activeView === "chat" && (
+          <TopologyPanel
+            graph={graph}
+            selectedCluster={selectedCluster}
+            onSelectCluster={chooseCluster}
+            onClear={clearCluster}
+            onExpand={() => setTopologyExplorerOpen(true)}
+          />
+        )}
 
         <button
           type="button"
@@ -1277,43 +1577,11 @@ export default function App() {
           <Network size={14} className="text-primary" />
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground truncate">
-              {scopeLabel}
+              {headerTitle}
             </p>
             <p className="font-mono text-[10px] text-muted-foreground">
-              {selectedDocument
-                ? contextMode === "whole_document"
-                  ? "Whole-paper context"
-                  : "Article-only retrieval"
-                : selectedCluster
-                  ? "Cluster retrieval"
-                  : scopeIsFiltered
-                    ? `${activeScopeLabel} retrieval`
-                    : "Full collection retrieval"}
+              {headerSubtitle}
             </p>
-          </div>
-          <div className="flex h-8 shrink-0 rounded border border-border bg-background p-0.5">
-            <button
-              type="button"
-              onClick={() => setActiveView("chat")}
-              className={`px-3 rounded text-xs ${
-                activeView === "chat"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Chat
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveView("library")}
-              className={`px-3 rounded text-xs ${
-                activeView === "library"
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Paper Library
-            </button>
           </div>
           {activeView === "chat" && (
             <button
@@ -1329,19 +1597,21 @@ export default function App() {
               {topologyExplorerOpen ? "Chat" : "Topology"}
             </button>
           )}
-          <button
-            type="button"
-            onClick={() => setAgentMode((value) => !value)}
-            title="Toggle LangGraph agent mode"
-            className={`h-8 px-3 rounded border text-xs flex items-center gap-2 ${
-              agentMode
-                ? "border-primary/35 bg-primary/10 text-primary"
-                : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
-            }`}
-          >
-            <BrainCircuit size={13} />
-            {agentMode ? "Agent" : "RAG"}
-          </button>
+          {activeView === "chat" && (
+            <button
+              type="button"
+              onClick={() => setAgentMode((value) => !value)}
+              title="Toggle LangGraph agent mode"
+              className={`h-8 px-3 rounded border text-xs flex items-center gap-2 ${
+                agentMode
+                  ? "border-primary/35 bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+              }`}
+            >
+              <BrainCircuit size={13} />
+              {agentMode ? "Agent" : "RAG"}
+            </button>
+          )}
           <div className="ml-auto hidden sm:flex items-center gap-2">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
@@ -1356,7 +1626,7 @@ export default function App() {
 
         <div
           className={`flex-1 min-h-0 px-5 md:px-8 py-6 ${
-            activeView === "library"
+            activeView === "library" || activeView === "crawler"
               ? "overflow-hidden p-0"
               : topologyExplorerOpen
                 ? "overflow-hidden"
@@ -1382,6 +1652,25 @@ export default function App() {
               onOpenArticle={openLibraryArticle}
               onChatWithArticle={chatWithLibraryArticle}
               onRebuildTopology={() => void rebuildCurrentTopology()}
+            />
+          ) : activeView === "crawler" ? (
+            <CrawlerView
+              description={crawlerDescription}
+              category={crawlerCategory}
+              sortBy={crawlerSortBy}
+              maxResults={crawlerMaxResults}
+              results={crawlerResults}
+              query={crawlerQuery}
+              status={crawlerStatus}
+              isSearching={isCrawlerSearching}
+              addingPaperId={addingCrawlerPaperId}
+              ingestionJobs={ingestionJobs}
+              onDescriptionChange={setCrawlerDescription}
+              onCategoryChange={setCrawlerCategory}
+              onSortByChange={setCrawlerSortBy}
+              onMaxResultsChange={setCrawlerMaxResults}
+              onSearch={() => void searchCrawler()}
+              onAddPaper={(paper) => void addCrawlerPaper(paper)}
             />
           ) : topologyExplorerOpen ? (
             <TopologyExplorer

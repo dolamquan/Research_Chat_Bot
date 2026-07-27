@@ -1,0 +1,56 @@
+{
+  "clusters": [
+    {
+      "cluster_id": 0,
+      "cluster_label": "Test",
+      "document_count": 1
+    },
+    {
+      "cluster_id": 1,
+      "cluster_label": "Test3",
+      "document_count": 1
+    }
+  ],
+  "documents": [
+    {
+      "document_id": "6357c400-2b02-4292-adad-cf570bd9b79b",
+      "article_id": "arxiv:2005.11401v4",
+      "title": "Test",
+      "url": "https://arxiv.org/abs/2005.11401v4",
+      "domain": "research",
+      "category": "cs.cl",
+      "tags": [
+        "cs.cl",
+        "cs.lg"
+      ],
+      "source": "2005.11401v4_test.pdf",
+      "chunk_count": 227,
+      "cluster_id": 0,
+      "cluster_label": "Test",
+      "x": -1.0,
+      "y": 1.1492000595580976e-07
+    },
+    {
+      "document_id": "96df2e60-b7df-49e0-8c68-6e79d1f8cbfd",
+      "article_id": "arxiv:2303.18223v19",
+      "title": "Test3",
+      "url": "https://arxiv.org/abs/2303.18223v19",
+      "domain": "research",
+      "category": "cs.cl",
+      "tags": [
+        "cs.cl",
+        "cs.ai"
+      ],
+      "source": "2303.18223v19_test3.pdf",
+      "chunk_count": 5530,
+      "cluster_id": 1,
+      "cluster_label": "Test3",
+      "x": 1.0,
+      "y": 8.41667642248467e-08
+    }
+  ],
+  "scope": {
+    "domain": null,
+    "category": "cs.cl"
+  }
+}

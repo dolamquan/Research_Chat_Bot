@@ -6,7 +6,7 @@ import {
   MessageSquarePlus,
 } from "lucide-react";
 
-import { getPdfUrl } from "../api";
+import { getPdfUrl, getVisualImageUrl } from "../api";
 import type {
   Cluster,
   ClusterDocument,
@@ -241,6 +241,13 @@ export function ResearchPanel({
                   <p className="font-mono text-[10px] text-primary/80 mt-2 truncate">
                     {source.source || "Indexed document"}
                   </p>
+                  {typeof source.image_url === "string" && source.image_url && (
+                    <img
+                      src={getVisualImageUrl(source.image_url)}
+                      alt={source.title || source.source || "Retrieved visual"}
+                      className="mt-2 w-full max-h-40 rounded border border-border object-contain bg-card"
+                    />
+                  )}
                   <p className="text-xs text-muted-foreground leading-relaxed mt-2 line-clamp-5">
                     {source.text || source.summary || "No preview available."}
                   </p>

@@ -22,6 +22,9 @@ export type Source = {
   summary?: string;
   page?: number;
   selection?: boolean;
+  asset_id?: string;
+  image_url?: string;
+  image_path?: string;
   [key: string]: unknown;
 };
 
@@ -30,6 +33,7 @@ export type Message = {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  pinnedSources?: Source[];
   timestamp: Date;
 };
 
@@ -122,6 +126,65 @@ export type IngestionJob = {
   created_at: string;
   updated_at: string;
   completed_at?: string | null;
+};
+
+export type Annotation = {
+  annotation_id: string;
+  source: string;
+  article_id?: string | null;
+  title?: string | null;
+  page: number;
+  selected_text: string;
+  note: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AnnotationPayload = {
+  source: string;
+  page: number;
+  selected_text: string;
+  note?: string;
+  article_id?: string;
+  title?: string;
+};
+
+export type ArxivPaper = {
+  arxiv_id: string;
+  title: string;
+  abstract: string;
+  authors: string[];
+  categories: string[];
+  published_at: string;
+  updated_at: string;
+  url: string;
+  pdf_url: string;
+};
+
+export type ArxivSearchPayload = {
+  description: string;
+  max_results?: number;
+  category?: string;
+  sort_by?: "relevance" | "newest" | "last_updated";
+};
+
+export type ArxivSearchResponse = {
+  query: string;
+  papers: ArxivPaper[];
+};
+
+export type VisualAsset = {
+  asset_id: string;
+  source: string;
+  article_id?: string | null;
+  title?: string | null;
+  page?: number | null;
+  image_path: string;
+  image_url: string;
+  caption: string;
+  asset_type: "pdf_image" | "uploaded_image" | string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type ArticleDomain = {

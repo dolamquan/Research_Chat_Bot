@@ -1,4 +1,5 @@
 import os
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -14,6 +15,7 @@ from app.rag.metadata import (
     build_qdrant_payload,
     tag_parent_records,
 )
+from app.rag.visual_analyzer import extract_pdf_visuals
 
 
 COLLECTION_NAME = "mini_chatbot_docs"
@@ -119,6 +121,68 @@ def upsert_child_records(child_records: List[Dict[str, Any]]) -> None:
     )
 
 
+def index_visual_assets(
+    visual_assets: List[Dict[str, Any]],
+    *,
+    article_metadata: Dict[str, Any] | None = None,
+) -> None:
+    """
+    Embed visual captions/descriptions so figures, graphs, and uploaded images are retrievable.
+    """
+    if not visual_assets:
+        return
+
+    create_collection(recreate=False)
+    metadata = article_metadata or {}
+    child_records = []
+
+    for index, asset in enumerate(visual_assets):
+        caption = str(asset.get("caption") or "").strip()
+        if not caption:
+            continue
+
+        raw_asset_id = str(asset.get("asset_id") or uuid.uuid4().hex)
+        try:
+            point_id = str(uuid.UUID(hex=raw_asset_id))
+        except ValueError:
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, raw_asset_id))
+
+        source = str(asset.get("source") or asset.get("asset_id") or "visual_asset")
+        asset_metadata = {
+            **metadata,
+            "asset_id": asset.get("asset_id", ""),
+            "title": asset.get("title") or metadata.get("title", source),
+            "article_id": asset.get("article_id") or metadata.get("article_id", ""),
+            "document_type": "visual_asset",
+            "section_type": "figure",
+            "topic": "visual content",
+            "summary": caption[:240],
+            "image_url": asset.get("image_url", ""),
+            "image_path": asset.get("image_path", ""),
+            "page": asset.get("page"),
+            "tags": [
+                *list(metadata.get("tags", []) or []),
+                "visual",
+                "figure",
+                "graph",
+            ],
+        }
+        child_records.append(
+            {
+                "text": caption,
+                "child_id": point_id,
+                "parent_id": f"visual-parent:{raw_asset_id}",
+                "document_id": f"visual-doc:{raw_asset_id}",
+                "parent_index": 10_000 + index,
+                "child_index": 0,
+                "source": source,
+                "metadata": asset_metadata,
+            }
+        )
+
+    upsert_child_records(child_records)
+
+
 def index_pdf(
     pdf_path: str,
     llm: Any = None,
@@ -147,6 +211,16 @@ def index_pdf(
     )
 
     upsert_child_records(child_records)
+
+    visual_assets = extract_pdf_visuals(
+        Path(pdf_path),
+        source=Path(pdf_path).name,
+        article_metadata=article_metadata or {},
+    )
+    index_visual_assets(
+        visual_assets,
+        article_metadata=article_metadata or {},
+    )
 
 
 def index_folder(

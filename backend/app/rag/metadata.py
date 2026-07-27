@@ -13,6 +13,7 @@ ALLOWED_DOCUMENT_TYPES = {
     "tutorial",
     "notes",
     "documentation",
+    "visual_asset",
     "unknown",
 }
 
@@ -25,6 +26,7 @@ ALLOWED_SECTION_TYPES = {
     "result",
     "discussion",
     "conclusion",
+    "figure",
     "reference",
     "unknown",
 }
@@ -347,4 +349,8 @@ def build_qdrant_payload(child_record: Dict[str, Any]) -> Dict[str, Any]:
         "section_type": metadata.get("section_type", "unknown"),
         "keywords": metadata.get("keywords", []),
         "summary": metadata.get("summary", ""),
+        "asset_id": metadata.get("asset_id", ""),
+        "image_url": metadata.get("image_url", ""),
+        "image_path": metadata.get("image_path", ""),
+        "page": metadata.get("page"),
     }

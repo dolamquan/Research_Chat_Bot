@@ -1,6 +1,10 @@
 import type {
   Article,
   ArticleDomain,
+  Annotation,
+  AnnotationPayload,
+  ArxivSearchPayload,
+  ArxivSearchResponse,
   ChatHistoryItem,
   ChatResponse,
   ChatSession,
@@ -12,6 +16,7 @@ import type {
   IngestUrlResponse,
   IngestionJob,
   Source,
+  VisualAsset,
 } from "./types";
 
 export const API_URL =
@@ -107,6 +112,92 @@ export function getDocumentDetail(source: string): Promise<DocumentDetail> {
 
 export function getPdfUrl(source: string): string {
   return `${API_URL}/documents/pdf?source=${encodeURIComponent(source)}`;
+}
+
+export function getVisualImageUrl(imageUrl: string): string {
+  if (imageUrl.startsWith("http")) return imageUrl;
+  return `${API_URL}${imageUrl}`;
+}
+
+export function getVisualAssets(
+  source?: string,
+  limit = 100,
+): Promise<{ visuals: VisualAsset[] }> {
+  const params = new URLSearchParams();
+  if (source) params.set("source", source);
+  params.set("limit", String(limit));
+  return requestJson(`/visuals?${params.toString()}`);
+}
+
+export function extractDocumentVisuals(
+  source: string,
+  maxImages = 20,
+): Promise<{ status: string; visuals: VisualAsset[] }> {
+  return requestJson(
+    `/visuals/extract?source=${encodeURIComponent(source)}&max_images=${maxImages}`,
+    { method: "POST" },
+  );
+}
+
+export function uploadImageAsset({
+  file,
+  title,
+  domain,
+  category,
+}: {
+  file: File;
+  title?: string;
+  domain?: string;
+  category?: string;
+}): Promise<{ status: string; asset: VisualAsset }> {
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("title", title || "");
+  formData.set("domain", domain || "research");
+  formData.set("category", category || "uncategorized");
+
+  return requestJson("/upload/image", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export function getAnnotations(
+  source?: string,
+  limit = 100,
+): Promise<{ annotations: Annotation[] }> {
+  const params = new URLSearchParams();
+  if (source) params.set("source", source);
+  params.set("limit", String(limit));
+  return requestJson(`/annotations?${params.toString()}`);
+}
+
+export function createAnnotation(
+  payload: AnnotationPayload,
+): Promise<{ annotation: Annotation }> {
+  return requestJson("/annotations", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAnnotation(
+  annotationId: string,
+): Promise<{ status: string }> {
+  return requestJson(`/annotations/${encodeURIComponent(annotationId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function searchArxivPapers(
+  payload: ArxivSearchPayload,
+): Promise<ArxivSearchResponse> {
+  return requestJson("/crawler/arxiv/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export function ingestUrlPaper(

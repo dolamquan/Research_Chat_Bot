@@ -2,13 +2,15 @@ import {
   CheckCircle2,
   ExternalLink,
   FileText,
+  ImagePlus,
   MessageSquarePlus,
   RefreshCw,
   Search,
   XCircle,
 } from "lucide-react";
+import { useState } from "react";
 
-import { getPdfUrl } from "../api";
+import { getPdfUrl, uploadImageAsset } from "../api";
 import type { Article, IngestionJob } from "../types";
 
 function titleFromSource(source: string): string {
@@ -76,6 +78,10 @@ export function PaperLibraryView({
   onChatWithArticle: (article: Article) => void;
   onRebuildTopology: () => void;
 }) {
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageTitle, setImageTitle] = useState("");
+  const [imageStatus, setImageStatus] = useState("");
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const query = search.trim().toLowerCase();
   const filteredArticles = articles.filter((article) => {
     if (selectedDomain && article.domain !== selectedDomain) return false;
@@ -172,6 +178,76 @@ export function PaperLibraryView({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-5 md:px-8 py-5">
+        <form
+          className="mb-5 rounded border border-border bg-card p-4"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (!imageFile || isUploadingImage) return;
+
+            setIsUploadingImage(true);
+            setImageStatus("Uploading and reading image...");
+
+            try {
+              const result = await uploadImageAsset({
+                file: imageFile,
+                title: imageTitle,
+                domain: selectedDomain || "research",
+                category: selectedCategory || "uncategorized",
+              });
+              setImageFile(null);
+              setImageTitle("");
+              setImageStatus(`Indexed image: ${result.asset.title || result.asset.source}`);
+            } catch (error) {
+              setImageStatus(
+                error instanceof Error
+                  ? `Could not upload image: ${error.message}`
+                  : "Could not upload image.",
+              );
+            } finally {
+              setIsUploadingImage(false);
+            }
+          }}
+        >
+          <div className="flex items-center gap-2">
+            <ImagePlus size={14} className="text-primary" />
+            <p className="text-sm font-semibold text-foreground">
+              Add image or graph
+            </p>
+          </div>
+          <div className="mt-3 grid gap-2 lg:grid-cols-[1fr_1fr_140px]">
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              onChange={(event) => setImageFile(event.target.files?.[0] ?? null)}
+              className="h-10 rounded border border-border bg-background px-3 py-2 text-xs text-muted-foreground file:mr-3 file:border-0 file:bg-primary/10 file:px-2 file:py-1 file:text-primary"
+            />
+            <input
+              value={imageTitle}
+              onChange={(event) => setImageTitle(event.target.value)}
+              placeholder="Optional image title"
+              className="h-10 rounded border border-border bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+            />
+            <button
+              type="submit"
+              disabled={!imageFile || isUploadingImage}
+              className="h-10 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-40"
+            >
+              {isUploadingImage ? "Reading..." : "Upload image"}
+            </button>
+          </div>
+          {imageStatus && (
+            <p
+              className={`mt-2 text-xs ${
+                imageStatus.startsWith("Could not")
+                  ? "text-destructive"
+                  : "text-muted-foreground"
+              }`}
+            >
+              {imageStatus}
+            </p>
+          )}
+        </form>
+
         {activeJobs.length > 0 && (
           <div className="mb-5 rounded border border-primary/25 bg-primary/5">
             <div className="px-4 py-3 border-b border-primary/15 flex items-center gap-2">

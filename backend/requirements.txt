@@ -13,3 +13,5 @@ scikit-learn
 requests
 datasets
 ragas
+PyMuPDF
+python-multipart

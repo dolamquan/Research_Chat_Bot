@@ -35,6 +35,10 @@ def format_retrieved_point(point: Any) -> Dict[str, Any]:
         "summary": payload.get("summary", ""),
         "cluster_id": payload.get("cluster_id"),
         "cluster_label": payload.get("cluster_label"),
+        "asset_id": payload.get("asset_id"),
+        "image_url": payload.get("image_url"),
+        "image_path": payload.get("image_path"),
+        "page": payload.get("page"),
     }
 
 @traceable(name="build_retrieval_filter",run_type="retriever")
