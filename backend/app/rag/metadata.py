@@ -4,6 +4,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
+DEFAULT_DOMAIN = "research"
+DEFAULT_CATEGORY = "uncategorized"
+
+
 ALLOWED_DOCUMENT_TYPES = {
     "research_paper",
     "tutorial",
@@ -83,7 +87,42 @@ def _clean_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
         if str(keyword).strip()
     ]
 
+    title = str(metadata.get("title", "")).strip()
+    url = str(metadata.get("url", "")).strip()
+    abstract = str(metadata.get("abstract", "")).strip()
+    article_id = str(metadata.get("article_id", "")).strip()
+    domain = str(metadata.get("domain", DEFAULT_DOMAIN)).strip().lower()
+    category = str(metadata.get("category", DEFAULT_CATEGORY)).strip().lower()
+
+    tags = metadata.get("tags", [])
+    if not isinstance(tags, list):
+        tags = []
+
+    tags = [
+        str(tag).strip().lower()
+        for tag in tags
+        if str(tag).strip()
+    ]
+
+    authors = metadata.get("authors", [])
+    if not isinstance(authors, list):
+        authors = []
+
+    authors = [
+        str(author).strip()
+        for author in authors
+        if str(author).strip()
+    ]
+
     return {
+        "article_id": article_id,
+        "title": title,
+        "url": url,
+        "abstract": abstract,
+        "authors": authors[:20],
+        "domain": domain or DEFAULT_DOMAIN,
+        "category": category or DEFAULT_CATEGORY,
+        "tags": tags[:12],
         "topic": topic or "unknown",
         "document_type": document_type,
         "section_type": section_type,
@@ -92,7 +131,59 @@ def _clean_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def build_default_metadata(parent_record: Dict[str, Any]) -> Dict[str, Any]:
+def _title_from_source(source: str) -> str:
+    stem = Path(source).stem
+    stem = re.sub(r"^\d{4}\.\d+(?:v\d+)?_", "", stem)
+    stem = stem.replace("_", " ").replace("-", " ")
+    return " ".join(stem.split()).strip()
+
+
+def _article_id_from_source(source: str, document_id: str = "") -> str:
+    source_name = Path(source).name
+    match = re.match(r"^(\d{4}\.\d+(?:v\d+)?)", source_name)
+
+    if match:
+        return f"arxiv:{match.group(1)}"
+
+    return document_id or Path(source).stem
+
+
+def build_article_metadata(
+    source: str,
+    document_id: str = "",
+    article_metadata: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """
+    Build document-level metadata used for domains/categories and article display.
+    """
+    overrides = article_metadata or {}
+
+    return _clean_metadata(
+        {
+            "article_id": overrides.get(
+                "article_id",
+                _article_id_from_source(source, document_id=document_id),
+            ),
+            "title": overrides.get("title", _title_from_source(source)),
+            "url": overrides.get("url", ""),
+            "abstract": overrides.get("abstract", ""),
+            "authors": overrides.get("authors", []),
+            "domain": overrides.get("domain", DEFAULT_DOMAIN),
+            "category": overrides.get("category", DEFAULT_CATEGORY),
+            "tags": overrides.get("tags", []),
+            "topic": overrides.get("topic", Path(source).stem if source else "unknown"),
+            "document_type": overrides.get("document_type", "research_paper"),
+            "section_type": overrides.get("section_type", "unknown"),
+            "keywords": overrides.get("keywords", []),
+            "summary": overrides.get("summary", ""),
+        }
+    )
+
+
+def build_default_metadata(
+    parent_record: Dict[str, Any],
+    article_metadata: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
     """
     Create cheap local metadata without calling an LLM.
 
@@ -100,15 +191,22 @@ def build_default_metadata(parent_record: Dict[str, Any]) -> Dict[str, Any]:
     topic labels can be added later at the cluster level with far fewer LLM calls.
     """
     source = str(parent_record.get("source") or parent_record.get("document_id") or "")
+    document_id = str(parent_record.get("document_id") or "")
     text = str(parent_record.get("text") or "").strip()
     first_sentence = re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0]
+    base_metadata = build_article_metadata(
+        source=source,
+        document_id=document_id,
+        article_metadata=article_metadata,
+    )
 
     return _clean_metadata(
         {
-            "topic": Path(source).stem if source else "unknown",
+            **base_metadata,
+            "topic": base_metadata.get("topic") or Path(source).stem if source else "unknown",
             "document_type": "research_paper",
             "section_type": "unknown",
-            "keywords": [],
+            "keywords": base_metadata.get("keywords", []),
             "summary": first_sentence[:240],
         }
     )
@@ -154,6 +252,7 @@ def tag_parent_records(
     parent_records: List[Dict[str, Any]],
     llm: Any = None,
     use_llm_metadata: bool = False,
+    article_metadata: Dict[str, Any] | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Adds metadata to each parent record.
@@ -167,8 +266,19 @@ def tag_parent_records(
             if llm is None:
                 raise ValueError("llm is required when use_llm_metadata=True")
             metadata = tag_parent_metadata(parent["text"], llm)
+            metadata = {
+                **build_article_metadata(
+                    source=str(parent.get("source") or ""),
+                    document_id=str(parent.get("document_id") or ""),
+                    article_metadata=article_metadata,
+                ),
+                **metadata,
+            }
         else:
-            metadata = build_default_metadata(parent)
+            metadata = build_default_metadata(
+                parent,
+                article_metadata=article_metadata,
+            )
 
         tagged_parent = {
             **parent,
@@ -224,6 +334,14 @@ def build_qdrant_payload(child_record: Dict[str, Any]) -> Dict[str, Any]:
         "parent_index": child_record.get("parent_index"),
         "child_index": child_record["child_index"],
         "source": child_record.get("source"),
+        "article_id": metadata.get("article_id", ""),
+        "title": metadata.get("title", ""),
+        "url": metadata.get("url", ""),
+        "abstract": metadata.get("abstract", ""),
+        "authors": metadata.get("authors", []),
+        "domain": metadata.get("domain", DEFAULT_DOMAIN),
+        "category": metadata.get("category", DEFAULT_CATEGORY),
+        "tags": metadata.get("tags", []),
         "topic": metadata.get("topic", "unknown"),
         "document_type": metadata.get("document_type", "unknown"),
         "section_type": metadata.get("section_type", "unknown"),

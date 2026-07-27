@@ -1,0 +1,91 @@
+{
+  "clusters": [
+    {
+      "cluster_id": 0,
+      "cluster_label": "Test2",
+      "document_count": 1
+    },
+    {
+      "cluster_id": 1,
+      "cluster_label": "Test",
+      "document_count": 2
+    },
+    {
+      "cluster_id": 2,
+      "cluster_label": "Test3",
+      "document_count": 1
+    }
+  ],
+  "documents": [
+    {
+      "document_id": "676b06ae-ba2d-41c6-91aa-fa696d7fbc71",
+      "article_id": "arxiv:2005.11401",
+      "title": "2005.11401",
+      "url": "https://arxiv.org/pdf/2005.11401",
+      "domain": "research",
+      "category": "uncategorized",
+      "tags": [],
+      "source": "2005.11401_2005_11401.pdf",
+      "chunk_count": 227,
+      "cluster_id": 1,
+      "cluster_label": "Test",
+      "x": 0.2305653989315033,
+      "y": 0.4390999674797058
+    },
+    {
+      "document_id": "6357c400-2b02-4292-adad-cf570bd9b79b",
+      "article_id": "arxiv:2005.11401v4",
+      "title": "Test",
+      "url": "https://arxiv.org/abs/2005.11401v4",
+      "domain": "research",
+      "category": "cs.cl",
+      "tags": [
+        "cs.cl",
+        "cs.lg"
+      ],
+      "source": "2005.11401v4_test.pdf",
+      "chunk_count": 227,
+      "cluster_id": 1,
+      "cluster_label": "Test",
+      "x": 0.2305653989315033,
+      "y": 0.43909987807273865
+    },
+    {
+      "document_id": "96df2e60-b7df-49e0-8c68-6e79d1f8cbfd",
+      "article_id": "arxiv:2303.18223v19",
+      "title": "Test3",
+      "url": "https://arxiv.org/abs/2303.18223v19",
+      "domain": "research",
+      "category": "cs.cl",
+      "tags": [
+        "cs.cl",
+        "cs.ai"
+      ],
+      "source": "2303.18223v19_test3.pdf",
+      "chunk_count": 2765,
+      "cluster_id": 2,
+      "cluster_label": "Test3",
+      "x": 0.5388692021369934,
+      "y": -0.7022571563720703
+    },
+    {
+      "document_id": "4065da16-6a50-4768-b865-13bfeff19944",
+      "article_id": "arxiv:2510.12323",
+      "title": "Test2",
+      "url": "https://arxiv.org/pdf/2510.12323",
+      "domain": "research",
+      "category": "uncategorized",
+      "tags": [],
+      "source": "2510.12323_test2.pdf",
+      "chunk_count": 708,
+      "cluster_id": 0,
+      "cluster_label": "Test2",
+      "x": -1.0,
+      "y": -0.17594248056411743
+    }
+  ],
+  "scope": {
+    "domain": "research",
+    "category": null
+  }
+}

@@ -16,14 +16,19 @@ router = APIRouter(prefix="/clusters", tags=["clusters"])
 
 class BuildClustersRequest(BaseModel):
     cluster_count: int | None = Field(default=None, ge=1, le=50)
+    domain: str | None = None
+    category: str | None = None
 
 
 @router.get("")
-def get_clusters() -> Dict[str, Any]:
+def get_clusters(
+    domain: str | None = None,
+    category: str | None = None,
+) -> Dict[str, Any]:
     """
     Return the latest saved document topology and cluster assignments.
     """
-    return load_clusters()
+    return load_clusters(domain=domain, category=category)
 
 
 @router.get("/documents/detail")
@@ -38,13 +43,21 @@ def get_cluster_document_detail(source: str, chunk_limit: int = 5) -> Dict[str, 
 
 
 @router.get("/{cluster_id}/documents")
-def list_cluster_documents(cluster_id: int) -> Dict[str, Any]:
+def list_cluster_documents(
+    cluster_id: int,
+    domain: str | None = None,
+    category: str | None = None,
+) -> Dict[str, Any]:
     """
     Return papers that belong to one selected cluster.
     """
     return {
         "cluster_id": cluster_id,
-        "documents": get_cluster_documents(cluster_id),
+        "documents": get_cluster_documents(
+            cluster_id,
+            domain=domain,
+            category=category,
+        ),
     }
 
 
@@ -54,7 +67,11 @@ def build_clusters(request: BuildClustersRequest) -> Dict[str, Any]:
     Rebuild article-level clusters from the vectors currently stored in Qdrant.
     """
     try:
-        return build_cluster_graph(cluster_count=request.cluster_count)
+        return build_cluster_graph(
+            cluster_count=request.cluster_count,
+            domain=request.domain,
+            category=request.category,
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=500,

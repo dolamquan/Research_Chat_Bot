@@ -12,6 +12,7 @@ from app.rag.vector_store import COLLECTION_NAME, DATA_DIR, get_client
 
 
 CLUSTERS_PATH = DATA_DIR / "clusters.json"
+CLUSTERS_DIR = DATA_DIR / "clusters"
 TITLE_STOPWORDS = {
     "a",
     "an",
@@ -76,6 +77,63 @@ def _as_vector(vector: Any) -> np.ndarray | None:
 
 def _document_key(payload: Dict[str, Any]) -> str:
     return str(payload.get("source") or payload.get("document_id") or "unknown")
+
+
+def _normalize_scope_value(value: str | None) -> str:
+    return str(value or "").strip().lower()
+
+
+def _scope_payload(domain: str | None = None, category: str | None = None) -> Dict[str, str | None]:
+    normalized_domain = _normalize_scope_value(domain)
+    normalized_category = _normalize_scope_value(category)
+
+    return {
+        "domain": normalized_domain or None,
+        "category": normalized_category or None,
+    }
+
+
+def _scope_filter(domain: str | None = None, category: str | None = None) -> Filter | None:
+    scope = _scope_payload(domain=domain, category=category)
+    conditions = []
+
+    if scope["domain"]:
+        conditions.append(
+            FieldCondition(
+                key="domain",
+                match=MatchValue(value=scope["domain"]),
+            )
+        )
+
+    if scope["category"]:
+        conditions.append(
+            FieldCondition(
+                key="category",
+                match=MatchValue(value=scope["category"]),
+            )
+        )
+
+    if not conditions:
+        return None
+
+    return Filter(must=conditions)
+
+
+def _safe_scope_part(value: str | None) -> str:
+    normalized = _normalize_scope_value(value)
+    if not normalized:
+        return "all"
+
+    return re.sub(r"[^a-z0-9._-]+", "_", normalized).strip("_") or "all"
+
+
+def _clusters_path(domain: str | None = None, category: str | None = None) -> Path:
+    scope = _scope_payload(domain=domain, category=category)
+
+    if not scope["domain"] and not scope["category"]:
+        return CLUSTERS_PATH
+
+    return CLUSTERS_DIR / f"{_safe_scope_part(scope['domain'])}__{_safe_scope_part(scope['category'])}.json"
 
 
 def _label_from_sources(sources: List[str]) -> str:
@@ -162,12 +220,16 @@ def _pca_2d(vectors: np.ndarray) -> np.ndarray:
     return coordinates.astype(np.float32)
 
 
-def collect_document_vectors() -> List[Dict[str, Any]]:
+def collect_document_vectors(
+    domain: str | None = None,
+    category: str | None = None,
+) -> List[Dict[str, Any]]:
     client = get_client()
     offset: Any = None
     vectors_by_document: Dict[str, List[np.ndarray]] = defaultdict(list)
     payloads_by_document: Dict[str, Dict[str, Any]] = {}
     chunk_counts: Counter[str] = Counter()
+    scroll_filter = _scope_filter(domain=domain, category=category)
 
     while True:
         points, offset = client.scroll(
@@ -176,6 +238,7 @@ def collect_document_vectors() -> List[Dict[str, Any]]:
             offset=offset,
             with_payload=True,
             with_vectors=True,
+            scroll_filter=scroll_filter,
         )
 
         if not points:
@@ -206,6 +269,12 @@ def collect_document_vectors() -> List[Dict[str, Any]]:
         documents.append(
             {
                 "document_id": payload.get("document_id"),
+                "article_id": payload.get("article_id"),
+                "title": payload.get("title"),
+                "url": payload.get("url"),
+                "domain": payload.get("domain", "research"),
+                "category": payload.get("category", "uncategorized"),
+                "tags": payload.get("tags", []),
                 "source": key,
                 "chunk_count": chunk_counts[key],
                 "vector": averaged_vector,
@@ -216,19 +285,43 @@ def collect_document_vectors() -> List[Dict[str, Any]]:
     return documents
 
 
-def save_clusters(graph: Dict[str, Any]) -> None:
-    CLUSTERS_PATH.write_text(json.dumps(graph, indent=2), encoding="utf-8")
+def save_clusters(
+    graph: Dict[str, Any],
+    domain: str | None = None,
+    category: str | None = None,
+) -> None:
+    path = _clusters_path(domain=domain, category=category)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(graph, indent=2), encoding="utf-8")
 
 
-def load_clusters() -> Dict[str, Any]:
-    if not CLUSTERS_PATH.exists():
-        return {"clusters": [], "documents": []}
+def load_clusters(
+    domain: str | None = None,
+    category: str | None = None,
+) -> Dict[str, Any]:
+    path = _clusters_path(domain=domain, category=category)
 
-    return json.loads(CLUSTERS_PATH.read_text(encoding="utf-8"))
+    if not path.exists():
+        return {
+            "clusters": [],
+            "documents": [],
+            "scope": _scope_payload(domain=domain, category=category),
+            "stale": True,
+        }
+
+    graph = json.loads(path.read_text(encoding="utf-8"))
+    graph.setdefault("scope", _scope_payload(domain=domain, category=category))
+    graph["stale"] = False
+
+    return graph
 
 
-def get_cluster_documents(cluster_id: int) -> List[Dict[str, Any]]:
-    graph = load_clusters()
+def get_cluster_documents(
+    cluster_id: int,
+    domain: str | None = None,
+    category: str | None = None,
+) -> List[Dict[str, Any]]:
+    graph = load_clusters(domain=domain, category=category)
     documents = graph.get("documents", [])
 
     return sorted(
@@ -284,6 +377,12 @@ def get_document_detail(source: str, chunk_limit: int = 5) -> Dict[str, Any]:
                 "parent_index": payload.get("parent_index"),
                 "child_index": payload.get("child_index"),
                 "source": payload.get("source"),
+                "article_id": payload.get("article_id"),
+                "title": payload.get("title"),
+                "url": payload.get("url"),
+                "domain": payload.get("domain", "research"),
+                "category": payload.get("category", "uncategorized"),
+                "tags": payload.get("tags", []),
                 "topic": payload.get("topic", "unknown"),
                 "document_type": payload.get("document_type", "unknown"),
                 "section_type": payload.get("section_type", "unknown"),
@@ -326,12 +425,21 @@ def write_cluster_payloads(documents: List[Dict[str, Any]]) -> None:
         )
 
 
-def build_cluster_graph(cluster_count: int | None = None) -> Dict[str, Any]:
-    documents = collect_document_vectors()
+def build_cluster_graph(
+    cluster_count: int | None = None,
+    domain: str | None = None,
+    category: str | None = None,
+) -> Dict[str, Any]:
+    scope = _scope_payload(domain=domain, category=category)
+    documents = collect_document_vectors(domain=domain, category=category)
 
     if not documents:
-        graph = {"clusters": [], "documents": []}
-        save_clusters(graph)
+        graph = {
+            "clusters": [],
+            "documents": [],
+            "scope": scope,
+        }
+        save_clusters(graph, domain=domain, category=category)
         return graph
 
     vectors = np.vstack([document["vector"] for document in documents])
@@ -364,6 +472,12 @@ def build_cluster_graph(cluster_count: int | None = None) -> Dict[str, Any]:
 
         graph_document = {
             "document_id": document["document_id"],
+            "article_id": document.get("article_id"),
+            "title": document.get("title"),
+            "url": document.get("url"),
+            "domain": document.get("domain", "research"),
+            "category": document.get("category", "uncategorized"),
+            "tags": document.get("tags", []),
             "source": document["source"],
             "chunk_count": int(document["chunk_count"]),
             "cluster_id": cluster_id,
@@ -385,8 +499,9 @@ def build_cluster_graph(cluster_count: int | None = None) -> Dict[str, Any]:
     graph = {
         "clusters": graph_clusters,
         "documents": graph_documents,
+        "scope": scope,
     }
 
-    save_clusters(graph)
+    save_clusters(graph, domain=domain, category=category)
     write_cluster_payloads(graph_documents)
     return graph

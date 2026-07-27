@@ -12,6 +12,9 @@ def main():
         folder_path=str(UPLOAD_FOLDER),
         recreate=True,
         use_llm_metadata=False,
+        domain="research",
+        category="uncategorized",
+        tags=[],
     )
 
     print("Ingestion complete.")

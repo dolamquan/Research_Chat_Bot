@@ -120,6 +120,9 @@ def generate_answer(
     pinned_sources: List[Dict[str, Any]] | None = None,
     cluster_id: int | None = None,
     document_source: str | None = None,
+    domain: str | None = None,
+    category: str | None = None,
+    tags: List[str] | None = None,
 ) -> Dict[str, Any]:
     if llm is None:
         llm = get_llm()
@@ -159,6 +162,9 @@ def generate_answer(
                     limit=retrieval_limit,
                     cluster_id=cluster_id,
                     document_source=document_source,
+                    domain=domain,
+                    category=category,
+                    tags=tags,
                 )
             )
 
@@ -224,6 +230,9 @@ def generate_answer_text(
     pinned_sources: List[Dict[str, Any]] | None = None,
     cluster_id: int | None = None,
     document_source: str | None = None,
+    domain: str | None = None,
+    category: str | None = None,
+    tags: List[str] | None = None,
 ) -> str:
     result = generate_answer(
         query=query,
@@ -238,6 +247,9 @@ def generate_answer_text(
         pinned_sources=pinned_sources or [],
         cluster_id=cluster_id,
         document_source=document_source,
+        domain=domain,
+        category=category,
+        tags=tags,
     )
 
     return result["answer"]

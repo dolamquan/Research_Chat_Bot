@@ -30,6 +30,9 @@ class ChatRequest(BaseModel):
     pinned_sources: List[Dict[str, Any]] = Field(default_factory=list)
     cluster_id: int | None = None
     document_source: str | None = None
+    domain: str | None = None
+    category: str | None = None
+    tags: List[str] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
@@ -82,6 +85,9 @@ def chat(request: ChatRequest) -> ChatResponse:
             pinned_sources=request.pinned_sources,
             cluster_id=request.cluster_id,
             document_source=request.document_source,
+            domain=request.domain,
+            category=request.category,
+            tags=request.tags,
         )
     except Exception as exc:
         raise HTTPException(

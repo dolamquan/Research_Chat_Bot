@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import {
   Bot,
+  BrainCircuit,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   FileText,
   History,
+  Link,
+  Map,
   Menu,
   MessageSquare,
   Network,
   Plus,
+  RefreshCw,
   Search,
   Send,
   User,
@@ -16,23 +22,35 @@ import {
 } from "lucide-react";
 
 import {
+  buildClusters,
   deleteChatSession,
+  getArticleDomains,
+  getArticles,
   getChatSession,
   getChatSessions,
   getClusters,
   getDocumentDetail,
   getHealth,
+  getIngestionJobs,
+  ingestUrlPaper,
+  sendAgentChat,
   sendChat,
 } from "./api";
 import { DocumentReader } from "./components/DocumentReader";
+import { PaperLibraryView } from "./components/PaperLibraryView";
 import { ResearchPanel } from "./components/ResearchPanel";
+import { TopologyExplorer } from "./components/TopologyExplorer";
 import { TopologyPanel } from "./components/TopologyPanel";
 import type {
   Cluster,
   ClusterDocument,
   ClusterGraph,
+  Article,
+  ArticleDomain,
+  ChatHistoryItem,
   ChatSession,
   DocumentDetail,
+  IngestionJob,
   Message,
   Source,
   ContextMode,
@@ -45,7 +63,7 @@ function initialMessage(cluster?: Cluster): Message {
     id: `welcome-${cluster?.cluster_id ?? "all"}`,
     role: "assistant",
     content: cluster
-      ? `You are now exploring **${cluster.cluster_label}**. I will retrieve answers only from the ${cluster.document_count} papers in this cluster. Select an article on the right to read it, or ask a question across the cluster.`
+      ? `You are now exploring **${cluster.cluster_label}**. I will retrieve answers only from this cluster. Select an article on the right to read it, or ask a question across the cluster.`
       : "Welcome to **ResearchMind**. Explore the paper topology to focus on a research cluster, or ask a question across all indexed papers. Every response is grounded in retrieved passages from your collection.",
     timestamp: new Date(),
   };
@@ -58,6 +76,10 @@ function titleFromSource(source: string): string {
     .replace(/[_-]+/g, " ");
 }
 
+function articleTitle(article: Article): string {
+  return article.title || titleFromSource(article.source);
+}
+
 function sourceKey(source: Source): string {
   return [
     source.id,
@@ -65,6 +87,46 @@ function sourceKey(source: Source): string {
     source.page,
     source.text?.slice(0, 100),
   ].join(":");
+}
+
+function scopeLabelFor(domain: string, category: string): string {
+  if (domain && category) return `${domain} / ${category}`;
+  if (domain) return domain;
+  if (category) return category;
+  return "all papers";
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function jobStatusLabel(job: IngestionJob): string {
+  if (job.status === "queued") return "Queued";
+  if (job.status === "running") return job.stage === "downloading" ? "Downloading" : "Indexing";
+  if (job.status === "indexed") return "Indexed";
+  if (job.status === "failed") return "Failed";
+  return job.status;
+}
+
+function jobTitle(job: IngestionJob): string {
+  return job.article_title || job.title || titleFromSource(job.url);
+}
+
+function documentFromArticle(article: Article): ClusterDocument {
+  return {
+    article_id: article.article_id,
+    title: article.title,
+    url: article.url,
+    domain: article.domain,
+    category: article.category,
+    tags: article.tags,
+    source: article.source,
+    chunk_count: 0,
+    cluster_id: -1,
+    cluster_label: article.category || article.domain || "Library",
+    x: 0,
+    y: 0,
+  };
 }
 
 function FormattedText({ content }: { content: string }) {
@@ -154,13 +216,82 @@ export default function App() {
   const [pinnedSources, setPinnedSources] = useState<Source[]>([]);
   const [contextMode, setContextMode] = useState<ContextMode>("retrieval");
   const [input, setInput] = useState("");
+  const [activeView, setActiveView] = useState<"chat" | "library">("chat");
+  const [librarySearch, setLibrarySearch] = useState("");
   const [isTyping, setIsTyping] = useState(false);
+  const [agentMode, setAgentMode] = useState(false);
   const [backendOnline, setBackendOnline] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(
     () => window.innerWidth >= 768,
   );
+  const [sidebarWidth, setSidebarWidth] = useState(380);
   const [loadError, setLoadError] = useState("");
+  const [paperUrl, setPaperUrl] = useState("");
+  const [paperTitle, setPaperTitle] = useState("");
+  const [paperDomain, setPaperDomain] = useState("research");
+  const [paperCategory, setPaperCategory] = useState("");
+  const [paperTags, setPaperTags] = useState("");
+  const [isIngestingPaper, setIsIngestingPaper] = useState(false);
+  const [ingestStatus, setIngestStatus] = useState("");
+  const [addPaperOpen, setAddPaperOpen] = useState(false);
+  const [ingestionJobsOpen, setIngestionJobsOpen] = useState(true);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [topologyScopeOpen, setTopologyScopeOpen] = useState(false);
+  const [recentlyAddedOpen, setRecentlyAddedOpen] = useState(false);
+  const [topologyExplorerOpen, setTopologyExplorerOpen] = useState(false);
+  const [articleDomains, setArticleDomains] = useState<ArticleDomain[]>([]);
+  const [recentArticles, setRecentArticles] = useState<Article[]>([]);
+  const [libraryArticles, setLibraryArticles] = useState<Article[]>([]);
+  const [ingestionJobs, setIngestionJobs] = useState<IngestionJob[]>([]);
+  const [selectedDomain, setSelectedDomain] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [isBuildingTopology, setIsBuildingTopology] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const activeScope = useMemo(
+    () => ({
+      domain: selectedDomain || undefined,
+      category: selectedCategory || undefined,
+    }),
+    [selectedDomain, selectedCategory],
+  );
+
+  const domainOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            ...articleDomains.map((item) => item.domain),
+            ...graph.documents.map((document) => document.domain || ""),
+          ]
+            .filter((value): value is string => Boolean(value))
+            .sort((a, b) => a.localeCompare(b)),
+        ),
+      ),
+    [articleDomains, graph.documents],
+  );
+
+  const categoryOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            ...articleDomains
+              .filter((item) => !selectedDomain || item.domain === selectedDomain)
+              .map((item) => item.category),
+            ...graph.documents
+              .filter(
+                (document) =>
+                  !selectedDomain || document.domain === selectedDomain,
+              )
+              .map((document) => document.category || ""),
+          ]
+            .filter((value): value is string => Boolean(value))
+            .sort((a, b) => a.localeCompare(b)),
+        ),
+      ),
+    [articleDomains, selectedDomain],
+  );
 
   const clusterDocuments = useMemo(() => {
     if (!selectedCluster) return [];
@@ -171,15 +302,68 @@ export default function App() {
       .sort((a, b) => a.source.localeCompare(b.source));
   }, [graph.documents, selectedCluster]);
 
+  const graphSources = useMemo(
+    () => new Set(graph.documents.map((document) => document.source)),
+    [graph.documents],
+  );
+
+  const recentUnmappedArticles = useMemo(
+    () =>
+      recentArticles.filter(
+        (article) => article.status === "indexed" && !graphSources.has(article.source),
+      ),
+    [graphSources, recentArticles],
+  );
+
   useEffect(() => {
     let active = true;
 
-    Promise.all([getHealth(), getClusters()])
+    const refreshArticles = () => {
+      Promise.all([
+        getArticleDomains(),
+        getArticles({ limit: 5 }),
+        getArticles({ limit: 500 }),
+        getIngestionJobs(8),
+      ])
+      .then(([domainsResult, articlesResult, libraryResult, jobsResult]) => {
+        if (!active) return;
+        setArticleDomains(domainsResult.domains);
+        setRecentArticles(articlesResult.articles);
+        setLibraryArticles(libraryResult.articles);
+        setIngestionJobs(jobsResult.jobs);
+      })
+      .catch(() => {
+        if (!active) return;
+        setArticleDomains([]);
+        setRecentArticles([]);
+        setLibraryArticles([]);
+        setIngestionJobs([]);
+      });
+    };
+
+    refreshArticles();
+    const intervalId = window.setInterval(refreshArticles, 6000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    Promise.all([getHealth(), getClusters(activeScope)])
       .then(([, clusterGraph]) => {
         if (!active) return;
         setBackendOnline(true);
         setGraph(clusterGraph);
         setLoadError("");
+        setSelectedCluster(undefined);
+        setSelectedDocument(undefined);
+        setDocumentDetail(undefined);
+        setReaderDocument(undefined);
+        setSources([]);
       })
       .catch((error: Error) => {
         if (!active) return;
@@ -190,7 +374,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [activeScope]);
 
   useEffect(() => {
     let active = true;
@@ -372,6 +556,85 @@ export default function App() {
     );
   }
 
+  async function submitPaperUrl() {
+    const url = paperUrl.trim();
+    if (!url || isIngestingPaper) return;
+
+    setIsIngestingPaper(true);
+    setIngestStatus("Indexing paper...");
+
+    try {
+      const result = await ingestUrlPaper({
+        url,
+        title: paperTitle.trim() || undefined,
+        domain: paperDomain.trim() || "research",
+        category: paperCategory.trim() || "uncategorized",
+        tags: paperTags
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+      });
+
+      setPaperUrl("");
+      setPaperTitle("");
+      setPaperCategory("");
+      setPaperTags("");
+      setBackendOnline(true);
+      setIngestStatus(
+        `Queued ${jobTitle(result.job)} for indexing. Watch the ingestion jobs dashboard for progress.`,
+      );
+      setIngestionJobs((current) => [result.job, ...current].slice(0, 8));
+
+      try {
+        const [domainsResult, articlesResult, libraryResult, jobsResult, clusterGraph] = await Promise.all([
+          getArticleDomains(),
+          getArticles({ limit: 5 }),
+          getArticles({ limit: 500 }),
+          getIngestionJobs(8),
+          getClusters(activeScope),
+        ]);
+        setArticleDomains(domainsResult.domains);
+        setRecentArticles(articlesResult.articles);
+        setLibraryArticles(libraryResult.articles);
+        setIngestionJobs(jobsResult.jobs);
+        setGraph(clusterGraph);
+        setLoadError("");
+      } catch {
+        // The vector index is updated even when the saved topology has not been rebuilt yet.
+      }
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : "The paper could not be indexed.";
+      setIngestStatus(`Could not index paper: ${detail}`);
+    } finally {
+      setIsIngestingPaper(false);
+    }
+  }
+
+  async function rebuildCurrentTopology() {
+    if (isBuildingTopology) return;
+
+    setIsBuildingTopology(true);
+    setLoadError("");
+
+    try {
+      const clusterGraph = await buildClusters(activeScope);
+      setGraph(clusterGraph);
+      setSelectedCluster(undefined);
+      setSelectedDocument(undefined);
+      setDocumentDetail(undefined);
+      setReaderDocument(undefined);
+      setSources([]);
+      setBackendOnline(true);
+    } catch (error) {
+      const detail =
+        error instanceof Error ? error.message : "Topology rebuild failed.";
+      setLoadError(detail);
+    } finally {
+      setIsBuildingTopology(false);
+    }
+  }
+
   async function submitQuestion() {
     const question = input.trim();
     if (!question || isTyping) return;
@@ -389,19 +652,38 @@ export default function App() {
     setIsTyping(true);
 
     try {
-      const result = await sendChat({
+      const chatRequest: {
+        sessionId?: string;
+        question: string;
+        chatHistory: ChatHistoryItem[];
+        pinnedSources: Source[];
+        clusterId?: number;
+        documentSource?: string;
+        domain?: string;
+        category?: string;
+        contextMode: ContextMode;
+      } = {
         sessionId: activeSessionId,
         question,
         chatHistory: history,
         pinnedSources,
         clusterId: selectedCluster?.cluster_id,
         documentSource: selectedDocument?.source,
+        domain: selectedDomain || undefined,
+        category: selectedCategory || undefined,
         contextMode: selectedDocument ? contextMode : "retrieval",
-      });
+      };
+      const result = agentMode
+        ? await sendAgentChat(chatRequest)
+        : await sendChat(chatRequest);
 
       setActiveSessionId(result.session_id);
       void refreshChatSessions();
       setSources(result.sources || []);
+      if (result.topology) {
+        setGraph(result.topology);
+        setTopologyExplorerOpen(true);
+      }
       setMessages((current) => [
         ...current,
         {
@@ -444,9 +726,60 @@ export default function App() {
     }
   }
 
+  function startSidebarResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (window.innerWidth < 768) return;
+
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = sidebarWidth;
+
+    const resize = (moveEvent: PointerEvent) => {
+      const nextWidth = startWidth + moveEvent.clientX - startX;
+      setSidebarWidth(clamp(nextWidth, 300, 560));
+    };
+
+    const stopResize = () => {
+      window.removeEventListener("pointermove", resize);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", resize);
+    window.addEventListener("pointerup", stopResize);
+  }
+
+  function openLibraryArticle(article: Article) {
+    const document = documentFromArticle(article);
+    setSelectedCluster(undefined);
+    setSelectedDocument(document);
+    setReaderDocument(document);
+    setContextMode("retrieval");
+    setActiveView("chat");
+    setSidebarOpen(false);
+  }
+
+  function chatWithLibraryArticle(article: Article) {
+    const document = documentFromArticle(article);
+    setSelectedCluster(undefined);
+    setSelectedDocument(document);
+    setReaderDocument(undefined);
+    setDocumentDetail(undefined);
+    setContextMode("retrieval");
+    setMessages([initialMessage()]);
+    setActiveSessionId(undefined);
+    setSources([]);
+    setPinnedSources([]);
+    setActiveView("chat");
+  }
+
   const scopeLabel = selectedDocument
     ? titleFromSource(selectedDocument.source)
     : selectedCluster?.cluster_label || "All indexed papers";
+  const activeScopeLabel = scopeLabelFor(selectedDomain, selectedCategory);
+  const scopeIsFiltered = Boolean(selectedDomain || selectedCategory);
 
   return (
     <div
@@ -454,9 +787,8 @@ export default function App() {
       style={{ fontFamily: "'Inter', sans-serif" }}
     >
       <aside
-        className={`${
-          sidebarOpen ? "w-80" : "w-0"
-        } fixed md:relative inset-y-0 left-0 z-40 shrink-0 bg-card border-r border-border flex flex-col overflow-hidden transition-[width] duration-200`}
+        className="fixed md:relative inset-y-0 left-0 z-40 shrink-0 bg-card border-r border-border flex flex-col overflow-hidden transition-[width] duration-200"
+        style={{ width: sidebarOpen ? sidebarWidth : 0 }}
       >
         <div className="h-16 px-4 border-b border-border flex items-center gap-3 shrink-0">
           <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
@@ -500,77 +832,409 @@ export default function App() {
               >
                 All Papers
               </p>
-              <p className="font-mono text-[10px] text-muted-foreground">
-                {graph.documents.length} research PDFs
-              </p>
             </div>
           </button>
+
+          <div className="mt-3 rounded border border-border bg-background p-2 space-y-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setTopologyScopeOpen((value) => !value)}
+                className="min-w-0 flex-1 flex items-center gap-2 text-left"
+              >
+                <Network size={12} className="text-primary" />
+                <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Topology scope
+                </span>
+                <span className="ml-auto text-muted-foreground">
+                  {topologyScopeOpen ? (
+                    <ChevronDown size={13} />
+                  ) : (
+                    <ChevronRight size={13} />
+                  )}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDomain("");
+                  setSelectedCategory("");
+                }}
+                className="h-6 px-2 rounded border border-border text-[10px] text-muted-foreground hover:text-primary hover:bg-secondary"
+              >
+                Reset
+              </button>
+            </div>
+
+            {topologyScopeOpen && (
+              <>
+                <select
+                  value={selectedDomain}
+                  onChange={(event) => {
+                    setSelectedDomain(event.target.value);
+                    setSelectedCategory("");
+                  }}
+                  className="w-full h-8 rounded border border-border bg-card px-2 text-xs text-foreground outline-none focus:border-primary/60"
+                >
+                  <option value="">All domains</option>
+                  {domainOptions.map((domain) => (
+                    <option key={domain} value={domain}>
+                      {domain}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={selectedCategory}
+                  onChange={(event) => setSelectedCategory(event.target.value)}
+                  className="w-full h-8 rounded border border-border bg-card px-2 text-xs text-foreground outline-none focus:border-primary/60"
+                >
+                  <option value="">All categories</option>
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void rebuildCurrentTopology()}
+                  disabled={isBuildingTopology}
+                  className="w-full h-8 rounded border border-primary/30 bg-primary/10 text-primary text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <RefreshCw
+                    size={12}
+                    className={isBuildingTopology ? "animate-spin" : ""}
+                  />
+                  {isBuildingTopology ? "Rebuilding..." : "Rebuild scope"}
+                </button>
+              </>
+            )}
+
+            <p className="font-mono text-[10px] text-muted-foreground truncate">
+              Viewing {scopeLabelFor(selectedDomain, selectedCategory)}
+              {graph.stale ? " - not built yet" : ""}
+            </p>
+          </div>
+
+          {recentArticles.length > 0 && (
+            <div className="mt-3 rounded border border-primary/25 bg-primary/5 p-2 space-y-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRecentlyAddedOpen((value) => !value)}
+                  className="min-w-0 flex-1 flex items-center gap-2 text-left"
+                >
+                  <CheckCircle2 size={12} className="text-primary" />
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Recently added
+                  </span>
+                  <span className="ml-auto text-muted-foreground">
+                    {recentlyAddedOpen ? (
+                      <ChevronDown size={13} />
+                    ) : (
+                      <ChevronRight size={13} />
+                    )}
+                  </span>
+                </button>
+                {recentUnmappedArticles.length > 0 && (
+                  <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">
+                    New
+                  </span>
+                )}
+              </div>
+
+              {recentlyAddedOpen && (
+                <>
+                  <div className="space-y-1">
+                    {recentArticles.slice(0, 3).map((article) => {
+                      const mapped = graphSources.has(article.source);
+
+                      return (
+                        <div
+                          key={article.article_id}
+                          className="rounded border border-border bg-background px-2 py-2"
+                        >
+                          <p className="text-xs font-medium text-foreground truncate">
+                            {articleTitle(article)}
+                          </p>
+                          <div className="mt-1 flex items-center gap-2">
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${
+                                article.status === "indexed"
+                                  ? "bg-green-500"
+                                  : "bg-destructive"
+                              }`}
+                            />
+                            <p className="font-mono text-[10px] text-muted-foreground truncate">
+                              {article.status === "indexed"
+                                ? mapped
+                                  ? "In database and topology"
+                                  : "In database - rebuild topology"
+                                : "Index failed"}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {recentUnmappedArticles.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => void rebuildCurrentTopology()}
+                      disabled={isBuildingTopology}
+                      className="w-full h-8 rounded bg-primary text-primary-foreground text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      <RefreshCw
+                        size={12}
+                        className={isBuildingTopology ? "animate-spin" : ""}
+                      />
+                      {isBuildingTopology ? "Rebuilding..." : "Update topology map"}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        <form
+          className="px-3 pb-3 shrink-0 border-b border-border space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitPaperUrl();
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setAddPaperOpen((value) => !value)}
+            className="w-full h-8 px-1 flex items-center gap-2 text-left"
+          >
+            <Link size={12} className="text-primary" />
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Add paper
+            </span>
+            <span className="ml-auto text-muted-foreground">
+              {addPaperOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            </span>
+          </button>
+
+          {addPaperOpen ? (
+            <>
+              <input
+                value={paperUrl}
+                onChange={(event) => setPaperUrl(event.target.value)}
+                placeholder="arXiv or PDF URL"
+                className="w-full h-9 rounded border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+              />
+              <input
+                value={paperTitle}
+                onChange={(event) => setPaperTitle(event.target.value)}
+                placeholder="Title override"
+                className="w-full h-9 rounded border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  value={paperDomain}
+                  onChange={(event) => setPaperDomain(event.target.value)}
+                  placeholder="Domain"
+                  className="h-9 min-w-0 rounded border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                />
+                <input
+                  value={paperCategory}
+                  onChange={(event) => setPaperCategory(event.target.value)}
+                  placeholder="Category"
+                  className="h-9 min-w-0 rounded border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                />
+              </div>
+              <input
+                value={paperTags}
+                onChange={(event) => setPaperTags(event.target.value)}
+                placeholder="tags, comma-separated"
+                className="w-full h-9 rounded border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+              />
+              <button
+                type="submit"
+                disabled={!paperUrl.trim() || isIngestingPaper}
+                className="w-full h-9 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-40"
+              >
+                {isIngestingPaper ? "Indexing..." : "Add to database"}
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setAddPaperOpen(true)}
+              className="w-full h-9 rounded border border-border bg-background px-2 text-left text-xs text-muted-foreground hover:bg-secondary"
+            >
+              Capture arXiv or PDF URL
+            </button>
+          )}
+
+          {ingestStatus && (
+            <p
+              className={`px-1 text-[11px] leading-relaxed ${
+                ingestStatus.startsWith("Could not")
+                  ? "text-destructive"
+                  : "text-muted-foreground"
+              }`}
+            >
+              {ingestStatus}
+            </p>
+          )}
+        </form>
+
+        <div className="px-3 pb-3 shrink-0 border-b border-border">
+          <div className="h-8 px-1 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIngestionJobsOpen((value) => !value)}
+              className="min-w-0 flex-1 flex items-center gap-2 text-left"
+            >
+              <CheckCircle2 size={12} className="text-primary" />
+              <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                Ingestion jobs
+              </span>
+              {ingestionJobs.some((job) => job.status === "queued" || job.status === "running") && (
+                <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">
+                  Active
+                </span>
+              )}
+              <span className="ml-auto text-muted-foreground">
+                {ingestionJobsOpen ? (
+                  <ChevronDown size={13} />
+                ) : (
+                  <ChevronRight size={13} />
+                )}
+              </span>
+            </button>
+          </div>
+
+          {ingestionJobsOpen && (
+            <div className="space-y-1.5">
+              {ingestionJobs.length === 0 ? (
+                <p className="px-1 py-2 text-xs text-muted-foreground">
+                  Added papers will appear here.
+                </p>
+              ) : (
+                ingestionJobs.slice(0, 5).map((job) => {
+                  const active = job.status === "queued" || job.status === "running";
+                  const failed = job.status === "failed";
+
+                  return (
+                    <div
+                      key={job.job_id}
+                      className="rounded border border-border bg-background px-2 py-2"
+                    >
+                      <div className="flex items-start gap-2">
+                        <span
+                          className={`mt-1.5 w-1.5 h-1.5 shrink-0 rounded-full ${
+                            failed
+                              ? "bg-destructive"
+                              : active
+                                ? "bg-primary animate-pulse"
+                                : "bg-green-500"
+                          }`}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium text-foreground truncate">
+                            {jobTitle(job)}
+                          </p>
+                          <p
+                            className={`mt-0.5 font-mono text-[10px] ${
+                              failed ? "text-destructive" : "text-muted-foreground"
+                            }`}
+                          >
+                            {jobStatusLabel(job)}
+                          </p>
+                          <p className="mt-1 text-[11px] leading-snug text-muted-foreground line-clamp-2">
+                            {failed ? job.error || job.message : job.message}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
 
         <div className="px-3 pb-3 shrink-0 border-b border-border">
-          <div className="flex items-center gap-2 px-1 mb-2">
-            <History size={12} className="text-primary" />
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              Past chats
-            </p>
+          <div className="h-8 px-1 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((value) => !value)}
+              className="min-w-0 flex-1 flex items-center gap-2 text-left"
+            >
+              <History size={12} className="text-primary" />
+              <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                Past chats
+              </span>
+              <span className="ml-auto text-muted-foreground">
+                {historyOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              </span>
+            </button>
             <button
               type="button"
               title="Start new chat"
               onClick={startNewChat}
-              className="ml-auto w-6 h-6 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-secondary"
+              className="w-6 h-6 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-secondary"
             >
               <Plus size={12} />
             </button>
           </div>
 
-          <div className="max-h-36 overflow-y-auto space-y-1">
-            {chatSessions.length === 0 ? (
-              <p className="px-1 py-2 text-[11px] text-muted-foreground">
-                No saved chats yet.
-              </p>
-            ) : (
-              chatSessions.slice(0, 8).map((session) => {
-                const active = activeSessionId === session.id;
+          {historyOpen && (
+            <div className="max-h-36 overflow-y-auto space-y-1">
+              {chatSessions.length === 0 ? (
+                <p className="px-1 py-2 text-[11px] text-muted-foreground">
+                  No saved chats yet.
+                </p>
+              ) : (
+                chatSessions.slice(0, 8).map((session) => {
+                  const active = activeSessionId === session.id;
 
-                return (
-                  <div
-                    key={session.id}
-                    className={`group flex items-center gap-1 rounded border ${
-                      active
-                        ? "border-primary/35 bg-primary/10"
-                        : "border-transparent hover:border-border hover:bg-secondary"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => void loadChatSession(session.id)}
-                      className="min-w-0 flex-1 px-2 py-2 text-left flex items-center gap-2"
+                  return (
+                    <div
+                      key={session.id}
+                      className={`group flex items-center gap-1 rounded border ${
+                        active
+                          ? "border-primary/35 bg-primary/10"
+                          : "border-transparent hover:border-border hover:bg-secondary"
+                      }`}
                     >
-                      <MessageSquare
-                        size={12}
-                        className={active ? "text-primary" : "text-muted-foreground"}
-                      />
-                      <span
-                        className={`min-w-0 truncate text-[11px] ${
-                          active ? "text-primary" : "text-foreground"
-                        }`}
+                      <button
+                        type="button"
+                        onClick={() => void loadChatSession(session.id)}
+                        className="min-w-0 flex-1 px-2 py-2 text-left flex items-center gap-2"
                       >
-                        {session.title}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      title="Delete chat"
-                      onClick={() => void removeChatSession(session.id)}
-                      className="mr-1 w-6 h-6 rounded flex items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
-                    >
-                      <X size={11} />
-                    </button>
-                  </div>
-                );
-              })
-            )}
-          </div>
+                        <MessageSquare
+                          size={12}
+                          className={active ? "text-primary" : "text-muted-foreground"}
+                        />
+                        <span
+                          className={`min-w-0 truncate text-[11px] ${
+                            active ? "text-primary" : "text-foreground"
+                          }`}
+                        >
+                          {session.title}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete chat"
+                        onClick={() => void removeChatSession(session.id)}
+                        className="mr-1 w-6 h-6 rounded flex items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
         </div>
 
         <TopologyPanel
@@ -578,6 +1242,15 @@ export default function App() {
           selectedCluster={selectedCluster}
           onSelectCluster={chooseCluster}
           onClear={clearCluster}
+          onExpand={() => setTopologyExplorerOpen(true)}
+        />
+
+        <button
+          type="button"
+          title="Resize sidebar"
+          aria-label="Resize sidebar"
+          onPointerDown={startSidebarResize}
+          className="hidden md:block absolute top-0 right-0 h-full w-2 cursor-col-resize bg-transparent hover:bg-primary/20 active:bg-primary/30"
         />
       </aside>
 
@@ -591,7 +1264,7 @@ export default function App() {
       )}
 
       <main className="w-full min-w-0 flex-1 flex flex-col overflow-x-hidden">
-        <header className="h-12 px-4 border-b border-border bg-card flex items-center gap-3 shrink-0">
+        <header className="h-12 px-4 border-b border-border bg-card flex items-center gap-3 shrink-0 overflow-x-auto">
           <button
             type="button"
             title={sidebarOpen ? "Collapse topology" : "Open topology"}
@@ -612,10 +1285,63 @@ export default function App() {
                   ? "Whole-paper context"
                   : "Article-only retrieval"
                 : selectedCluster
-                  ? `${selectedCluster.document_count} paper cluster`
-                  : "Full collection retrieval"}
+                  ? "Cluster retrieval"
+                  : scopeIsFiltered
+                    ? `${activeScopeLabel} retrieval`
+                    : "Full collection retrieval"}
             </p>
           </div>
+          <div className="flex h-8 shrink-0 rounded border border-border bg-background p-0.5">
+            <button
+              type="button"
+              onClick={() => setActiveView("chat")}
+              className={`px-3 rounded text-xs ${
+                activeView === "chat"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Chat
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("library")}
+              className={`px-3 rounded text-xs ${
+                activeView === "library"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Paper Library
+            </button>
+          </div>
+          {activeView === "chat" && (
+            <button
+              type="button"
+              onClick={() => setTopologyExplorerOpen((value) => !value)}
+              className={`h-8 px-3 rounded border text-xs flex items-center gap-2 ${
+                topologyExplorerOpen
+                  ? "border-primary/35 bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+              }`}
+            >
+              <Map size={13} />
+              {topologyExplorerOpen ? "Chat" : "Topology"}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setAgentMode((value) => !value)}
+            title="Toggle LangGraph agent mode"
+            className={`h-8 px-3 rounded border text-xs flex items-center gap-2 ${
+              agentMode
+                ? "border-primary/35 bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
+            }`}
+          >
+            <BrainCircuit size={13} />
+            {agentMode ? "Agent" : "RAG"}
+          </button>
           <div className="ml-auto hidden sm:flex items-center gap-2">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
@@ -628,36 +1354,77 @@ export default function App() {
           </div>
         </header>
 
-        <div className="flex-1 min-h-0 overflow-y-auto px-5 md:px-8 py-6 space-y-6">
-          {loadError && (
-            <div className="max-w-3xl mx-auto border border-destructive/40 bg-destructive/10 rounded px-4 py-3 text-xs text-destructive">
-              Topology could not be loaded: {loadError}
-            </div>
-          )}
-          <div className="max-w-3xl mx-auto space-y-6">
-            {messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
-            ))}
-            {isTyping && (
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded bg-secondary border border-border flex items-center justify-center text-primary">
-                  <Bot size={14} />
+        <div
+          className={`flex-1 min-h-0 px-5 md:px-8 py-6 ${
+            activeView === "library"
+              ? "overflow-hidden p-0"
+              : topologyExplorerOpen
+                ? "overflow-hidden"
+                : "overflow-y-auto space-y-6"
+          }`}
+        >
+          {activeView === "library" ? (
+            <PaperLibraryView
+              articles={libraryArticles}
+              ingestionJobs={ingestionJobs}
+              domainOptions={domainOptions}
+              categoryOptions={categoryOptions}
+              selectedDomain={selectedDomain}
+              selectedCategory={selectedCategory}
+              search={librarySearch}
+              isBuildingTopology={isBuildingTopology}
+              onSearchChange={setLibrarySearch}
+              onDomainChange={(domain) => {
+                setSelectedDomain(domain);
+                setSelectedCategory("");
+              }}
+              onCategoryChange={setSelectedCategory}
+              onOpenArticle={openLibraryArticle}
+              onChatWithArticle={chatWithLibraryArticle}
+              onRebuildTopology={() => void rebuildCurrentTopology()}
+            />
+          ) : topologyExplorerOpen ? (
+            <TopologyExplorer
+              graph={graph}
+              selectedCluster={selectedCluster}
+              onSelectCluster={chooseCluster}
+              onClear={clearCluster}
+              onClose={() => setTopologyExplorerOpen(false)}
+            />
+          ) : (
+            <>
+              {loadError && (
+                <div className="max-w-3xl mx-auto border border-destructive/40 bg-destructive/10 rounded px-4 py-3 text-xs text-destructive">
+                  Topology could not be loaded: {loadError}
                 </div>
-                <div className="bg-card border border-border rounded-lg px-4 py-3 flex items-center gap-1.5">
-                  {[0, 150, 300].map((delay) => (
-                    <span
-                      key={delay}
-                      className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce"
-                      style={{ animationDelay: `${delay}ms` }}
-                    />
-                  ))}
-                </div>
+              )}
+              <div className="max-w-3xl mx-auto space-y-6">
+                {messages.map((message) => (
+                  <MessageBubble key={message.id} message={message} />
+                ))}
+                {isTyping && (
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded bg-secondary border border-border flex items-center justify-center text-primary">
+                      <Bot size={14} />
+                    </div>
+                    <div className="bg-card border border-border rounded-lg px-4 py-3 flex items-center gap-1.5">
+                      {[0, 150, 300].map((delay) => (
+                        <span
+                          key={delay}
+                          className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce"
+                          style={{ animationDelay: `${delay}ms` }}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div ref={bottomRef} />
               </div>
-            )}
-            <div ref={bottomRef} />
-          </div>
+            </>
+          )}
         </div>
 
+        {activeView === "chat" && (
         <div className="border-t border-border bg-card p-4 shrink-0">
           <div className="w-full min-w-0 max-w-[calc(100vw_-_2rem)] md:max-w-3xl mx-auto">
             {pinnedSources.length > 0 && (
@@ -716,14 +1483,15 @@ export default function App() {
             <div className="mt-2 px-1 flex items-center gap-2">
               <CheckCircle2 size={11} className="text-primary" />
               <p className="font-mono text-[10px] text-muted-foreground truncate">
-                Grounded retrieval · {scopeLabel}
+                {agentMode ? "LangGraph agent" : "Grounded retrieval"} - {scopeLabel}
               </p>
             </div>
           </div>
         </div>
+        )}
       </main>
 
-      {readerDocument ? (
+      {activeView === "chat" && readerDocument ? (
         <DocumentReader
           document={readerDocument}
           onClose={() => setReaderDocument(undefined)}
@@ -731,7 +1499,7 @@ export default function App() {
             pinSource(source);
           }}
         />
-      ) : (
+      ) : activeView === "chat" ? (
         <ResearchPanel
           selectedCluster={selectedCluster}
           documents={clusterDocuments}
@@ -749,7 +1517,7 @@ export default function App() {
           }}
           onPinSource={pinSource}
         />
-      )}
+      ) : null}
     </div>
   );
 }

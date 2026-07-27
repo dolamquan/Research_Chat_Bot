@@ -6,6 +6,7 @@ sentence-transformers
 langchain
 langchain-community
 langchain-openai
+langgraph
 pypdf
 numpy
 scikit-learn

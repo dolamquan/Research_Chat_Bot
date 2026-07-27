@@ -1,4 +1,4 @@
-import { ChevronRight, Network, RotateCcw } from "lucide-react";
+import { ChevronRight, Maximize2, Network, RotateCcw } from "lucide-react";
 
 import type { Cluster, ClusterDocument, ClusterGraph } from "../types";
 
@@ -27,11 +27,13 @@ export function TopologyPanel({
   selectedCluster,
   onSelectCluster,
   onClear,
+  onExpand,
 }: {
   graph: ClusterGraph;
   selectedCluster?: Cluster;
   onSelectCluster: (cluster: Cluster) => void;
   onClear: () => void;
+  onExpand: () => void;
 }) {
   const size = 280;
   const padding = 18;
@@ -42,16 +44,21 @@ export function TopologyPanel({
         <Network size={14} className="text-primary" />
         <div className="min-w-0">
           <h2 className="text-xs font-semibold text-foreground">Paper Topology</h2>
-          <p className="font-mono text-[10px] text-muted-foreground">
-            {graph.documents.length} papers · {graph.clusters.length} clusters
-          </p>
         </div>
+        <button
+          type="button"
+          title="Open large topology view"
+          onClick={onExpand}
+          className="ml-auto w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary"
+        >
+          <Maximize2 size={13} />
+        </button>
         {selectedCluster && (
           <button
             type="button"
             title="Clear cluster selection"
             onClick={onClear}
-            className="ml-auto w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary"
+            className="w-7 h-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary"
           >
             <RotateCcw size={13} />
           </button>
@@ -124,9 +131,6 @@ export function TopologyPanel({
                 className={`text-xs truncate ${active ? "text-primary" : "text-foreground"}`}
               >
                 {cluster.cluster_label}
-              </span>
-              <span className="font-mono text-[10px] text-muted-foreground ml-auto">
-                {cluster.document_count}
               </span>
               <ChevronRight size={11} className="text-muted-foreground" />
             </button>

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-from app.routes import chat, clusters, documents, evaluate, upload
+from app.routes import agent_chat, articles, chat, clusters, documents, evaluate, ingest, upload
 
 
 load_dotenv()
@@ -22,9 +22,12 @@ app.add_middleware(
 )
 
 app.include_router(chat.router)
+app.include_router(agent_chat.router)
+app.include_router(articles.router)
 app.include_router(clusters.router)
 app.include_router(documents.router)
 app.include_router(evaluate.router)
+app.include_router(ingest.router)
 app.include_router(upload.router)
 
 

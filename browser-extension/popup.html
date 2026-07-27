@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ResearchMind Capture</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mark">R</div>
+        <div>
+          <h1>ResearchMind</h1>
+          <p>Add this paper to your local index</p>
+        </div>
+      </header>
+
+      <label>
+        Paper URL
+        <input id="url" autocomplete="off" />
+      </label>
+
+      <label>
+        Title
+        <input id="title" autocomplete="off" />
+      </label>
+
+      <div class="grid">
+        <label>
+          Domain
+          <input id="domain" value="research" autocomplete="off" />
+        </label>
+        <label>
+          Category
+          <input id="category" placeholder="optional" autocomplete="off" />
+        </label>
+      </div>
+
+      <label>
+        Tags
+        <input id="tags" placeholder="rag, retrieval, llm" autocomplete="off" />
+      </label>
+
+      <button id="submit" type="button">Add to database</button>
+      <section id="success" class="success" hidden>
+        <div class="success-icon">OK</div>
+        <div>
+          <h2>Paper added</h2>
+          <p id="success-title"></p>
+          <p class="success-note">Open ResearchMind and update the topology map when you are ready.</p>
+        </div>
+      </section>
+      <p id="status" role="status"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

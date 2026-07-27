@@ -22,6 +22,12 @@ def format_retrieved_point(point: Any) -> Dict[str, Any]:
         "parent_index": payload.get("parent_index"),
         "child_index": payload.get("child_index"),
         "source": payload.get("source"),
+        "article_id": payload.get("article_id"),
+        "title": payload.get("title"),
+        "url": payload.get("url"),
+        "domain": payload.get("domain", "research"),
+        "category": payload.get("category", "uncategorized"),
+        "tags": payload.get("tags", []),
         "topic": payload.get("topic", "unknown"),
         "document_type": payload.get("document_type", "unknown"),
         "section_type": payload.get("section_type", "unknown"),
@@ -35,6 +41,9 @@ def format_retrieved_point(point: Any) -> Dict[str, Any]:
 def build_retrieval_filter(
     cluster_id: int | None = None,
     document_source: str | None = None,
+    domain: str | None = None,
+    category: str | None = None,
+    tags: List[str] | None = None,
 ) -> Filter | None:
     conditions = []
 
@@ -54,6 +63,30 @@ def build_retrieval_filter(
             )
         )
 
+    if domain:
+        conditions.append(
+            FieldCondition(
+                key="domain",
+                match=MatchValue(value=domain),
+            )
+        )
+
+    if category:
+        conditions.append(
+            FieldCondition(
+                key="category",
+                match=MatchValue(value=category),
+            )
+        )
+
+    for tag in tags or []:
+        conditions.append(
+            FieldCondition(
+                key="tags",
+                match=MatchValue(value=tag),
+            )
+        )
+
     if not conditions:
         return None
 
@@ -66,6 +99,9 @@ def retrieve(
     limit: int = 10,
     cluster_id: int | None = None,
     document_source: str | None = None,
+    domain: str | None = None,
+    category: str | None = None,
+    tags: List[str] | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Embed the query, search for similar vectors in the vector store, and return formatted results.
@@ -77,6 +113,9 @@ def retrieve(
         query_filter=build_retrieval_filter(
             cluster_id=cluster_id,
             document_source=document_source,
+            domain=domain,
+            category=category,
+            tags=tags,
         ),
     )
     return [
@@ -88,6 +127,9 @@ def retrieve(
 def retrieve_document_chunks(
     document_source: str,
     limit: int = 500,
+    domain: str | None = None,
+    category: str | None = None,
+    tags: List[str] | None = None,
 ) -> List[Dict[str, Any]]:
     """
     Fetch chunks from one document directly, in document order.
@@ -103,7 +145,12 @@ def retrieve_document_chunks(
             offset=offset,
             with_payload=True,
             with_vectors=False,
-            scroll_filter=build_retrieval_filter(document_source=document_source),
+            scroll_filter=build_retrieval_filter(
+                document_source=document_source,
+                domain=domain,
+                category=category,
+                tags=tags,
+            ),
         )
 
         if not points:

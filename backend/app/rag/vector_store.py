@@ -123,16 +123,22 @@ def index_pdf(
     pdf_path: str,
     llm: Any = None,
     use_llm_metadata: bool = False,
+    article_metadata: Dict[str, Any] | None = None,
+    ensure_collection: bool = True,
 ) -> None:
     """
     Load one PDF, chunk it, attach metadata, embed children, and store in Qdrant.
     """
+    if ensure_collection:
+        create_collection(recreate=False)
+
     parent_records, child_records = load_and_chunk_pdf(pdf_path)
 
     parent_records = tag_parent_records(
         parent_records,
         llm=llm,
         use_llm_metadata=use_llm_metadata,
+        article_metadata=article_metadata,
     )
 
     child_records = attach_parent_metadata_to_children(
@@ -148,6 +154,9 @@ def index_folder(
     llm: Any = None,
     recreate: bool = False,
     use_llm_metadata: bool = False,
+    domain: str = "research",
+    category: str = "uncategorized",
+    tags: List[str] | None = None,
 ) -> None:
     """
     Index every PDF in a folder.
@@ -161,6 +170,12 @@ def index_folder(
             str(pdf_path),
             llm=llm,
             use_llm_metadata=use_llm_metadata,
+            article_metadata={
+                "domain": domain,
+                "category": category,
+                "tags": tags or [],
+            },
+            ensure_collection=False,
         )
 
 @traceable(name="retrieve", run_type="retriever")

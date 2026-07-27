@@ -59,9 +59,6 @@ export function ResearchPanel({
         <h2 className="text-sm font-semibold text-foreground">
           {selectedCluster ? "Cluster Articles" : "Retrieved Sources"}
         </h2>
-        <span className="ml-auto font-mono text-[10px] text-muted-foreground">
-          {selectedCluster ? documents.length : sources.length}
-        </span>
       </div>
 
       {selectedCluster ? (

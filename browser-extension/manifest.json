@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "ResearchMind Paper Capture",
+  "version": "0.1.0",
+  "description": "Send the current arXiv or PDF page to a local ResearchMind database.",
+  "permissions": ["activeTab", "storage", "tabs"],
+  "host_permissions": [
+    "http://127.0.0.1:8002/*",
+    "http://localhost:8002/*"
+  ],
+  "action": {
+    "default_title": "Add paper to ResearchMind",
+    "default_popup": "popup.html"
+  }
+}

@@ -175,9 +175,11 @@ def load_and_chunk_pdf(file_path):
         doc.page_content
         for doc in documents
     )
+    source = Path(file_path).name
+    document_id = str(uuid4())
 
     return parent_child_chunks(
         document_text=full_text,
-        document_id=str(uuid4()),
-        source=Path(file_path).name,
+        document_id=document_id,
+        source=source,
     )
