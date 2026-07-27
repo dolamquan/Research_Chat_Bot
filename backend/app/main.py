@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from dotenv import load_dotenv
 
 from app.routes import chat, clusters, documents, evaluate, upload
 
+
+load_dotenv()
 
 app = FastAPI(
     title="Mini Chatbot API",

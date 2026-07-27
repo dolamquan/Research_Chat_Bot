@@ -5,6 +5,8 @@ from qdrant_client.models import FieldCondition, Filter, MatchValue
 from app.rag.embedder import embed_text
 from app.rag.vector_store import COLLECTION_NAME, get_client, search_vectors
 
+from langsmith import traceable
+
 def format_retrieved_point(point: Any) -> Dict[str, Any]:
     """
     Convert a Qdrant result point into a cleaner dictionary.
@@ -29,7 +31,7 @@ def format_retrieved_point(point: Any) -> Dict[str, Any]:
         "cluster_label": payload.get("cluster_label"),
     }
 
-
+@traceable(name="build_retrieval_filter",run_type="retriever")
 def build_retrieval_filter(
     cluster_id: int | None = None,
     document_source: str | None = None,
@@ -58,6 +60,7 @@ def build_retrieval_filter(
     return Filter(must=conditions)
 
 
+@traceable(name="retrieve_chunks", run_type="retriever")
 def retrieve(
     query: str,
     limit: int = 10,
@@ -81,7 +84,7 @@ def retrieve(
         for point in points
     ]
 
-
+@traceable(name="retrieve_document_chunks",run_type="retriever")
 def retrieve_document_chunks(
     document_source: str,
     limit: int = 500,

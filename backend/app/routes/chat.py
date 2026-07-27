@@ -1,6 +1,7 @@
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
+from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from app.rag.generator import generate_answer
@@ -45,6 +46,7 @@ class ChatSessionCreateRequest(BaseModel):
 
 
 @router.post("", response_model=ChatResponse)
+@traceable(name="chat", run_type="chain")
 def chat(request: ChatRequest) -> ChatResponse:
     """
     Answer a user question using the indexed document collection.

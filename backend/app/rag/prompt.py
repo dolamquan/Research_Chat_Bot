@@ -1,5 +1,7 @@
 from typing import Any, Dict, List
 
+from langsmith import traceable
+
 
 SYSTEM_INSTRUCTIONS = """
 You are a helpful research assistant for a document-based chatbot.
@@ -49,7 +51,7 @@ text:
 {text}
 """.strip()
 
-
+@traceable(name="format_chunk", run_type="prompt")
 def format_context(chunks: List[Dict[str, Any]], label: str = "Retrieved source") -> str:
     """
     Format retrieved/reranked chunks into one context block.

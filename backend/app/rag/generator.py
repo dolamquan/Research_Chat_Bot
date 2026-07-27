@@ -2,8 +2,11 @@ from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
+from langsmith import traceable
 
 from app.rag.prompt import build_no_context_response, build_rag_prompt
+from app.rag.query_decomposer import decompose_query_for_retrieval
+from app.rag.query_rewriter import rewrite_query_for_retrieval
 from app.rag.reranker import rerank_chunks, rerank_chunks_parallel
 from app.rag.retriever import retrieve, retrieve_document_chunks
 
@@ -17,22 +20,17 @@ MAX_WHOLE_DOCUMENT_CHARS = 100_000
 
 
 def _source_key(source: Dict[str, Any]) -> str:
-    """
-    Build a stable key so selected sources and retrieved chunks are not duplicated.
-    """
     return str(
         source.get("id")
         or f"{source.get('document_id', 'doc')}:{source.get('parent_id', 'parent')}:{source.get('child_index', 0)}"
     )
 
 
+@traceable(name="merge_sources", run_type="chain")
 def _merge_sources(
     selected_sources: List[Dict[str, Any]],
     retrieved_sources: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """
-    Put user-selected sources first, then append retrieved sources not already present.
-    """
     merged: List[Dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -48,10 +46,28 @@ def _merge_sources(
     return merged
 
 
+@traceable(name="deduplicate_chunks", run_type="chain")
+def _deduplicate_chunks(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Remove duplicate chunks after multi-query retrieval while preserving order.
+    """
+    unique_chunks: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for chunk in chunks:
+        key = _source_key(chunk)
+
+        if key in seen:
+            continue
+
+        unique_chunks.append(chunk)
+        seen.add(key)
+
+    return unique_chunks
+
+
+@traceable(name="trim_whole_document_context", run_type="chain")
 def _trim_whole_document_context(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Keep document-order chunks until the prompt budget is reached.
-    """
     trimmed = []
     total_chars = 0
 
@@ -70,9 +86,6 @@ def _trim_whole_document_context(chunks: List[Dict[str, Any]]) -> List[Dict[str,
 
 
 def get_llm(model: str = DEFAULT_MODEL, temperature: float = 0) -> ChatOpenAI:
-    """
-    Create the chat model used for reranking and final answer generation.
-    """
     load_dotenv()
 
     return ChatOpenAI(
@@ -82,14 +95,18 @@ def get_llm(model: str = DEFAULT_MODEL, temperature: float = 0) -> ChatOpenAI:
 
 
 def _get_llm_text(response: Any) -> str:
-    """
-    Supports LangChain AIMessage objects and plain string responses.
-    """
     if hasattr(response, "content"):
         return response.content
     return str(response)
 
 
+@traceable(name="call_answer_llm", run_type="llm")
+def call_answer_llm(llm: Any, prompt: str) -> str:
+    response = llm.invoke(prompt)
+    return _get_llm_text(response).strip()
+
+
+@traceable(name="generate_answer", run_type="chain")
 def generate_answer(
     query: str,
     llm: Any = None,
@@ -104,14 +121,12 @@ def generate_answer(
     cluster_id: int | None = None,
     document_source: str | None = None,
 ) -> Dict[str, Any]:
-    """
-    Run the full RAG answer flow for one user query.
-    """
     if llm is None:
         llm = get_llm()
 
     selected_sources = pinned_sources or []
     use_whole_document = context_mode == "whole_document" and bool(document_source)
+    retrieval_query = query
 
     if use_whole_document:
         retrieved_chunks = retrieve_document_chunks(
@@ -119,12 +134,35 @@ def generate_answer(
             limit=MAX_WHOLE_DOCUMENT_CHUNKS,
         )
     else:
-        retrieved_chunks = retrieve(
-            query,
-            limit=retrieval_limit,
+        retrieval_query = rewrite_query_for_retrieval(
+            query=query,
+            llm=llm,
+            chat_history=chat_history or [],
+            pinned_sources=selected_sources,
+            cluster_id=cluster_id,
+            document_source=document_source,
+            context_mode=context_mode,
+        )
+        retrieval_queries = decompose_query_for_retrieval(
+            query=retrieval_query,
+            llm=llm,
+            context_mode=context_mode,
             cluster_id=cluster_id,
             document_source=document_source,
         )
+        retrieved_chunks = []
+
+        for current_query in retrieval_queries:
+            retrieved_chunks.extend(
+                retrieve(
+                    current_query,
+                    limit=retrieval_limit,
+                    cluster_id=cluster_id,
+                    document_source=document_source,
+                )
+            )
+
+        retrieved_chunks = _deduplicate_chunks(retrieved_chunks)
 
     if not retrieved_chunks and not selected_sources:
         return {
@@ -137,14 +175,14 @@ def generate_answer(
     elif use_reranking and retrieved_chunks:
         if parallel_reranking:
             retrieved_context = rerank_chunks_parallel(
-                query=query,
+                query=retrieval_query,
                 chunks=retrieved_chunks,
                 top_n=context_limit,
                 max_workers=rerank_workers,
             )
         else:
             retrieved_context = rerank_chunks(
-                query=query,
+                query=retrieval_query,
                 chunks=retrieved_chunks,
                 top_n=context_limit,
             )
@@ -163,8 +201,8 @@ def generate_answer(
         pinned_sources=selected_sources,
         context_label="Whole paper chunk" if use_whole_document else "Retrieved source",
     )
-    response = llm.invoke(prompt)
-    answer = _get_llm_text(response).strip()
+
+    answer = call_answer_llm(llm=llm, prompt=prompt)
 
     return {
         "answer": answer,
@@ -172,6 +210,7 @@ def generate_answer(
     }
 
 
+@traceable(name="generate_answer_text", run_type="chain")
 def generate_answer_text(
     query: str,
     llm: Any = None,
@@ -186,9 +225,6 @@ def generate_answer_text(
     cluster_id: int | None = None,
     document_source: str | None = None,
 ) -> str:
-    """
-    Convenience wrapper when the caller only needs the answer string.
-    """
     result = generate_answer(
         query=query,
         llm=llm,

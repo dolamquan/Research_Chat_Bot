@@ -1,5 +1,6 @@
 from typing import Any, Dict, List
 
+from langsmith import traceable
 import torch
 from sentence_transformers import CrossEncoder
 
@@ -28,7 +29,7 @@ def get_model() -> CrossEncoder:
 
     return _model
 
-
+@traceable(name="get_model", run_type="chain")
 def rerank_chunks(
     query: str,
     chunks: List[Dict[str, Any]],

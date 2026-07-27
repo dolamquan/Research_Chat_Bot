@@ -10,4 +10,5 @@ pypdf
 numpy
 scikit-learn
 requests
-
+datasets
+ragas

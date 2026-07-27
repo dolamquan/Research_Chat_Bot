@@ -195,6 +195,28 @@ export default function App() {
   useEffect(() => {
     let active = true;
 
+    const checkBackend = () => {
+      getHealth()
+        .then(() => {
+          if (active) setBackendOnline(true);
+        })
+        .catch(() => {
+          if (active) setBackendOnline(false);
+        });
+    };
+
+    checkBackend();
+    const intervalId = window.setInterval(checkBackend, 5000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
     getChatSessions()
       .then((result) => {
         if (active) setChatSessions(result.sessions);

@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
+from langsmith import traceable
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, Filter, PointStruct, VectorParams
 
@@ -162,7 +163,7 @@ def index_folder(
             use_llm_metadata=use_llm_metadata,
         )
 
-
+@traceable(name="retrieve", run_type="retriever")
 def search_vectors(
     query_vector: List[float],
     limit: int = 5,
