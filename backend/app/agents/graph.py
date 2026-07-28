@@ -6,14 +6,36 @@ from langgraph.graph import END, StateGraph
 from langsmith import traceable
 
 from app.agents.state import AgentIntent, AgentState
-from app.agents.tools import ingest_paper_tool, rag_tool, rebuild_topology_tool
+from app.agents.tools import (
+    create_github_issue_tool,
+    export_notion_tool,
+    export_visualization_notion_tool,
+    generate_visualization_tool,
+    ingest_paper_tool,
+    rag_tool,
+    rebuild_topology_tool,
+    save_note_tool,
+    search_arxiv_tool,
+    search_github_tool,
+    search_library_tool,
+    summarize_paper_tool,
+)
 from app.rag.generator import get_llm
 
 
 INTENTS: set[str] = {
     "rag_question",
+    "search_arxiv",
+    "search_library",
     "ingest_paper",
+    "save_note",
     "rebuild_topology",
+    "export_notion",
+    "create_github_issue",
+    "search_github",
+    "summarize_paper",
+    "generate_visualization",
+    "export_visualization_notion",
 }
 
 
@@ -33,6 +55,96 @@ def _heuristic_intent(question: str) -> AgentIntent | None:
     ):
         return "ingest_paper"
 
+    if "notion" in lowered and any(
+        phrase in lowered
+        for phrase in [
+            "visualization",
+            "diagram",
+            "mermaid",
+            "concept map",
+            "method flow",
+        ]
+    ):
+        return "export_visualization_notion"
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "export to notion",
+            "send to notion",
+            "save to notion",
+            "create notion",
+            "notion page",
+        ]
+    ):
+        return "export_notion"
+
+    if "github" in lowered and any(
+        phrase in lowered
+        for phrase in [
+            "create issue",
+            "open issue",
+            "make issue",
+            "issue for",
+            "issue about",
+        ]
+    ):
+        return "create_github_issue"
+
+    if "github" in lowered and any(
+        phrase in lowered
+        for phrase in [
+            "search",
+            "find",
+            "repositories",
+            "repos",
+            "implementation",
+            "code",
+        ]
+    ):
+        return "search_github"
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "summarize this paper",
+            "summarize paper",
+            "summary of this paper",
+            "paper summary",
+            "summarize the selected paper",
+        ]
+    ):
+        return "summarize_paper"
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "generate visualization",
+            "make visualization",
+            "create visualization",
+            "draw diagram",
+            "generate diagram",
+            "make diagram",
+            "method diagram",
+            "concept map",
+            "architecture diagram",
+            "mermaid",
+        ]
+    ):
+        return "generate_visualization"
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "save note",
+            "save this note",
+            "remember this",
+            "store this note",
+            "create note",
+        ]
+    ):
+        return "save_note"
+
     if any(
         phrase in lowered
         for phrase in [
@@ -45,6 +157,26 @@ def _heuristic_intent(question: str) -> AgentIntent | None:
         ]
     ):
         return "rebuild_topology"
+
+    if "arxiv" in lowered and any(
+        phrase in lowered
+        for phrase in ["search", "find", "discover", "look for", "papers about"]
+    ):
+        return "search_arxiv"
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "my library",
+            "indexed papers",
+            "papers in the database",
+            "papers in my database",
+            "search library",
+            "find in library",
+            "find indexed",
+        ]
+    ):
+        return "search_library"
 
     return None
 
@@ -66,8 +198,17 @@ Classify the user request into exactly one intent.
 
 Allowed intents:
 - rag_question: answer a research question using the indexed papers
+- search_arxiv: search arXiv for new external research papers
+- search_library: find papers already indexed in the local research library
 - ingest_paper: add/index/store an arXiv or PDF URL into the database
+- save_note: save a note about a selected/pinned paper passage
 - rebuild_topology: rebuild/update/refresh the paper topology or cluster map
+- export_notion: create/export/save a research note or paper summary to Notion
+- create_github_issue: create/open a GitHub issue for a research task or project follow-up
+- search_github: search GitHub repositories for code, implementations, or related projects
+- summarize_paper: summarize the selected/indexed paper or research context
+- generate_visualization: generate a Mermaid diagram or visualization from a paper/topic
+- export_visualization_notion: generate a visualization and save it to Notion
 
 Return only one intent string.
 
@@ -75,9 +216,12 @@ User request:
 {question}
 """
 
-    response = llm.invoke(prompt)
-    content = getattr(response, "content", str(response)).strip().lower()
-    intent = content.split()[0] if content else "rag_question"
+    try:
+        response = llm.invoke(prompt)
+        content = getattr(response, "content", str(response)).strip().lower()
+        intent = content.split()[0] if content else "rag_question"
+    except Exception:
+        intent = "rag_question"
 
     if intent not in INTENTS:
         intent = "rag_question"
@@ -91,8 +235,35 @@ def route_intent(state: AgentState) -> str:
     if intent == "ingest_paper":
         return "ingest_paper"
 
+    if intent == "search_arxiv":
+        return "search_arxiv"
+
+    if intent == "search_library":
+        return "search_library"
+
+    if intent == "save_note":
+        return "save_note"
+
     if intent == "rebuild_topology":
         return "rebuild_topology"
+
+    if intent == "export_notion":
+        return "export_notion"
+
+    if intent == "create_github_issue":
+        return "create_github_issue"
+
+    if intent == "search_github":
+        return "search_github"
+
+    if intent == "summarize_paper":
+        return "summarize_paper"
+
+    if intent == "generate_visualization":
+        return "generate_visualization"
+
+    if intent == "export_visualization_notion":
+        return "export_visualization_notion"
 
     return "rag_question"
 
@@ -102,8 +273,17 @@ def build_agent_graph():
 
     graph.add_node("classify_intent", classify_intent)
     graph.add_node("rag_question", rag_tool)
+    graph.add_node("search_arxiv", search_arxiv_tool)
+    graph.add_node("search_library", search_library_tool)
     graph.add_node("ingest_paper", ingest_paper_tool)
+    graph.add_node("save_note", save_note_tool)
     graph.add_node("rebuild_topology", rebuild_topology_tool)
+    graph.add_node("export_notion", export_notion_tool)
+    graph.add_node("create_github_issue", create_github_issue_tool)
+    graph.add_node("search_github", search_github_tool)
+    graph.add_node("summarize_paper", summarize_paper_tool)
+    graph.add_node("generate_visualization", generate_visualization_tool)
+    graph.add_node("export_visualization_notion", export_visualization_notion_tool)
 
     graph.set_entry_point("classify_intent")
     graph.add_conditional_edges(
@@ -111,13 +291,31 @@ def build_agent_graph():
         route_intent,
         {
             "rag_question": "rag_question",
+            "search_arxiv": "search_arxiv",
+            "search_library": "search_library",
             "ingest_paper": "ingest_paper",
+            "save_note": "save_note",
             "rebuild_topology": "rebuild_topology",
+            "export_notion": "export_notion",
+            "create_github_issue": "create_github_issue",
+            "search_github": "search_github",
+            "summarize_paper": "summarize_paper",
+            "generate_visualization": "generate_visualization",
+            "export_visualization_notion": "export_visualization_notion",
         },
     )
     graph.add_edge("rag_question", END)
+    graph.add_edge("search_arxiv", END)
+    graph.add_edge("search_library", END)
     graph.add_edge("ingest_paper", END)
+    graph.add_edge("save_note", END)
     graph.add_edge("rebuild_topology", END)
+    graph.add_edge("export_notion", END)
+    graph.add_edge("create_github_issue", END)
+    graph.add_edge("search_github", END)
+    graph.add_edge("summarize_paper", END)
+    graph.add_edge("generate_visualization", END)
+    graph.add_edge("export_visualization_notion", END)
 
     return graph.compile()
 

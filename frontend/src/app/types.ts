@@ -34,6 +34,7 @@ export type Message = {
   content: string;
   sources?: Source[];
   pinnedSources?: Source[];
+  toolTrace?: AgentToolTrace[];
   timestamp: Date;
 };
 
@@ -67,6 +68,53 @@ export type ClusterGraph = {
     category?: string | null;
   };
   stale?: boolean;
+};
+
+export type GraphRagNode = {
+  id: string;
+  type: "paper" | "concept" | "domain" | "category" | string;
+  label: string;
+  weight?: number;
+  x: number;
+  y: number;
+  article_id?: string;
+  source?: string;
+  url?: string;
+  domain?: string;
+  category?: string;
+  tags?: string[];
+  abstract?: string;
+};
+
+export type GraphRagEdge = {
+  id: string;
+  source: string;
+  target: string;
+  relation: string;
+  weight?: number;
+};
+
+export type GraphRagGraph = {
+  nodes: GraphRagNode[];
+  edges: GraphRagEdge[];
+  scope?: {
+    domain?: string | null;
+    category?: string | null;
+  };
+  stats?: {
+    paper_count: number;
+    concept_count: number;
+    edge_count: number;
+  };
+  stale?: boolean;
+};
+
+export type GraphRagQueryResponse = {
+  answer: string;
+  nodes: GraphRagNode[];
+  edges: GraphRagEdge[];
+  papers: GraphRagNode[];
+  concepts: GraphRagNode[];
 };
 
 export type DocumentDetail = ClusterDocument & {
@@ -199,6 +247,33 @@ export type ChatResponse = {
   sources: Source[];
   intent?: string;
   topology?: ClusterGraph | null;
+  tool_trace?: AgentToolTrace[];
+};
+
+export type AgentToolTrace = {
+  tool: string;
+  status: "success" | "error" | "skipped" | string;
+  message: string;
+  timestamp: string;
+};
+
+export type McpTool = {
+  server: string;
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+};
+
+export type McpToolsResponse = {
+  server: string;
+  tools: McpTool[];
+};
+
+export type McpCallResponse = {
+  status: string;
+  server: string;
+  tool_name: string;
+  result: Record<string, unknown>;
 };
 
 export type ContextMode = "retrieval" | "whole_document";
@@ -217,6 +292,8 @@ export type StoredChatMessage = {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  pinned_sources?: Source[];
+  pinnedSources?: Source[];
   created_at: string;
 };
 

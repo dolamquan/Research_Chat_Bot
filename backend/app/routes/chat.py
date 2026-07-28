@@ -70,6 +70,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         role="user",
         content=request.question,
         sources=[],
+        pinned_sources=request.pinned_sources,
     )
 
     try:

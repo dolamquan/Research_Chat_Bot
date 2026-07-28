@@ -13,6 +13,7 @@ import {
   Menu,
   MessageSquare,
   Network,
+  NotebookPen,
   Plus,
   RefreshCw,
   Search,
@@ -38,8 +39,11 @@ import {
   sendAgentChat,
   sendChat,
 } from "./api";
+import { AgentConsoleView } from "./components/AgentConsoleView";
 import { CrawlerView } from "./components/CrawlerView";
 import { DocumentReader } from "./components/DocumentReader";
+import { GraphRagView } from "./components/GraphRagView";
+import { NotesView } from "./components/NotesView";
 import { PaperLibraryView } from "./components/PaperLibraryView";
 import { ResearchPanel } from "./components/ResearchPanel";
 import { TopologyExplorer } from "./components/TopologyExplorer";
@@ -49,6 +53,7 @@ import type {
   ClusterDocument,
   ClusterGraph,
   Article,
+  Annotation,
   ArticleDomain,
   ArxivPaper,
   ChatHistoryItem,
@@ -201,9 +206,27 @@ function MessageContextCard({ source, index }: { source: Source; index: number }
   );
 }
 
-function MessageBubble({ message }: { message: Message }) {
+function sourceCitationLabel(source: Source, index: number): string {
+  if (source.page) return `[p.${source.page}]`;
+  return `[${index + 1}]`;
+}
+
+function citationTitle(source: Source): string {
+  return source.title || source.source || "Open source";
+}
+
+function MessageBubble({
+  message,
+  onOpenSource,
+}: {
+  message: Message;
+  onOpenSource: (source: Source) => void;
+}) {
   const isUser = message.role === "user";
   const pinnedSources = message.pinnedSources || [];
+  const citationSources = (message.sources || []).filter(
+    (source) => source.source && source.page,
+  );
 
   return (
     <div
@@ -246,10 +269,39 @@ function MessageBubble({ message }: { message: Message }) {
           </div>
         </div>
         {message.sources && message.sources.length > 0 && (
-          <span className="font-mono text-[10px] text-muted-foreground px-1">
-            {message.sources.length} grounded source
-            {message.sources.length === 1 ? "" : "s"}
-          </span>
+          <div className="px-1 flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {message.sources.length} grounded source
+              {message.sources.length === 1 ? "" : "s"}
+            </span>
+            {citationSources.slice(0, 8).map((source, index) => (
+              <button
+                key={`${sourceKey(source)}:${index}`}
+                type="button"
+                title={citationTitle(source)}
+                onClick={() => onOpenSource(source)}
+                className="h-5 rounded border border-primary/25 bg-primary/10 px-1.5 font-mono text-[10px] text-primary hover:bg-primary/20"
+              >
+                {sourceCitationLabel(source, index)}
+              </button>
+            ))}
+          </div>
+        )}
+        {!isUser && message.toolTrace && message.toolTrace.length > 0 && (
+          <div className="px-1 flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-[10px] text-muted-foreground">
+              Agent tools:
+            </span>
+            {message.toolTrace.map((step) => (
+              <span
+                key={`${step.tool}:${step.timestamp}`}
+                title={step.message}
+                className="rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary"
+              >
+                {step.tool}
+              </span>
+            ))}
+          </div>
         )}
         <span className="font-mono text-[10px] text-muted-foreground px-1">
           {message.timestamp.toLocaleTimeString([], {
@@ -268,6 +320,7 @@ export default function App() {
   const [selectedDocument, setSelectedDocument] = useState<ClusterDocument>();
   const [documentDetail, setDocumentDetail] = useState<DocumentDetail>();
   const [readerDocument, setReaderDocument] = useState<ClusterDocument>();
+  const [readerInitialPage, setReaderInitialPage] = useState<number>();
   const [messages, setMessages] = useState<Message[]>([initialMessage()]);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string>();
@@ -275,7 +328,7 @@ export default function App() {
   const [pinnedSources, setPinnedSources] = useState<Source[]>([]);
   const [contextMode, setContextMode] = useState<ContextMode>("retrieval");
   const [input, setInput] = useState("");
-  const [activeView, setActiveView] = useState<"chat" | "library" | "crawler">("chat");
+  const [activeView, setActiveView] = useState<"chat" | "library" | "crawler" | "notes" | "agent" | "graph">("chat");
   const [librarySearch, setLibrarySearch] = useState("");
   const [crawlerDescription, setCrawlerDescription] = useState("");
   const [crawlerCategory, setCrawlerCategory] = useState("");
@@ -287,7 +340,6 @@ export default function App() {
   const [isCrawlerSearching, setIsCrawlerSearching] = useState(false);
   const [addingCrawlerPaperId, setAddingCrawlerPaperId] = useState<string>();
   const [isTyping, setIsTyping] = useState(false);
-  const [agentMode, setAgentMode] = useState(false);
   const [backendOnline, setBackendOnline] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(
     () => window.innerWidth >= 768,
@@ -584,6 +636,7 @@ export default function App() {
               role: message.role,
               content: message.content,
               sources: message.sources,
+              pinnedSources: message.pinnedSources || message.pinned_sources || [],
               timestamp: new Date(message.created_at),
             }))
           : [initialMessage(cluster)],
@@ -714,7 +767,10 @@ export default function App() {
     }
   }
 
-  async function addCrawlerPaper(paper: ArxivPaper) {
+  async function addCrawlerPaper(
+    paper: ArxivPaper,
+    metadata: { domain?: string; category?: string; tags?: string[] } = {},
+  ) {
     if (addingCrawlerPaperId) return;
 
     setAddingCrawlerPaperId(paper.arxiv_id);
@@ -724,9 +780,13 @@ export default function App() {
       const result = await ingestUrlPaper({
         url: paper.url || paper.pdf_url,
         title: paper.title,
-        domain: paperDomain.trim() || "research",
-        category: paper.categories[0] || paperCategory.trim() || "uncategorized",
-        tags: paper.categories,
+        domain: metadata.domain?.trim() || paperDomain.trim() || "research",
+        category:
+          metadata.category?.trim() ||
+          paper.categories[0] ||
+          paperCategory.trim() ||
+          "uncategorized",
+        tags: metadata.tags?.length ? metadata.tags : paper.categories,
       });
 
       setIngestionJobs((current) => [result.job, ...current].slice(0, 8));
@@ -822,9 +882,7 @@ export default function App() {
         category: selectedCategory || undefined,
         contextMode: selectedDocument ? contextMode : "retrieval",
       };
-      const result = agentMode
-        ? await sendAgentChat(chatRequest)
-        : await sendChat(chatRequest);
+      const result = await sendChat(chatRequest);
 
       setActiveSessionId(result.session_id);
       void refreshChatSessions();
@@ -840,6 +898,7 @@ export default function App() {
           role: "assistant",
           content: result.answer,
           sources: result.sources,
+          toolTrace: result.tool_trace || [],
           timestamp: new Date(),
         },
       ]);
@@ -866,6 +925,29 @@ export default function App() {
     } finally {
       setIsTyping(false);
     }
+  }
+
+  async function runAgentCommand(command: string) {
+    const result = await sendAgentChat({
+      question: command,
+      chatHistory: [],
+      pinnedSources,
+      clusterId: selectedCluster?.cluster_id,
+      documentSource: selectedDocument?.source,
+      domain: selectedDomain || undefined,
+      category: selectedCategory || undefined,
+      contextMode: selectedDocument ? contextMode : "retrieval",
+    });
+
+    setActiveSessionId(result.session_id);
+    void refreshChatSessions();
+    setSources(result.sources || []);
+    if (result.topology) {
+      setGraph(result.topology);
+      setTopologyExplorerOpen(true);
+    }
+    setBackendOnline(true);
+    return result;
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -905,9 +987,54 @@ export default function App() {
     setSelectedCluster(undefined);
     setSelectedDocument(document);
     setReaderDocument(document);
+    setReaderInitialPage(undefined);
     setContextMode("retrieval");
     setActiveView("chat");
     setSidebarOpen(false);
+  }
+
+  function documentFromSourceReference(source: Source): ClusterDocument | undefined {
+    if (!source.source) return undefined;
+    return (
+      graph.documents.find((document) => document.source === source.source) ||
+      documentFromArticle({
+        article_id: String(source.article_id || source.source),
+        title: source.title || titleFromSource(source.source),
+        source: source.source,
+        url: typeof source.url === "string" ? source.url : undefined,
+        pdf_url: undefined,
+        domain: typeof source.domain === "string" ? source.domain : "research",
+        category: typeof source.category === "string" ? source.category : "uncategorized",
+        tags: Array.isArray(source.tags) ? source.tags : [],
+        status: "indexed",
+        created_at: "",
+        updated_at: "",
+      })
+    );
+  }
+
+  function openSourceCitation(source: Source) {
+    const document = documentFromSourceReference(source);
+    if (!document) return;
+
+    setSelectedCluster(undefined);
+    setSelectedDocument(document);
+    setReaderDocument(document);
+    setReaderInitialPage(typeof source.page === "number" ? source.page : undefined);
+    setContextMode("retrieval");
+    setActiveView("chat");
+    setSidebarOpen(false);
+  }
+
+  function openAnnotation(annotation: Annotation) {
+    openSourceCitation({
+      source: annotation.source,
+      page: annotation.page,
+      title: annotation.title || titleFromSource(annotation.source),
+      article_id: annotation.article_id || undefined,
+      text: annotation.selected_text,
+      selection: true,
+    });
   }
 
   function chatWithLibraryArticle(article: Article) {
@@ -932,23 +1059,35 @@ export default function App() {
   const headerTitle =
     activeView === "crawler"
       ? "Crawler"
+      : activeView === "agent"
+        ? "Agent Console"
+      : activeView === "graph"
+        ? "Graph RAG"
       : activeView === "library"
         ? "Paper Library"
-        : scopeLabel;
+        : activeView === "notes"
+          ? "Research Notes"
+          : scopeLabel;
   const headerSubtitle =
     activeView === "crawler"
       ? "arXiv paper discovery"
+      : activeView === "agent"
+        ? "Internal research tool calling"
+      : activeView === "graph"
+        ? "Concept and relationship retrieval"
       : activeView === "library"
         ? "Indexed papers and ingestion status"
-        : selectedDocument
-          ? contextMode === "whole_document"
-            ? "Whole-paper context"
-            : "Article-only retrieval"
-          : selectedCluster
-            ? "Cluster retrieval"
-            : scopeIsFiltered
-              ? `${activeScopeLabel} retrieval`
-              : "Full collection retrieval";
+        : activeView === "notes"
+          ? "Search saved highlights"
+          : selectedDocument
+            ? contextMode === "whole_document"
+              ? "Whole-paper context"
+              : "Article-only retrieval"
+            : selectedCluster
+              ? "Cluster retrieval"
+              : scopeIsFiltered
+                ? `${activeScopeLabel} retrieval`
+                : "Full collection retrieval";
 
   return (
     <div
@@ -995,6 +1134,30 @@ export default function App() {
             </button>
             <button
               type="button"
+              onClick={() => setActiveView("agent")}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+                activeView === "agent"
+                  ? "border-primary/25 bg-primary/10 text-primary"
+                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+              }`}
+            >
+              <BrainCircuit size={14} />
+              <span className="text-xs font-medium">Agent</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("graph")}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+                activeView === "graph"
+                  ? "border-primary/25 bg-primary/10 text-primary"
+                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+              }`}
+            >
+              <Network size={14} />
+              <span className="text-xs font-medium">Graph RAG</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveView("library")}
               className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
                 activeView === "library"
@@ -1004,6 +1167,18 @@ export default function App() {
             >
               <FileText size={14} />
               <span className="text-xs font-medium">Paper Library</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("notes")}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+                activeView === "notes"
+                  ? "border-primary/25 bg-primary/10 text-primary"
+                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+              }`}
+            >
+              <NotebookPen size={14} />
+              <span className="text-xs font-medium">Notes</span>
             </button>
             <button
               type="button"
@@ -1597,21 +1772,6 @@ export default function App() {
               {topologyExplorerOpen ? "Chat" : "Topology"}
             </button>
           )}
-          {activeView === "chat" && (
-            <button
-              type="button"
-              onClick={() => setAgentMode((value) => !value)}
-              title="Toggle LangGraph agent mode"
-              className={`h-8 px-3 rounded border text-xs flex items-center gap-2 ${
-                agentMode
-                  ? "border-primary/35 bg-primary/10 text-primary"
-                  : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
-              }`}
-            >
-              <BrainCircuit size={13} />
-              {agentMode ? "Agent" : "RAG"}
-            </button>
-          )}
           <div className="ml-auto hidden sm:flex items-center gap-2">
             <span
               className={`w-1.5 h-1.5 rounded-full ${
@@ -1626,7 +1786,11 @@ export default function App() {
 
         <div
           className={`flex-1 min-h-0 px-5 md:px-8 py-6 ${
-            activeView === "library" || activeView === "crawler"
+            activeView === "library" ||
+            activeView === "crawler" ||
+            activeView === "notes" ||
+            activeView === "agent" ||
+            activeView === "graph"
               ? "overflow-hidden p-0"
               : topologyExplorerOpen
                 ? "overflow-hidden"
@@ -1652,6 +1816,21 @@ export default function App() {
               onOpenArticle={openLibraryArticle}
               onChatWithArticle={chatWithLibraryArticle}
               onRebuildTopology={() => void rebuildCurrentTopology()}
+            />
+          ) : activeView === "agent" ? (
+            <AgentConsoleView onRun={runAgentCommand} />
+          ) : activeView === "graph" ? (
+            <GraphRagView
+              domain={selectedDomain || undefined}
+              category={selectedCategory || undefined}
+            />
+          ) : activeView === "notes" ? (
+            <NotesView
+              onOpenNote={openAnnotation}
+              onPinNote={(source) => {
+                pinSource(source);
+                setActiveView("chat");
+              }}
             />
           ) : activeView === "crawler" ? (
             <CrawlerView
@@ -1689,7 +1868,11 @@ export default function App() {
               )}
               <div className="max-w-3xl mx-auto space-y-6">
                 {messages.map((message) => (
-                  <MessageBubble key={message.id} message={message} />
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    onOpenSource={openSourceCitation}
+                  />
                 ))}
                 {isTyping && (
                   <div className="flex gap-3">
@@ -1772,7 +1955,7 @@ export default function App() {
             <div className="mt-2 px-1 flex items-center gap-2">
               <CheckCircle2 size={11} className="text-primary" />
               <p className="font-mono text-[10px] text-muted-foreground truncate">
-                {agentMode ? "LangGraph agent" : "Grounded retrieval"} - {scopeLabel}
+                Grounded retrieval - {scopeLabel}
               </p>
             </div>
           </div>
@@ -1783,7 +1966,11 @@ export default function App() {
       {activeView === "chat" && readerDocument ? (
         <DocumentReader
           document={readerDocument}
-          onClose={() => setReaderDocument(undefined)}
+          initialPage={readerInitialPage}
+          onClose={() => {
+            setReaderDocument(undefined);
+            setReaderInitialPage(undefined);
+          }}
           onPinSelection={(source) => {
             pinSource(source);
           }}
@@ -1802,6 +1989,7 @@ export default function App() {
           onOpenDocument={(document) => {
             setSelectedDocument(document);
             setReaderDocument(document);
+            setReaderInitialPage(undefined);
             setSidebarOpen(false);
           }}
           onPinSource={pinSource}

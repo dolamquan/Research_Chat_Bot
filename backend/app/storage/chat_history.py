@@ -47,11 +47,23 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             sources_json TEXT NOT NULL DEFAULT '[]',
+            pinned_sources_json TEXT NOT NULL DEFAULT '[]',
             created_at TEXT NOT NULL,
             FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
         )
         """
     )
+    columns = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(chat_messages)").fetchall()
+    }
+    if "pinned_sources_json" not in columns:
+        conn.execute(
+            """
+            ALTER TABLE chat_messages
+            ADD COLUMN pinned_sources_json TEXT NOT NULL DEFAULT '[]'
+            """
+        )
     conn.commit()
 
     if owns_connection:
@@ -138,17 +150,28 @@ def append_message(
     role: str,
     content: str,
     sources: List[Dict[str, Any]] | None = None,
+    pinned_sources: List[Dict[str, Any]] | None = None,
 ) -> Dict[str, Any]:
     timestamp = _now()
     sources_json = json.dumps(sources or [])
+    pinned_sources_json = json.dumps(pinned_sources or [])
 
     with _connect() as conn:
         conn.execute(
             """
-            INSERT INTO chat_messages (session_id, role, content, sources_json, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO chat_messages (
+                session_id, role, content, sources_json, pinned_sources_json, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (session_id, role, content, sources_json, timestamp),
+            (
+                session_id,
+                role,
+                content,
+                sources_json,
+                pinned_sources_json,
+                timestamp,
+            ),
         )
         conn.execute(
             """
@@ -164,6 +187,7 @@ def append_message(
         "role": role,
         "content": content,
         "sources": sources or [],
+        "pinned_sources": pinned_sources or [],
         "created_at": timestamp,
     }
 
@@ -174,7 +198,7 @@ def get_session(session_id: str) -> Dict[str, Any]:
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT role, content, sources_json, created_at
+            SELECT role, content, sources_json, pinned_sources_json, created_at
             FROM chat_messages
             WHERE session_id = ?
             ORDER BY id ASC
@@ -188,12 +212,17 @@ def get_session(session_id: str) -> Dict[str, Any]:
             sources = json.loads(row["sources_json"] or "[]")
         except json.JSONDecodeError:
             sources = []
+        try:
+            pinned_sources = json.loads(row["pinned_sources_json"] or "[]")
+        except (KeyError, json.JSONDecodeError):
+            pinned_sources = []
 
         messages.append(
             {
                 "role": row["role"],
                 "content": row["content"],
                 "sources": sources,
+                "pinned_sources": pinned_sources,
                 "created_at": row["created_at"],
             }
         )

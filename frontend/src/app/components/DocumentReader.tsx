@@ -31,10 +31,12 @@ pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 export function DocumentReader({
   document,
+  initialPage,
   onClose,
   onPinSelection,
 }: {
   document: ClusterDocument;
+  initialPage?: number;
   onClose: () => void;
   onPinSelection: (source: Source) => void;
 }) {
@@ -96,6 +98,11 @@ export function DocumentReader({
       active = false;
     };
   }, [document.source]);
+
+  useEffect(() => {
+    if (!initialPage) return;
+    setPageNumber(Math.max(1, initialPage));
+  }, [document.source, initialPage]);
 
   function captureSelection() {
     const selection = window.getSelection()?.toString().trim() || "";

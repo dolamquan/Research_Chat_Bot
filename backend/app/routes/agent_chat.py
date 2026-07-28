@@ -35,6 +35,7 @@ class AgentChatResponse(BaseModel):
     sources: List[Dict[str, Any]]
     intent: str
     topology: Dict[str, Any] | None = None
+    tool_trace: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 @router.post("/chat", response_model=AgentChatResponse)
@@ -56,6 +57,7 @@ def agent_chat(request: AgentChatRequest) -> AgentChatResponse:
         role="user",
         content=request.question,
         sources=[],
+        pinned_sources=request.pinned_sources,
     )
 
     request_data = (
@@ -78,6 +80,7 @@ def agent_chat(request: AgentChatRequest) -> AgentChatResponse:
 
     answer = result.get("answer", "")
     sources = result.get("sources", [])
+    tool_trace = result.get("tool_trace", [])
 
     append_message(
         session_id=session_id,
@@ -92,4 +95,5 @@ def agent_chat(request: AgentChatRequest) -> AgentChatResponse:
         sources=sources,
         intent=result.get("intent", "rag_question"),
         topology=result.get("topology"),
+        tool_trace=tool_trace,
     )

@@ -12,9 +12,13 @@ import type {
   ClusterGraph,
   ContextMode,
   DocumentDetail,
+  GraphRagGraph,
+  GraphRagQueryResponse,
   IngestUrlPayload,
   IngestUrlResponse,
   IngestionJob,
+  McpCallResponse,
+  McpToolsResponse,
   Source,
   VisualAsset,
 } from "./types";
@@ -79,6 +83,49 @@ export function buildClusters(scope?: {
       cluster_count: scope?.clusterCount ?? null,
       domain: scope?.domain || null,
       category: scope?.category || null,
+    }),
+  });
+}
+
+export function getGraphRag(scope?: {
+  domain?: string;
+  category?: string;
+}): Promise<GraphRagGraph> {
+  return requestJson(`/graph-rag${scopedQuery(scope)}`);
+}
+
+export function buildGraphRag(scope?: {
+  domain?: string;
+  category?: string;
+  conceptLimit?: number;
+  similarityThreshold?: number;
+}): Promise<GraphRagGraph> {
+  return requestJson("/graph-rag/build", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      domain: scope?.domain || null,
+      category: scope?.category || null,
+      concept_limit: scope?.conceptLimit ?? 12,
+      similarity_threshold: scope?.similarityThreshold ?? 2,
+    }),
+  });
+}
+
+export function queryGraphRag(payload: {
+  query: string;
+  domain?: string;
+  category?: string;
+  limit?: number;
+}): Promise<GraphRagQueryResponse> {
+  return requestJson("/graph-rag/query", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: payload.query,
+      domain: payload.domain || null,
+      category: payload.category || null,
+      limit: payload.limit ?? 8,
     }),
   });
 }
@@ -214,6 +261,27 @@ export function getIngestionJobs(
   limit = 10,
 ): Promise<{ jobs: IngestionJob[] }> {
   return requestJson(`/ingest/jobs?limit=${limit}`);
+}
+
+export function getMcpTools(): Promise<McpToolsResponse> {
+  return requestJson("/mcp/tools");
+}
+
+export function callMcpTool({
+  toolName,
+  arguments: args,
+}: {
+  toolName: string;
+  arguments: Record<string, unknown>;
+}): Promise<McpCallResponse> {
+  return requestJson("/mcp/call", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tool_name: toolName,
+      arguments: args,
+    }),
+  });
 }
 
 export function sendChat({

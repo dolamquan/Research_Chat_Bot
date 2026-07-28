@@ -2,38 +2,38 @@
   "clusters": [
     {
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "document_count": 15
-    },
-    {
-      "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
       "document_count": 17
     },
     {
+      "cluster_id": 1,
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "document_count": 16
+    },
+    {
       "cluster_id": 2,
-      "cluster_label": "Pandora Jailbreak Gpts Poisoning",
-      "document_count": 5
+      "cluster_label": "Enhancing Intelligence Arm Auxiliary",
+      "document_count": 1
     },
     {
       "cluster_id": 3,
       "cluster_label": "Medical Question Multi Representative",
-      "document_count": 12
+      "document_count": 9
     },
     {
       "cluster_id": 4,
-      "cluster_label": "Retro Small Scale Supporting",
-      "document_count": 6
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "document_count": 33
     },
     {
       "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "document_count": 21
+      "cluster_label": "Retro Small Scale Supporting",
+      "document_count": 8
     },
     {
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "document_count": 83
+      "cluster_label": "Question Open Domain Dense",
+      "document_count": 78
     },
     {
       "cluster_id": 7,
@@ -42,13 +42,13 @@
     },
     {
       "cluster_id": 8,
-      "cluster_label": "Graph Knowledge Guided Enhanced",
-      "document_count": 26
+      "cluster_label": "Video Enriched Aligned Captions",
+      "document_count": 7
     },
     {
       "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "document_count": 16
+      "cluster_label": "Graph Knowledge Guided Enhanced",
+      "document_count": 33
     }
   ],
   "documents": [
@@ -63,9 +63,9 @@
       "source": "2004.04906_dense_passage_retrieval.pdf",
       "chunk_count": 561,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.4314233064651489,
-      "y": -0.0007616965449415147
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.47448843717575073,
+      "y": -0.11605686694383621
     },
     {
       "document_id": "676b06ae-ba2d-41c6-91aa-fa696d7fbc71",
@@ -78,9 +78,9 @@
       "source": "2005.11401_2005_11401.pdf",
       "chunk_count": 227,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.2782187759876251,
-      "y": 0.03580325469374657
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.3120500445365906,
+      "y": -0.19370095431804657
     },
     {
       "document_id": "9ee8ab78-b429-4cd7-8b99-2cd05f578fe1",
@@ -93,9 +93,9 @@
       "source": "2005.11401v4.pdf",
       "chunk_count": 681,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.2782188057899475,
-      "y": 0.03580333665013313
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.3120500147342682,
+      "y": -0.19370101392269135
     },
     {
       "document_id": "6357c400-2b02-4292-adad-cf570bd9b79b",
@@ -111,9 +111,9 @@
       "source": "2005.11401v4_test.pdf",
       "chunk_count": 227,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.2782188057899475,
-      "y": 0.03580335155129433
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.31205007433891296,
+      "y": -0.19370105862617493
     },
     {
       "document_id": "2024f1ad-99ef-4ee9-b89b-6c7cdcf81998",
@@ -125,10 +125,10 @@
       "tags": [],
       "source": "2024f1ad-99ef-4ee9-b89b-6c7cdcf81998",
       "chunk_count": 305,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.5956296920776367,
-      "y": -0.09061221033334732
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.6501323580741882,
+      "y": 0.23211805522441864
     },
     {
       "document_id": "6a36f42b-d51f-4d8f-a123-4d9780c73d87",
@@ -141,9 +141,9 @@
       "source": "2108.13934v2_robust_retrieval_augmented_generation_for_zero-shot_slot_filling.pdf",
       "chunk_count": 471,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.4105057716369629,
-      "y": 0.015368873253464699
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.43867042660713196,
+      "y": -0.009737608022987843
     },
     {
       "document_id": "772293b9-0418-4092-a771-aa327ecbc878",
@@ -156,9 +156,9 @@
       "source": "2109.11085v1_towards_universal_dense_retrieval_for_open-domain_question_answering.pdf",
       "chunk_count": 525,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.4543098509311676,
-      "y": 0.023896563798189163
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.49371466040611267,
+      "y": -0.09173767268657684
     },
     {
       "document_id": "4c8357f4-ae84-4876-b365-ab9beddde525",
@@ -171,9 +171,9 @@
       "source": "2210.02627v1_improving_the_domain_adaptation_of_retrieval_augmented_generation_rag_models_for.pdf",
       "chunk_count": 930,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.11108176410198212,
-      "y": 0.054836202412843704
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.13430777192115784,
+      "y": -0.2088877409696579
     },
     {
       "document_id": "27567e31-e330-46f2-a9c8-4f831b76b199",
@@ -186,9 +186,9 @@
       "source": "2210.05156v2_task-aware_specialization_for_efficient_and_robust_dense_retrieval_for_open-doma.pdf",
       "chunk_count": 405,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.4139881730079651,
-      "y": 0.1376899629831314
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.45094871520996094,
+      "y": -0.18930822610855103
     },
     {
       "document_id": "96df2e60-b7df-49e0-8c68-6e79d1f8cbfd",
@@ -204,9 +204,9 @@
       "source": "2303.18223v19_test3.pdf",
       "chunk_count": 5530,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.03461502864956856,
-      "y": 0.16981863975524902
+      "cluster_label": "Question Open Domain Dense",
+      "x": 0.024149516597390175,
+      "y": -0.2513847351074219
     },
     {
       "document_id": "e0e16cba-3ed2-42d5-b83d-55edbaa6cdc7",
@@ -219,9 +219,9 @@
       "source": "2305.06983v2_active_retrieval_augmented_generation.pdf",
       "chunk_count": 879,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.1687062829732895,
-      "y": -0.10578832030296326
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.18947264552116394,
+      "y": -0.028989335522055626
     },
     {
       "document_id": "653dc529-37ec-43a0-bf75-78cb8c1fab21",
@@ -234,9 +234,9 @@
       "source": "2307.03172_lost_in_the_middle.pdf",
       "chunk_count": 591,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.27167555689811707,
-      "y": 0.13963215053081512
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.30671989917755127,
+      "y": -0.26967740058898926
     },
     {
       "document_id": "478cd119-c1a4-4eda-a5c7-06cf29839881",
@@ -248,10 +248,10 @@
       "tags": [],
       "source": "2307.06985v10_retrieval_augmented_generation_using_engineering_design_knowledge.pdf",
       "chunk_count": 534,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": 0.276418000459671,
-      "y": -0.05524908006191254
+      "x": 0.30948853492736816,
+      "y": 0.18637147545814514
     },
     {
       "document_id": "6f010a6b-9c38-4ed6-baa0-b3bcbd2296f2",
@@ -265,8 +265,8 @@
       "chunk_count": 108,
       "cluster_id": 3,
       "cluster_label": "Medical Question Multi Representative",
-      "x": -0.03141345828771591,
-      "y": 0.13837052881717682
+      "x": -0.03097846731543541,
+      "y": -0.005804200656712055
     },
     {
       "document_id": "d51040b4-895e-45bb-9384-5dd2faf04734",
@@ -279,9 +279,9 @@
       "source": "2309.15217v2_ragas_automated_evaluation_of_retrieval_augmented_generation.pdf",
       "chunk_count": 306,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.08177434653043747,
-      "y": -0.1057622954249382
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.0670228824019432,
+      "y": -0.16933289170265198
     },
     {
       "document_id": "066397b4-be27-4c9f-9277-84abdcd6874b",
@@ -295,8 +295,8 @@
       "chunk_count": 360,
       "cluster_id": 3,
       "cluster_label": "Medical Question Multi Representative",
-      "x": 0.14917507767677307,
-      "y": 0.00864114984869957
+      "x": 0.14155322313308716,
+      "y": -0.19706696271896362
     },
     {
       "document_id": "0fe90960-e488-49c1-9539-56d166c59758",
@@ -309,9 +309,9 @@
       "source": "2310.11511_self_rag.pdf",
       "chunk_count": 1017,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.05157795548439026,
-      "y": 0.007874889299273491
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.07180389761924744,
+      "y": -0.20484742522239685
     },
     {
       "document_id": "970954e2-27d5-4a70-9f79-24d33ae6b21e",
@@ -323,10 +323,10 @@
       "tags": [],
       "source": "2311.04177v1_enhancing_llm_intelligence_with_arm-rag_auxiliary_rationale_memory_for_retrieval.pdf",
       "chunk_count": 318,
-      "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.10178489983081818,
-      "y": -0.17196540534496307
+      "cluster_id": 2,
+      "cluster_label": "Enhancing Intelligence Arm Auxiliary",
+      "x": 0.09616334736347198,
+      "y": -0.025639677420258522
     },
     {
       "document_id": "33821b97-a76e-4a68-893f-c2164a7a6614",
@@ -338,10 +338,10 @@
       "tags": [],
       "source": "2312.05708v1_context_tuning_for_retrieval_augmented_generation.pdf",
       "chunk_count": 270,
-      "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.111026331782341,
-      "y": -0.037423763424158096
+      "cluster_id": 9,
+      "cluster_label": "Graph Knowledge Guided Enhanced",
+      "x": 0.13478738069534302,
+      "y": 0.17445126175880432
     },
     {
       "document_id": "8a137a8f-9745-4331-b8f5-eb2272c7dca5",
@@ -355,8 +355,8 @@
       "chunk_count": 129,
       "cluster_id": 7,
       "cluster_label": "Knowledge Harnessing Uncovering Gaps",
-      "x": 0.48919081687927246,
-      "y": -0.08411195129156113
+      "x": 0.5248485207557678,
+      "y": 0.05905695632100105
     },
     {
       "document_id": "f7120b2e-dc5b-4f17-840b-3c56a6447978",
@@ -370,8 +370,8 @@
       "chunk_count": 690,
       "cluster_id": 7,
       "cluster_label": "Knowledge Harnessing Uncovering Gaps",
-      "x": 0.5039239525794983,
-      "y": -0.032685063779354095
+      "x": 0.5415785908699036,
+      "y": 0.008791996166110039
     },
     {
       "document_id": "05eb0226-ac5a-47a4-bbe7-387d4417b4d2",
@@ -384,9 +384,9 @@
       "source": "2312.10997v5.pdf",
       "chunk_count": 1074,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.07968472689390182,
-      "y": -0.048398904502391815
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.09046337753534317,
+      "y": -0.005852196831256151
     },
     {
       "document_id": "4c923467-ad91-4402-84fd-1ec8932cad6d",
@@ -399,9 +399,9 @@
       "source": "2401.15884v3_corrective_retrieval_augmented_generation.pdf",
       "chunk_count": 606,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.0548258051276207,
-      "y": -0.1542118340730667
+      "cluster_label": "Question Open Domain Dense",
+      "x": 0.0475800596177578,
+      "y": -0.02542756125330925
     },
     {
       "document_id": "7e980da3-7628-4147-87cf-43c33ed4c2ff",
@@ -414,9 +414,9 @@
       "source": "2402.05131v3_financial_report_chunking_for_effective_retrieval_augmented_generation.pdf",
       "chunk_count": 402,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.18802809715270996,
-      "y": -0.1546771079301834
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.20162197947502136,
+      "y": 0.11544568836688995
     },
     {
       "document_id": "66e1a01a-b5f6-4064-afcb-ac1905f62ed2",
@@ -428,10 +428,10 @@
       "tags": [],
       "source": "2402.08416v1_pandora_jailbreak_gpts_by_retrieval_augmented_generation_poisoning.pdf",
       "chunk_count": 306,
-      "cluster_id": 2,
-      "cluster_label": "Pandora Jailbreak Gpts Poisoning",
-      "x": 0.7578195929527283,
-      "y": 0.08898098766803741
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.8013890981674194,
+      "y": -0.14594072103500366
     },
     {
       "document_id": "5a214617-c2dd-4f70-a8d7-3664ef0f8d10",
@@ -444,9 +444,9 @@
       "source": "2402.11794v1_unveiling_the_magic_investigating_attention_distillation_in_retrieval-augmented.pdf",
       "chunk_count": 312,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.2767855226993561,
-      "y": 0.22916455566883087
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.315576434135437,
+      "y": -0.3709246814250946
     },
     {
       "document_id": "68512397-f47b-4784-bf19-b82c98e1b58a",
@@ -458,10 +458,10 @@
       "tags": [],
       "source": "2402.11891v1_feb4rag_evaluating_federated_search_in_the_context_of_retrieval_augmented_genera.pdf",
       "chunk_count": 630,
-      "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.10271505266427994,
-      "y": -0.33269307017326355
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.12584736943244934,
+      "y": 0.4107813239097595
     },
     {
       "document_id": "fff13339-69d3-4423-9bfe-bcebd67d44a9",
@@ -474,9 +474,9 @@
       "source": "2402.17497v2_rear_a_relevance-aware_retrieval-augmented_framework_for_open-domain_question_an.pdf",
       "chunk_count": 537,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.2134215533733368,
-      "y": -0.10998810082674026
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.23898199200630188,
+      "y": -0.03637799993157387
     },
     {
       "document_id": "5e8ca672-d174-4e37-9217-f3e6c27a857e",
@@ -488,10 +488,10 @@
       "tags": [],
       "source": "2403.00820v1_retrieval_augmented_generation_systems_automatic_dataset_creation_evaluation_and.pdf",
       "chunk_count": 294,
-      "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.12009576708078384,
-      "y": -0.17336300015449524
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.12500905990600586,
+      "y": 0.08644022792577744
     },
     {
       "document_id": "4ffdaa03-b042-4e3e-9b2c-eacfc73a2654",
@@ -504,9 +504,9 @@
       "source": "2403.04256v1_federated_recommendation_via_hybrid_retrieval_augmented_generation.pdf",
       "chunk_count": 483,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.04073687642812729,
-      "y": -0.05087710916996002
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.03203597292304039,
+      "y": 0.17974849045276642
     },
     {
       "document_id": "a79ae70c-7591-4440-9b93-d679b7e3e921",
@@ -519,9 +519,9 @@
       "source": "2403.10081v3_dragin_dynamic_retrieval_augmented_generation_based_on_the_information_needs_of.pdf",
       "chunk_count": 783,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.23948004841804504,
-      "y": 0.0050612580962479115
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.2607087194919586,
+      "y": -0.06967131048440933
     },
     {
       "document_id": "e1e3b5aa-7e0a-4891-8c2e-eaae198dda32",
@@ -534,9 +534,9 @@
       "source": "2403.15450v1_loops_on_retrieval_augmented_generation_lorag.pdf",
       "chunk_count": 165,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.03726084902882576,
-      "y": 0.25374799966812134
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.04621902480721474,
+      "y": -0.20319435000419617
     },
     {
       "document_id": "9a4c2120-416b-47b6-9b5a-e7d1f2ca15e7",
@@ -549,9 +549,9 @@
       "source": "2404.00610v1_rq-rag_learning_to_refine_queries_for_retrieval_augmented_generation.pdf",
       "chunk_count": 471,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.0892949253320694,
-      "y": -0.15551622211933136
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.09588301181793213,
+      "y": 0.10243913531303406
     },
     {
       "document_id": "135993b6-34f8-4cd1-a1f4-a3ac07aa1635",
@@ -562,11 +562,11 @@
       "category": "uncategorized",
       "tags": [],
       "source": "2404.02022v3_improving_retrieval_augmented_open-domain_question-answering_with_vectorized_con.pdf",
-      "chunk_count": 432,
-      "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.37504205107688904,
-      "y": 0.3261620104312897
+      "chunk_count": 452,
+      "cluster_id": 6,
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.39699673652648926,
+      "y": -0.37794843316078186
     },
     {
       "document_id": "77fa4aa4-f47f-491e-a4d9-f9b5d5e27224",
@@ -579,9 +579,9 @@
       "source": "2404.08189v1_reducing_hallucination_in_structured_outputs_via_retrieval-augmented_generation.pdf",
       "chunk_count": 420,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.05045489966869354,
-      "y": -0.010680013336241245
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.051361460238695145,
+      "y": 0.01880655623972416
     },
     {
       "document_id": "63050c30-b631-45db-967b-fb8f90e754ec",
@@ -594,9 +594,9 @@
       "source": "2405.02816v1_stochastic_rag_end-to-end_retrieval-augmented_generation_through_expected_utilit.pdf",
       "chunk_count": 372,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.35895371437072754,
-      "y": 0.0023667991627007723
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.3868994116783142,
+      "y": -0.04178599268198013
     },
     {
       "document_id": "a15dc01d-edab-405b-9d33-411d57fc3df5",
@@ -609,9 +609,9 @@
       "source": "2405.07437v2.pdf",
       "chunk_count": 600,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.02850537747144699,
-      "y": -0.11740525811910629
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.036516692489385605,
+      "y": 0.019531862810254097
     },
     {
       "document_id": "d1e5dd09-f150-495c-967f-7b34be3fbab7",
@@ -624,9 +624,9 @@
       "source": "2405.13002v1_duetrag_collaborative_retrieval-augmented_generation.pdf",
       "chunk_count": 225,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.06044503301382065,
-      "y": -0.006687678396701813
+      "cluster_label": "Question Open Domain Dense",
+      "x": 0.05431104078888893,
+      "y": -0.09773264825344086
     },
     {
       "document_id": "0d3828e5-66c6-4a7e-9fcf-516c924f241f",
@@ -639,9 +639,9 @@
       "source": "2405.13792v2_xrag_extreme_context_compression_for_retrieval-augmented_generation_with_one_tok.pdf",
       "chunk_count": 828,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.14688873291015625,
-      "y": 0.1412816196680069
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.17066407203674316,
+      "y": -0.2302437424659729
     },
     {
       "document_id": "28659abe-4ddd-484a-9729-659257d5178a",
@@ -655,8 +655,8 @@
       "chunk_count": 810,
       "cluster_id": 7,
       "cluster_label": "Knowledge Harnessing Uncovering Gaps",
-      "x": 0.2983989119529724,
-      "y": -0.270759254693985
+      "x": 0.3344300389289856,
+      "y": 0.33306455612182617
     },
     {
       "document_id": "2041f0ac-4541-4220-b2d0-9cca62ff3d79",
@@ -668,10 +668,10 @@
       "tags": [],
       "source": "2405.16506v3_grag_graph_retrieval-augmented_generation.pdf",
       "chunk_count": 504,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.3077172040939331,
-      "y": -0.1598718762397766
+      "x": -0.30029186606407166,
+      "y": 0.43908095359802246
     },
     {
       "document_id": "c125ccd6-3067-41b6-ab10-5572310ef125",
@@ -683,10 +683,10 @@
       "tags": [],
       "source": "2405.17706v1_video_enriched_retrieval_augmented_generation_using_aligned_video_captions.pdf",
       "chunk_count": 159,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": 0.009759127162396908,
-      "y": 0.9463106989860535
+      "cluster_id": 8,
+      "cluster_label": "Video Enriched Aligned Captions",
+      "x": -0.013080121017992496,
+      "y": -0.8322774767875671
     },
     {
       "document_id": "e61af3cc-936d-4f8b-baaa-4e34ec701698",
@@ -699,9 +699,9 @@
       "source": "2405.19893v1_similarity_is_not_all_you_need_endowing_retrieval_augmented_generation_with_mult.pdf",
       "chunk_count": 402,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.16506856679916382,
-      "y": -0.07645516842603683
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.18117867410182953,
+      "y": 0.01673278957605362
     },
     {
       "document_id": "a9235779-7c09-4ca3-9691-7afe3e8c4722",
@@ -714,9 +714,9 @@
       "source": "2406.13249v2_r_2ag_incorporating_retrieval_information_into_retrieval_augmented_generation.pdf",
       "chunk_count": 540,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.22524411976337433,
-      "y": 0.050864916294813156
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.2450438141822815,
+      "y": -0.06359677761793137
     },
     {
       "document_id": "c26cfb30-85dc-4250-9c82-cd12551a29ad",
@@ -729,9 +729,9 @@
       "source": "2406.14162v4_diras_efficient_llm_annotation_of_document_relevance_in_retrieval_augmented_gene.pdf",
       "chunk_count": 933,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.056191474199295044,
-      "y": -0.1918921023607254
+      "cluster_label": "Question Open Domain Dense",
+      "x": 0.05667361244559288,
+      "y": 0.07703226059675217
     },
     {
       "document_id": "e025928d-2b5c-4689-b117-8b3378c41b2c",
@@ -743,10 +743,10 @@
       "tags": [],
       "source": "2406.14938v1_towards_retrieval_augmented_generation_over_large_video_libraries.pdf",
       "chunk_count": 231,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": -0.024896029382944107,
-      "y": 0.8618554472923279
+      "cluster_id": 8,
+      "cluster_label": "Video Enriched Aligned Captions",
+      "x": -0.0471796840429306,
+      "y": -0.7367796897888184
     },
     {
       "document_id": "fe59885b-7eb6-4389-96aa-179bd13d4fe3",
@@ -759,9 +759,9 @@
       "source": "2406.15187v2_uda_a_benchmark_suite_for_retrieval_augmented_generation_in_real-world_document.pdf",
       "chunk_count": 591,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.17173612117767334,
-      "y": -0.10117192566394806
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.1887574940919876,
+      "y": 0.021929355338215828
     },
     {
       "document_id": "6990500a-4aab-4318-8b2e-7fedc380f782",
@@ -774,9 +774,9 @@
       "source": "2407.03955v1_meta-prompting_optimized_retrieval-augmented_generation.pdf",
       "chunk_count": 384,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.06278504431247711,
-      "y": -0.03906127065420151
+      "cluster_label": "Question Open Domain Dense",
+      "x": 0.05182506889104843,
+      "y": -0.14678362011909485
     },
     {
       "document_id": "cfa715cb-7ab4-4b6a-b361-025cd77cba47",
@@ -788,10 +788,10 @@
       "tags": [],
       "source": "2407.04925v1_ramo_retrieval-augmented_generation_for_enhancing_moocs_recommendations.pdf",
       "chunk_count": 366,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.477899432182312,
-      "y": 0.08648787438869476
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.5086665749549866,
+      "y": -0.06967855989933014
     },
     {
       "document_id": "6e1e005c-e7cb-4e6f-bd80-b225d0ae7caa",
@@ -804,9 +804,9 @@
       "source": "2407.08223v2_speculative_rag_enhancing_retrieval_augmented_generation_through_drafting.pdf",
       "chunk_count": 828,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.017194006592035294,
-      "y": -0.08971652388572693
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.03530092537403107,
+      "y": -0.12752830982208252
     },
     {
       "document_id": "84ab5207-0db8-4869-b52b-13a384fd8d42",
@@ -819,9 +819,9 @@
       "source": "2407.08275v1_beyond_benchmarks_evaluating_embedding_model_similarity_for_retrieval_augmented.pdf",
       "chunk_count": 546,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.4748074412345886,
-      "y": 0.21635305881500244
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.5009264349937439,
+      "y": -0.02666870877146721
     },
     {
       "document_id": "8a802862-372f-44c9-a6bf-a0ad73974345",
@@ -834,9 +834,9 @@
       "source": "2407.12216v2_mindful-rag_a_study_of_points_of_failure_in_retrieval_augmented_generation.pdf",
       "chunk_count": 294,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.15187233686447144,
-      "y": -0.3826158344745636
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.16692042350769043,
+      "y": 0.30165237188339233
     },
     {
       "document_id": "78c032a3-4a2c-4508-8f1a-a88ceb993f08",
@@ -849,9 +849,9 @@
       "source": "2407.15569v2_an_empirical_study_of_retrieval_augmented_generation_with_chain-of-thought.pdf",
       "chunk_count": 249,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.08143573999404907,
-      "y": 0.03280520811676979
+      "cluster_label": "Question Open Domain Dense",
+      "x": 0.07082365453243256,
+      "y": -0.19800876080989838
     },
     {
       "document_id": "1b07f66d-111f-48c5-9983-c28f2462ed19",
@@ -863,10 +863,10 @@
       "tags": [],
       "source": "2407.15748v1_morse_bridging_the_gap_in_cybersecurity_expertise_with_retrieval_augmented_gener.pdf",
       "chunk_count": 882,
-      "cluster_id": 2,
-      "cluster_label": "Pandora Jailbreak Gpts Poisoning",
-      "x": 0.24255211651325226,
-      "y": -0.20318320393562317
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.26451265811920166,
+      "y": 0.18690992891788483
     },
     {
       "document_id": "e440b5a2-c54d-4fa0-8b6e-fcd4b6627699",
@@ -879,9 +879,9 @@
       "source": "2407.21712v1_adaptive_retrieval-augmented_generation_for_conversational_systems.pdf",
       "chunk_count": 486,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.1013740822672844,
-      "y": 0.1738084852695465
+      "cluster_label": "Question Open Domain Dense",
+      "x": 0.09159589558839798,
+      "y": -0.3038311302661896
     },
     {
       "document_id": "ac79c2b8-30ee-4b96-abb8-7bb3209d512a",
@@ -894,9 +894,9 @@
       "source": "2408.01084v2_adaptive_contrastive_decoding_in_retrieval-augmented_generation_for_handling_noi.pdf",
       "chunk_count": 417,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.2760617434978485,
-      "y": 0.07862535864114761
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.31428125500679016,
+      "y": -0.2698567509651184
     },
     {
       "document_id": "c370a89d-ab59-4da9-9738-ff57a17fd3f6",
@@ -908,10 +908,10 @@
       "tags": [],
       "source": "2408.01869v1_malade_orchestration_of_llm-powered_agents_with_retrieval_augmented_generation_f.pdf",
       "chunk_count": 1596,
-      "cluster_id": 3,
-      "cluster_label": "Medical Question Multi Representative",
-      "x": 0.6684014201164246,
-      "y": 0.011180487461388111
+      "cluster_id": 1,
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.7078428864479065,
+      "y": -0.1344502717256546
     },
     {
       "document_id": "d8eeaa02-43e1-44bd-b559-dd8052baee58",
@@ -923,10 +923,10 @@
       "tags": [],
       "source": "2408.02545v1_rag_foundry_a_framework_for_enhancing_llms_for_retrieval_augmented_generation.pdf",
       "chunk_count": 366,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.11646657437086105,
-      "y": 0.07531396299600601
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.12260898947715759,
+      "y": -0.10353387147188187
     },
     {
       "document_id": "f4a4a467-c175-4d2f-ac4f-e5b0d5275d14",
@@ -938,10 +938,10 @@
       "tags": [],
       "source": "2408.02854v4_creating_a_taxonomy_for_retrieval_augmented_generation_applications.pdf",
       "chunk_count": 486,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.43544575572013855,
-      "y": -0.059637755155563354
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.46788322925567627,
+      "y": 0.06665759533643723
     },
     {
       "document_id": "2981d259-4a01-4df8-9b55-047b2826bfdf",
@@ -954,9 +954,9 @@
       "source": "2408.07425v1_exploring_retrieval_augmented_generation_in_arabic.pdf",
       "chunk_count": 417,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.11067221313714981,
-      "y": 0.1070781797170639
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.13148632645606995,
+      "y": -0.20240679383277893
     },
     {
       "document_id": "405d7391-5054-466b-856f-01871d4a199b",
@@ -969,9 +969,9 @@
       "source": "2408.08444v2_w-rag_weakly_supervised_dense_retrieval_in_rag_for_open-domain_question_answerin.pdf",
       "chunk_count": 645,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.3619873523712158,
-      "y": -0.06002582609653473
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.39890986680984497,
+      "y": -0.08378176391124725
     },
     {
       "document_id": "759503aa-7a66-4f95-b60b-0990cd8c44fd",
@@ -984,9 +984,9 @@
       "source": "2408.08901v1_bayesian_inference_to_improve_quality_of_retrieval_augmented_generation.pdf",
       "chunk_count": 141,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.1581842303276062,
-      "y": -0.20802269876003265
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.1554109901189804,
+      "y": 0.018738117069005966
     },
     {
       "document_id": "f27c8a2d-0801-467b-951f-c41ebba793e6",
@@ -998,10 +998,10 @@
       "tags": [],
       "source": "2409.11279v1_p-rag_progressive_retrieval_augmented_generation_for_planning_on_embodied_everyd.pdf",
       "chunk_count": 537,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": 0.26481881737709045,
-      "y": 0.3831237554550171
+      "cluster_id": 1,
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.278764545917511,
+      "y": -0.29066699743270874
     },
     {
       "document_id": "05e5a8c2-0c6b-49fe-804d-994800a868fd",
@@ -1013,10 +1013,10 @@
       "tags": [],
       "source": "2409.12140v2_morag_--_multi-fusion_retrieval_augmented_generation_for_human_motion.pdf",
       "chunk_count": 597,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": -0.10722922533750534,
-      "y": 0.9541648626327515
+      "cluster_id": 8,
+      "cluster_label": "Video Enriched Aligned Captions",
+      "x": -0.1325002759695053,
+      "y": -0.795046329498291
     },
     {
       "document_id": "17b2e127-059d-4893-a709-137d35c2c669",
@@ -1029,9 +1029,9 @@
       "source": "2409.13483v1_a_multimodal_dense_retrieval_approach_for_speech-based_open-domain_question_answ.pdf",
       "chunk_count": 420,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.28840532898902893,
-      "y": 0.41151589155197144
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.3350229561328888,
+      "y": -0.5566614270210266
     },
     {
       "document_id": "1f01bf42-1c93-4dd6-9177-f88e12519f46",
@@ -1043,10 +1043,10 @@
       "tags": [],
       "source": "2409.13707v1_retrieval_augmented_generation-based_incident_resolution_recommendation_system_f.pdf",
       "chunk_count": 345,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.2159009873867035,
-      "y": -0.19981133937835693
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.23245327174663544,
+      "y": 0.1553177386522293
     },
     {
       "document_id": "619adada-2206-4ade-8a92-6eaf4005d353",
@@ -1058,10 +1058,10 @@
       "tags": [],
       "source": "2409.15566v1_gem-rag_graphical_eigen_memories_for_retrieval_augmented_generation.pdf",
       "chunk_count": 456,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.21127450466156006,
-      "y": 0.042100317776203156
+      "x": -0.2239961475133896,
+      "y": 0.03742551431059837
     },
     {
       "document_id": "243c1228-4279-4e1f-afe9-7db71767a539",
@@ -1075,8 +1075,8 @@
       "chunk_count": 330,
       "cluster_id": 3,
       "cluster_label": "Medical Question Multi Representative",
-      "x": 0.34496423602104187,
-      "y": 0.2739170491695404
+      "x": 0.34875762462615967,
+      "y": -0.409207284450531
     },
     {
       "document_id": "6dca5afd-3cbc-4c81-bd8d-1989796a86a6",
@@ -1087,11 +1087,11 @@
       "category": "uncategorized",
       "tags": [],
       "source": "2410.00004v2_retro-li_small-scale_retrieval_augmented_generation_supporting_noisy_similarity.pdf",
-      "chunk_count": 1209,
-      "cluster_id": 4,
+      "chunk_count": 1241,
+      "cluster_id": 5,
       "cluster_label": "Retro Small Scale Supporting",
-      "x": -0.466381698846817,
-      "y": 0.21643677353858948
+      "x": -0.5040357112884521,
+      "y": -0.15920023620128632
     },
     {
       "document_id": "7c6f0ccd-b4c2-4dc2-91b0-825f9f21b8e6",
@@ -1103,10 +1103,10 @@
       "tags": [],
       "source": "2410.03771v1_seesay_an_assistive_device_for_the_visually_impaired_using_retrieval_augmented_g.pdf",
       "chunk_count": 159,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": 0.702570378780365,
-      "y": 1.0
+      "cluster_id": 8,
+      "cluster_label": "Video Enriched Aligned Captions",
+      "x": 0.7301281094551086,
+      "y": -0.8527669906616211
     },
     {
       "document_id": "05a01621-33ff-4b88-8ad5-23dbb7780b3f",
@@ -1119,9 +1119,9 @@
       "source": "2410.12837_rag_survey_evolution_landscape.pdf",
       "chunk_count": 552,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.038651347160339355,
-      "y": 0.12060844898223877
+      "cluster_label": "Question Open Domain Dense",
+      "x": 0.030857501551508904,
+      "y": -0.16943836212158203
     },
     {
       "document_id": "7daede30-d0c7-4823-88d0-1f817b0461f2",
@@ -1134,9 +1134,9 @@
       "source": "2410.14167v1_optimizing_retrieval-augmented_generation_with_elasticsearch_for_enhanced_questi.pdf",
       "chunk_count": 261,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.04701455309987068,
-      "y": -0.05517469346523285
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.045087575912475586,
+      "y": 0.1149199903011322
     },
     {
       "document_id": "08bceee7-9331-4e02-ad77-a90c75c62a05",
@@ -1148,10 +1148,10 @@
       "tags": [],
       "source": "2410.14479v1_backdoored_retrievers_for_prompt_injection_attacks_on_retrieval_augmented_genera.pdf",
       "chunk_count": 390,
-      "cluster_id": 2,
-      "cluster_label": "Pandora Jailbreak Gpts Poisoning",
-      "x": 0.5058746933937073,
-      "y": -0.15557095408439636
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.528915524482727,
+      "y": -0.045409996062517166
     },
     {
       "document_id": "6521f4a6-5a62-486a-b99c-77beeba97c29",
@@ -1163,10 +1163,10 @@
       "tags": [],
       "source": "2410.15944v1_developing_retrieval_augmented_generation_rag_based_llm_systems_from_pdfs_an_exp.pdf",
       "chunk_count": 693,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.4040900766849518,
-      "y": 0.11294442415237427
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.43227359652519226,
+      "y": -0.07494083791971207
     },
     {
       "document_id": "67dfc2f0-d517-4bb7-8da7-9adc05d35050",
@@ -1178,10 +1178,10 @@
       "tags": [],
       "source": "2410.20598v2_r_3ag_first_workshop_on_refined_and_reliable_retrieval_augmented_generation.pdf",
       "chunk_count": 267,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.2241528034210205,
-      "y": 0.08737749606370926
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.23446761071681976,
+      "y": -0.10791032761335373
     },
     {
       "document_id": "8bde399f-ba55-4ea0-b0f0-6b639d33f616",
@@ -1194,9 +1194,9 @@
       "source": "2411.02832v2_persianrag_a_retrieval-augmented_generation_system_for_persian_language.pdf",
       "chunk_count": 465,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.001218903693370521,
-      "y": 0.06500134617090225
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.012017806060612202,
+      "y": -0.14332833886146545
     },
     {
       "document_id": "7ad7f166-f33c-42f2-a806-f62d6daa1319",
@@ -1208,10 +1208,10 @@
       "tags": [],
       "source": "2411.08891v4_reliable_decision_making_via_calibration_oriented_retrieval_augmented_generation.pdf",
       "chunk_count": 1023,
-      "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.13476450741291046,
-      "y": -0.07741211354732513
+      "cluster_id": 0,
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": 0.13006629049777985,
+      "y": -0.12740682065486908
     },
     {
       "document_id": "a1741337-9fd4-4826-b04b-70c9833f23d0",
@@ -1223,10 +1223,10 @@
       "tags": [],
       "source": "2411.11895v1_deploying_large_language_models_with_retrieval_augmented_generation.pdf",
       "chunk_count": 1158,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.6949853301048279,
-      "y": -0.046907976269721985
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.7422764301300049,
+      "y": 0.029160136356949806
     },
     {
       "document_id": "093bbe73-4505-492f-9e5c-61b9e7626955",
@@ -1239,9 +1239,9 @@
       "source": "2411.16133v2_context_awareness_gate_for_retrieval_augmented_generation.pdf",
       "chunk_count": 270,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.10858136415481567,
-      "y": -0.1756599396467209
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.11802928894758224,
+      "y": 0.1268691122531891
     },
     {
       "document_id": "7ce03cb7-113f-4920-9a63-f13824ccd755",
@@ -1254,9 +1254,9 @@
       "source": "2411.16523v2_lab-rag_label_boosted_retrieval_augmented_generation_for_radiology_report_genera.pdf",
       "chunk_count": 954,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": 0.06394647061824799,
-      "y": 0.3687795102596283
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": 0.05411672219634056,
+      "y": -0.4190862476825714
     },
     {
       "document_id": "dd940cd0-5bc9-47aa-8ef4-b41dae272f89",
@@ -1268,10 +1268,10 @@
       "tags": [],
       "source": "2411.18583v1_automated_literature_review_using_nlp_techniques_and_llm-based_retrieval-augment.pdf",
       "chunk_count": 267,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.5104730725288391,
-      "y": 0.11388757079839706
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.5409192442893982,
+      "y": -0.13619941473007202
     },
     {
       "document_id": "3135263b-9625-4093-8ed1-451612c1e35f",
@@ -1283,10 +1283,10 @@
       "tags": [],
       "source": "2412.02563v1_semantic_tokens_in_retrieval_augmented_generation.pdf",
       "chunk_count": 129,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.1546534150838852,
-      "y": -0.1818411946296692
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.17026287317276,
+      "y": 0.18337874114513397
     },
     {
       "document_id": "0bb6f46c-5b55-45e4-9bd4-6b09d9ce8274",
@@ -1298,10 +1298,10 @@
       "tags": [],
       "source": "2412.05838v1_a_collaborative_multi-agent_approach_to_retrieval-augmented_generation_across_di.pdf",
       "chunk_count": 477,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.6149839162826538,
-      "y": -0.18860197067260742
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.6809000968933105,
+      "y": 0.413926899433136
     },
     {
       "document_id": "040d31f0-3919-439d-89c0-183fb294d8f3",
@@ -1314,9 +1314,9 @@
       "source": "2412.12300v3_unanswerability_evaluation_for_retrieval_augmented_generation.pdf",
       "chunk_count": 744,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.23352926969528198,
-      "y": -0.3095378875732422
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.24687671661376953,
+      "y": 0.14143764972686768
     },
     {
       "document_id": "43725615-fcaf-41f2-bf5e-1d32ac485970",
@@ -1328,10 +1328,10 @@
       "tags": [],
       "source": "2412.13163v2_c-fedrag_a_confidential_federated_retrieval-augmented_generation_system.pdf",
       "chunk_count": 410,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.3206808865070343,
-      "y": -0.18589097261428833
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.3598683774471283,
+      "y": 0.3672804534435272
     },
     {
       "document_id": "77e95576-c0f6-41c8-b0de-d2f35d9b07d3",
@@ -1343,10 +1343,10 @@
       "tags": [],
       "source": "2412.14457v1_visa_retrieval_augmented_generation_with_visual_source_attribution.pdf",
       "chunk_count": 465,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": -0.061758507043123245,
-      "y": 0.29109421372413635
+      "cluster_id": 0,
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.0829668715596199,
+      "y": -0.3497622013092041
     },
     {
       "document_id": "9c80f541-48b5-4f56-b9d0-994d06fb519b",
@@ -1358,10 +1358,10 @@
       "tags": [],
       "source": "2412.15246v1_accelerating_retrieval-augmented_generation.pdf",
       "chunk_count": 1044,
-      "cluster_id": 4,
+      "cluster_id": 5,
       "cluster_label": "Retro Small Scale Supporting",
-      "x": -0.25753355026245117,
-      "y": 0.2652604877948761
+      "x": -0.26949188113212585,
+      "y": -0.07398409396409988
     },
     {
       "document_id": "4b41e55b-0ac4-4f4c-960e-f2b529da3b2f",
@@ -1373,10 +1373,10 @@
       "tags": [],
       "source": "2412.15404v1_a_retrieval-augmented_generation_framework_for_academic_literature_navigation_in.pdf",
       "chunk_count": 954,
-      "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.17218485474586487,
-      "y": -0.17064301669597626
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.17939350008964539,
+      "y": 0.09214164316654205
     },
     {
       "document_id": "c49c65e5-aa54-476f-8485-14af0d154e52",
@@ -1390,8 +1390,8 @@
       "chunk_count": 609,
       "cluster_id": 3,
       "cluster_label": "Medical Question Multi Representative",
-      "x": 0.360757976770401,
-      "y": 0.48664534091949463
+      "x": 0.3612518012523651,
+      "y": -0.5716552734375
     },
     {
       "document_id": "927fcf0c-c21c-4c74-afa4-79537f56be65",
@@ -1403,10 +1403,10 @@
       "tags": [],
       "source": "2412.18431v2_gear_graph-enhanced_agent_for_retrieval-augmented_generation.pdf",
       "chunk_count": 783,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.28296196460723877,
-      "y": -0.14675606787204742
+      "x": -0.28493550419807434,
+      "y": 0.2981991469860077
     },
     {
       "document_id": "8923aeb8-5e2c-4aaf-8bad-3131d8cd1439",
@@ -1419,9 +1419,9 @@
       "source": "2501.00332v1_main-rag_multi-agent_filtering_retrieval-augmented_generation.pdf",
       "chunk_count": 612,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.10907014459371567,
-      "y": -0.10637523978948593
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.12606686353683472,
+      "y": -0.03445138782262802
     },
     {
       "document_id": "c625098c-93c2-4a8b-9ab7-15041d0e0023",
@@ -1434,9 +1434,9 @@
       "source": "2501.03995v1_rag-check_evaluating_multimodal_retrieval_augmented_generation_performance.pdf",
       "chunk_count": 408,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.03889122232794762,
-      "y": 0.3652395009994507
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.06117004528641701,
+      "y": -0.4253767132759094
     },
     {
       "document_id": "7968fced-aebf-4905-ad7d-159028208860",
@@ -1449,9 +1449,9 @@
       "source": "2501.04006v1_advancing_similarity_search_with_genai_a_retrieval_augmented_generation_approach.pdf",
       "chunk_count": 231,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.07277356088161469,
-      "y": 0.17824475467205048
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.0886266902089119,
+      "y": -0.21328535676002502
     },
     {
       "document_id": "2bc8cc65-c882-42a5-a6f6-ffd90cce257f",
@@ -1464,9 +1464,9 @@
       "source": "2501.04695v1_re-ranking_the_context_for_multimodal_retrieval_augmented_generation.pdf",
       "chunk_count": 189,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.2473638504743576,
-      "y": 0.2713296115398407
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.26960328221321106,
+      "y": -0.16859829425811768
     },
     {
       "document_id": "37cb8f17-0f72-4534-920b-32319b4a0c77",
@@ -1479,9 +1479,9 @@
       "source": "2501.05475v1_retrieval-augmented_generation_by_evidence_retroactivity_in_llms.pdf",
       "chunk_count": 504,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.004076619632542133,
-      "y": -0.30669549107551575
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": -0.007715635932981968,
+      "y": 0.08772920817136765
     },
     {
       "document_id": "36b2974b-cb10-4d4d-8afb-fbe828f4eb34",
@@ -1494,9 +1494,9 @@
       "source": "2501.07793v1_unsupervised_query_routing_for_retrieval_augmented_generation.pdf",
       "chunk_count": 399,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.18838174641132355,
-      "y": -0.23143738508224487
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.18722200393676758,
+      "y": 0.32679450511932373
     },
     {
       "document_id": "198fb1de-bd00-499d-8256-60d2fe13e344",
@@ -1508,10 +1508,10 @@
       "tags": [],
       "source": "2501.09136v4.pdf",
       "chunk_count": 1107,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.5814489722251892,
-      "y": -0.08935607224702835
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.6343834400177002,
+      "y": 0.22164252400398254
     },
     {
       "document_id": "a3cdfa0a-5f14-48c1-b5e5-b54a62b453b7",
@@ -1524,9 +1524,9 @@
       "source": "2501.09292v3_to_retrieve_or_not_to_retrieve_uncertainty_detection_for_dynamic_retrieval_augme.pdf",
       "chunk_count": 264,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.14603972434997559,
-      "y": -0.10365650057792664
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.16340941190719604,
+      "y": -0.017186637967824936
     },
     {
       "document_id": "c40759ff-beb0-4425-8a73-2c17c6cdce20",
@@ -1539,9 +1539,9 @@
       "source": "2501.11929v1_aloftrag_automatic_local_fine_tuning_for_retrieval_augmented_generation.pdf",
       "chunk_count": 483,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.08578716218471527,
-      "y": 0.0015381373232230544
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.10834160447120667,
+      "y": -0.20951014757156372
     },
     {
       "document_id": "1a178bea-6473-4eae-ade2-66c6cb5800c2",
@@ -1554,9 +1554,9 @@
       "source": "2501.15470v2_cogplanner_unveiling_the_potential_of_agentic_multimodal_retrieval_augmented_gen.pdf",
       "chunk_count": 555,
       "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": 0.0872546061873436,
-      "y": 0.19874951243400574
+      "cluster_label": "Graph Knowledge Guided Enhanced",
+      "x": 0.09775087237358093,
+      "y": -0.04872814938426018
     },
     {
       "document_id": "fb7fd4d1-c475-4f3b-9d9d-5f64360b3c2b",
@@ -1569,9 +1569,9 @@
       "source": "2501.15915v1_parametric_retrieval_augmented_generation.pdf",
       "chunk_count": 660,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.19149726629257202,
-      "y": -0.020234212279319763
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.20667865872383118,
+      "y": -0.019218269735574722
     },
     {
       "document_id": "3bbb5bd3-d697-46a3-bed6-57fdcc1d0d80",
@@ -1583,10 +1583,10 @@
       "tags": [],
       "source": "2502.00306v2_riddle_me_this_stealthy_membership_inference_for_retrieval-augmented_generation.pdf",
       "chunk_count": 1089,
-      "cluster_id": 2,
-      "cluster_label": "Pandora Jailbreak Gpts Poisoning",
-      "x": 0.2196420282125473,
-      "y": -0.303120493888855
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.22747741639614105,
+      "y": 0.10179007798433304
     },
     {
       "document_id": "5393a35a-2fb2-4fa8-bf00-8f4ffe5e7280",
@@ -1598,10 +1598,10 @@
       "tags": [],
       "source": "2502.01113v3_gfm-rag_graph_foundation_model_for_retrieval_augmented_generation.pdf",
       "chunk_count": 1140,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.23059090971946716,
-      "y": -0.10720566660165787
+      "x": -0.2323460578918457,
+      "y": 0.23685163259506226
     },
     {
       "document_id": "f193abfa-f7fc-4257-9580-3afb967dc791",
@@ -1613,10 +1613,10 @@
       "tags": [],
       "source": "2502.01549v1_videorag_retrieval-augmented_generation_with_extreme_long-context_videos.pdf",
       "chunk_count": 624,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": -0.07041331380605698,
-      "y": 0.6573033332824707
+      "cluster_id": 8,
+      "cluster_label": "Video Enriched Aligned Captions",
+      "x": -0.0849243625998497,
+      "y": -0.46370729804039
     },
     {
       "document_id": "ac16d31d-d6c9-41ca-a73e-f6b4b6bedbcc",
@@ -1628,10 +1628,27 @@
       "tags": [],
       "source": "2502.06864v1_knowledge_graph-guided_retrieval_augmented_generation.pdf",
       "chunk_count": 480,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.28641751408576965,
-      "y": -0.10043460875749588
+      "x": -0.29442960023880005,
+      "y": 0.2287776619195938
+    },
+    {
+      "document_id": "3668ed6c-7a00-4f0f-8ffe-47d535cc32e1",
+      "article_id": "arxiv:2502.07223v1",
+      "title": "Graph RAG-Tool Fusion",
+      "url": "https://arxiv.org/abs/2502.07223v1",
+      "domain": "research",
+      "category": "cs.cl",
+      "tags": [
+        "cs.cl"
+      ],
+      "source": "2502.07223v1_graph_rag_tool_fusion.pdf",
+      "chunk_count": 256,
+      "cluster_id": 9,
+      "cluster_label": "Graph Knowledge Guided Enhanced",
+      "x": 0.26858338713645935,
+      "y": 0.6177200675010681
     },
     {
       "document_id": "f97969e2-aefb-491b-940d-210a9bf2791f",
@@ -1643,10 +1660,10 @@
       "tags": [],
       "source": "2502.14727v1_wavrag_audio-integrated_retrieval_augmented_generation_for_spoken_dialogue_model.pdf",
       "chunk_count": 639,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": -0.11237873136997223,
-      "y": 0.5548188090324402
+      "cluster_id": 6,
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.14044122397899628,
+      "y": -0.5836272239685059
     },
     {
       "document_id": "5b669276-87c5-4267-87c9-8d00480f5bc8",
@@ -1658,10 +1675,10 @@
       "tags": [],
       "source": "2502.14902v2_pathrag_pruning_graph-based_retrieval_augmented_generation_with_relational_paths.pdf",
       "chunk_count": 447,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.1959092766046524,
-      "y": -0.3149261474609375
+      "x": -0.1791449636220932,
+      "y": 0.578313410282135
     },
     {
       "document_id": "b639bb86-9979-4807-9b87-4c0387b026fb",
@@ -1675,8 +1692,8 @@
       "chunk_count": 165,
       "cluster_id": 3,
       "cluster_label": "Medical Question Multi Representative",
-      "x": 0.6103178262710571,
-      "y": 0.13971002399921417
+      "x": 0.6458926796913147,
+      "y": -0.16963455080986023
     },
     {
       "document_id": "5e1d6b46-6fe3-49ef-a09b-55f82f8ac318",
@@ -1688,10 +1705,10 @@
       "tags": [],
       "source": "2502.17874v2_neural_graph_matching_improves_retrieval_augmented_generation_in_molecular_machi.pdf",
       "chunk_count": 660,
-      "cluster_id": 8,
-      "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.36961784958839417,
-      "y": 0.2625444829463959
+      "cluster_id": 5,
+      "cluster_label": "Retro Small Scale Supporting",
+      "x": -0.37344515323638916,
+      "y": 0.07051791995763779
     },
     {
       "document_id": "e91ec268-b4b4-4d1e-8c08-9eaa609d7f02",
@@ -1704,9 +1721,9 @@
       "source": "2502.18470v5_spatial-rag_spatial_retrieval_augmented_generation_for_real-world_geospatial_rea.pdf",
       "chunk_count": 804,
       "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": 0.14868658781051636,
-      "y": -0.07257073372602463
+      "cluster_label": "Graph Knowledge Guided Enhanced",
+      "x": 0.17048491537570953,
+      "y": 0.20836666226387024
     },
     {
       "document_id": "368fef5b-375c-4616-b8c1-cefab398d407",
@@ -1718,10 +1735,10 @@
       "tags": [],
       "source": "2502.20541v1_nanogpt_a_query-driven_large_language_model_retrieval-augmented_generation_syste.pdf",
       "chunk_count": 1305,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": 0.5982255935668945,
-      "y": 0.24642515182495117
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.6466095447540283,
+      "y": -0.06701380759477615
     },
     {
       "document_id": "6b6369b6-24aa-4689-85b5-9cfaffcd9310",
@@ -1733,10 +1750,10 @@
       "tags": [],
       "source": "2503.02922v1_optimizing_open-domain_question_answering_with_graph-based_retrieval_augmented_g.pdf",
       "chunk_count": 642,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.14647462964057922,
-      "y": -0.21372312307357788
+      "cluster_id": 9,
+      "cluster_label": "Graph Knowledge Guided Enhanced",
+      "x": 0.17363663017749786,
+      "y": 0.35766756534576416
     },
     {
       "document_id": "840b20ee-78c1-47f5-a6ad-e7d6b30003c9",
@@ -1748,10 +1765,10 @@
       "tags": [],
       "source": "2503.05464v2_automatic_teaching_platform_on_vision_language_retrieval_augmented_generation.pdf",
       "chunk_count": 393,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": 0.6442651748657227,
-      "y": 0.6060254573822021
+      "cluster_id": 8,
+      "cluster_label": "Video Enriched Aligned Captions",
+      "x": 0.6705853343009949,
+      "y": -0.5518423318862915
     },
     {
       "document_id": "17deb03b-5dd2-4e34-affd-e3b0b1ccbf99",
@@ -1763,10 +1780,10 @@
       "tags": [],
       "source": "2503.14649v2_rago_systematic_performance_optimization_for_retrieval-augmented_generation_serv.pdf",
       "chunk_count": 676,
-      "cluster_id": 4,
+      "cluster_id": 5,
       "cluster_label": "Retro Small Scale Supporting",
-      "x": -0.21819894015789032,
-      "y": 0.008050430566072464
+      "x": -0.21972191333770752,
+      "y": 0.190005362033844
     },
     {
       "document_id": "7a60a6a6-0fd6-465a-9ddf-2f29ee3a9611",
@@ -1778,10 +1795,10 @@
       "tags": [],
       "source": "2503.16581v1_investigating_retrieval-augmented_generation_in_quranic_studies_a_study_of_13_op.pdf",
       "chunk_count": 372,
-      "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.18796207010746002,
-      "y": -0.1346598118543625
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.1898200511932373,
+      "y": -0.018791181966662407
     },
     {
       "document_id": "b7e52f8b-1b6f-46fd-8618-93f55ccc1752",
@@ -1794,9 +1811,9 @@
       "source": "2503.23013v1_dat_dynamic_alpha_tuning_for_hybrid_retrieval_in_retrieval-augmented_generation.pdf",
       "chunk_count": 218,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.2951350808143616,
-      "y": -0.31323477625846863
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.30536022782325745,
+      "y": 0.3526804447174072
     },
     {
       "document_id": "826e81bc-6817-428b-a182-86fda4e9a97c",
@@ -1808,10 +1825,10 @@
       "tags": [],
       "source": "2503.23421v1_a_multi-agent_onboarding_assistant_based_on_large_language_models_retrieval_augm.pdf",
       "chunk_count": 176,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.9324772953987122,
-      "y": 0.1718282252550125
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 1.0,
+      "y": -0.07667709141969681
     },
     {
       "document_id": "78d17593-b5f1-4010-9161-ea509b924977",
@@ -1827,10 +1844,10 @@
       ],
       "source": "2504.01346v4_rag_over_tables_hierarchical_memory_index_multi_stage_retrieval_and_benchmarking.pdf",
       "chunk_count": 232,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.21260079741477966,
-      "y": -0.2744111716747284
+      "x": -0.2041713297367096,
+      "y": 0.46812671422958374
     },
     {
       "document_id": "c1d9a454-5317-4b88-87ee-43f543f80342",
@@ -1843,9 +1860,9 @@
       "source": "2504.01840v2_lrage_legal_retrieval_augmented_generation_evaluation_tool.pdf",
       "chunk_count": 328,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.02819417603313923,
-      "y": -0.24051126837730408
+      "cluster_label": "Question Open Domain Dense",
+      "x": 0.032403815537691116,
+      "y": 0.16312333941459656
     },
     {
       "document_id": "e5a7b722-6cf8-4494-8531-ceac5910d0fc",
@@ -1858,9 +1875,9 @@
       "source": "2504.01883v1_corag_collaborative_retrieval-augmented_generation.pdf",
       "chunk_count": 310,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.06639254838228226,
-      "y": -0.1605568379163742
+      "cluster_label": "Question Open Domain Dense",
+      "x": 0.07334252446889877,
+      "y": 0.15349702537059784
     },
     {
       "document_id": "571d256f-1169-4932-a329-a29736e9ee87",
@@ -1873,9 +1890,9 @@
       "source": "2504.05731v1_retrieval_augmented_generation_with_collaborative_filtering_for_personalized_tex.pdf",
       "chunk_count": 394,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.16181057691574097,
-      "y": 0.05413955822587013
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.16759997606277466,
+      "y": 0.04849982261657715
     },
     {
       "document_id": "2d7dcb3c-099b-4562-8f32-72dae6573a1b",
@@ -1887,10 +1904,10 @@
       "tags": [],
       "source": "2504.08748v1_a_survey_of_multimodal_retrieval-augmented_generation.pdf",
       "chunk_count": 2264,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": -0.12955400347709656,
-      "y": 0.6395325660705566
+      "cluster_id": 8,
+      "cluster_label": "Video Enriched Aligned Captions",
+      "x": -0.1556244194507599,
+      "y": -0.5532251000404358
     },
     {
       "document_id": "7c743bdc-ec93-4a6d-b467-c3576cc57414",
@@ -1902,10 +1919,10 @@
       "tags": [],
       "source": "2504.08893v1_knowledge_graph-extended_retrieval_augmented_generation_for_question_answering.pdf",
       "chunk_count": 374,
-      "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.08037708699703217,
-      "y": -0.22663824260234833
+      "cluster_id": 9,
+      "cluster_label": "Graph Knowledge Guided Enhanced",
+      "x": -0.08231792598962784,
+      "y": 0.21429072320461273
     },
     {
       "document_id": "8d78e776-0b2b-4ae7-b696-01c58fc7797f",
@@ -1918,9 +1935,9 @@
       "source": "2504.10529v1_heterag_a_heterogeneous_retrieval-augmented_generation_framework_with_decoupled.pdf",
       "chunk_count": 270,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.31756046414375305,
-      "y": -0.0045269085094332695
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.337113618850708,
+      "y": 0.05289565399289131
     },
     {
       "document_id": "d868fda7-871a-40fe-af04-a3f9730c335b",
@@ -1934,8 +1951,8 @@
       "chunk_count": 430,
       "cluster_id": 3,
       "cluster_label": "Medical Question Multi Representative",
-      "x": 0.32879945635795593,
-      "y": -0.08240361511707306
+      "x": 0.342515766620636,
+      "y": -0.044872064143419266
     },
     {
       "document_id": "13e58ed8-69a4-430d-b151-4dea042a9858",
@@ -1947,10 +1964,10 @@
       "tags": [],
       "source": "2505.00443v1_distributed_retrieval-augmented_generation.pdf",
       "chunk_count": 318,
-      "cluster_id": 8,
-      "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": 0.1701938807964325,
-      "y": -0.20421157777309418
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.20451050996780396,
+      "y": 0.4382467269897461
     },
     {
       "document_id": "e1796354-9b33-4ad5-aa3b-973f91185ba9",
@@ -1962,10 +1979,10 @@
       "tags": [],
       "source": "2505.04680v1_retrieval_augmented_generation_evaluation_for_health_documents.pdf",
       "chunk_count": 722,
-      "cluster_id": 3,
-      "cluster_label": "Medical Question Multi Representative",
-      "x": 0.38691288232803345,
-      "y": -0.00785486213862896
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.4009194076061249,
+      "y": -0.12815171480178833
     },
     {
       "document_id": "e5c62ced-2067-4580-ab3d-9fae7a7fe317",
@@ -1978,9 +1995,9 @@
       "source": "2505.04846v1_hiperrag_high-performance_retrieval_augmented_generation_for_scientific_insights.pdf",
       "chunk_count": 526,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.21197202801704407,
-      "y": 0.2284325212240219
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.22874562442302704,
+      "y": -0.1417926400899887
     },
     {
       "document_id": "4923f5e8-306f-4036-ab76-6b287371e9bb",
@@ -1994,8 +2011,8 @@
       "chunk_count": 152,
       "cluster_id": 3,
       "cluster_label": "Medical Question Multi Representative",
-      "x": 0.030927257612347603,
-      "y": -0.07979421317577362
+      "x": 0.03342572972178459,
+      "y": 0.07390713691711426
     },
     {
       "document_id": "c10e91b3-5976-4cb3-ae5a-141dea166d5b",
@@ -2008,9 +2025,9 @@
       "source": "2505.08450v2_iterkey_iterative_keyword_generation_with_llms_for_enhanced_retrieval_augmented.pdf",
       "chunk_count": 636,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.174836665391922,
-      "y": -0.11805275082588196
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.19168879091739655,
+      "y": 0.01632237248122692
     },
     {
       "document_id": "ce4ae483-766c-497a-95b3-d7a5dd697ee3",
@@ -2023,9 +2040,9 @@
       "source": "2505.13129v1_optimizing_retrieval_augmented_generation_for_object_constraint_language.pdf",
       "chunk_count": 242,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.19668476283550262,
-      "y": -0.15498515963554382
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.20152418315410614,
+      "y": 0.2056223750114441
     },
     {
       "document_id": "704021d5-735c-41ff-975c-b5b7b94d65f1",
@@ -2037,10 +2054,10 @@
       "tags": [],
       "source": "2505.18906v2_federated_retrieval-augmented_generation_a_systematic_mapping_study.pdf",
       "chunk_count": 334,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.5029830932617188,
-      "y": -0.21430078148841858
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.5496572256088257,
+      "y": 0.3012382686138153
     },
     {
       "document_id": "04052dc3-fbcd-40c7-a759-e2d925a01b5e",
@@ -2052,10 +2069,10 @@
       "tags": [],
       "source": "2505.21072v5_faithfulness-aware_uncertainty_quantification_for_fact-checking_the_output_of_re.pdf",
       "chunk_count": 570,
-      "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": -0.047700099647045135,
-      "y": -0.24657082557678223
+      "cluster_id": 0,
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.06368815898895264,
+      "y": -0.009632289409637451
     },
     {
       "document_id": "fd84f152-50da-438f-96e5-b5fb6e4ceba2",
@@ -2068,9 +2085,9 @@
       "source": "2506.06962v3_ar-rag_autoregressive_retrieval_augmentation_for_image_generation.pdf",
       "chunk_count": 444,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.29520389437675476,
-      "y": 0.7985776662826538
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.32622209191322327,
+      "y": -0.5867307186126709
     },
     {
       "document_id": "45bedecd-e4b7-43fe-aa23-4f8071615160",
@@ -2082,10 +2099,10 @@
       "tags": [],
       "source": "2506.10380v2_tablerag_a_retrieval_augmented_generation_framework_for_heterogeneous_document_r.pdf",
       "chunk_count": 412,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.001202326500788331,
-      "y": -0.365208238363266
+      "x": 0.015548989176750183,
+      "y": 0.4484100639820099
     },
     {
       "document_id": "46afe577-2eee-4acd-8db8-cc9102df5507",
@@ -2098,9 +2115,9 @@
       "source": "2506.10844v1_ciir_liverag_2025_optimizing_multi-agent_retrieval_augmented_generation_through.pdf",
       "chunk_count": 439,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.4285565912723541,
-      "y": -0.21608266234397888
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.4597879946231842,
+      "y": 0.12427268177270889
     },
     {
       "document_id": "219bdd53-ad38-46ed-bdf5-b68d753e5b29",
@@ -2113,9 +2130,9 @@
       "source": "2506.12071v2_t_2_-ragbench_text-and-table_benchmark_for_evaluating_retrieval-augmented_genera.pdf",
       "chunk_count": 264,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.045171961188316345,
-      "y": -0.21693705022335052
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.04897180572152138,
+      "y": 0.11648525297641754
     },
     {
       "document_id": "77419174-07c9-4846-8b73-119be015def5",
@@ -2127,10 +2144,10 @@
       "tags": [],
       "source": "2506.20963v2_erarag_efficient_and_incremental_retrieval_augmented_generation_for_growing_corp.pdf",
       "chunk_count": 245,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.3756410479545593,
-      "y": -0.09358497709035873
+      "x": -0.37596186995506287,
+      "y": 0.4051910638809204
     },
     {
       "document_id": "1e3ea635-b725-4832-88f7-89ec321ecf51",
@@ -2142,10 +2159,10 @@
       "tags": [],
       "source": "2506.21931v2_arag_agentic_retrieval_augmented_generation_for_personalized_recommendation.pdf",
       "chunk_count": 85,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.26256686449050903,
-      "y": -0.040693845599889755
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.28859344124794006,
+      "y": 0.13545052707195282
     },
     {
       "document_id": "fdd8f5a9-73e7-4ae1-9624-de6fe659e310",
@@ -2158,9 +2175,9 @@
       "source": "2506.22644v1_evaluating_hybrid_retrieval_augmented_generation_using_dynamic_test_sets_liverag.pdf",
       "chunk_count": 76,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.07670954614877701,
-      "y": -0.16866835951805115
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.09196169674396515,
+      "y": 0.02110879495739937
     },
     {
       "document_id": "f89651c0-d83f-4daf-9b34-30f1662cb072",
@@ -2173,9 +2190,9 @@
       "source": "2507.04069v1_beyond_independent_passages_adaptive_passage_combination_retrieval_for_retrieval.pdf",
       "chunk_count": 160,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.3566698133945465,
-      "y": -0.12298401445150375
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.3850076198577881,
+      "y": 0.05660238116979599
     },
     {
       "document_id": "f0e38104-3f98-4286-a75b-4a938af30309",
@@ -2187,10 +2204,10 @@
       "tags": [],
       "source": "2507.05863v1_kerag_r_knowledge-enhanced_retrieval-augmented_generation_for_recommendation.pdf",
       "chunk_count": 212,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.1149267852306366,
-      "y": -0.012145821005105972
+      "x": -0.1079494059085846,
+      "y": 0.18789097666740417
     },
     {
       "document_id": "6239b6ed-e310-4184-a345-aa5617535dd5",
@@ -2203,9 +2220,9 @@
       "source": "2507.06838v2_shifting_from_ranking_to_set_selection_for_retrieval_augmented_generation.pdf",
       "chunk_count": 190,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.161807119846344,
-      "y": -0.26310983300209045
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.16930337250232697,
+      "y": 0.22723469138145447
     },
     {
       "document_id": "0076f2c4-4695-474f-9e6a-e5339c9a719e",
@@ -2219,8 +2236,8 @@
       "chunk_count": 69,
       "cluster_id": 3,
       "cluster_label": "Medical Question Multi Representative",
-      "x": 0.47217217087745667,
-      "y": -0.0025295789819210768
+      "x": 0.49370720982551575,
+      "y": -0.11544305831193924
     },
     {
       "document_id": "32119d62-001c-4f15-8ef6-f70daaef9f90",
@@ -2232,10 +2249,10 @@
       "tags": [],
       "source": "2507.16826v1_a_query-aware_multi-path_knowledge_graph_fusion_approach_for_enhancing_retrieval.pdf",
       "chunk_count": 191,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.31794336438179016,
-      "y": -0.21338717639446259
+      "x": -0.32196253538131714,
+      "y": 0.3579844534397125
     },
     {
       "document_id": "47652f94-6534-405e-8ac0-fc5319a14226",
@@ -2247,10 +2264,10 @@
       "tags": [],
       "source": "2507.21125v1_rate_an_llm-powered_retrieval_augmented_generation_technology-extraction_pipelin.pdf",
       "chunk_count": 250,
-      "cluster_id": 4,
+      "cluster_id": 5,
       "cluster_label": "Retro Small Scale Supporting",
-      "x": 0.5326891541481018,
-      "y": 0.6348178386688232
+      "x": 0.5593942999839783,
+      "y": -0.534450352191925
     },
     {
       "document_id": "32182397-320b-4185-ac52-d973ce53c69d",
@@ -2263,9 +2280,9 @@
       "source": "2507.23334v2_must-rag_musical_text_question_answering_with_retrieval_augmented_generation.pdf",
       "chunk_count": 122,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.1551608443260193,
-      "y": 0.1458112746477127
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.17864538729190826,
+      "y": -0.2288120537996292
     },
     {
       "document_id": "000b3d63-9742-4b11-a696-0f68969d9dc0",
@@ -2277,10 +2294,10 @@
       "tags": [],
       "source": "2508.03553v1_multirag_a_knowledge-guided_framework_for_mitigating_hallucination_in_multi-sour.pdf",
       "chunk_count": 216,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.149893119931221,
-      "y": -0.3258868157863617
+      "x": -0.13565395772457123,
+      "y": 0.5155225992202759
     },
     {
       "document_id": "e910e200-b8dd-48a1-a0cf-30d261637495",
@@ -2292,10 +2309,10 @@
       "tags": [],
       "source": "2508.05647v1_query-aware_graph_neural_networks_for_enhanced_retrieval-augmented_generation.pdf",
       "chunk_count": 131,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.389871746301651,
-      "y": -0.013232138007879257
+      "x": -0.38539785146713257,
+      "y": 0.3997589647769928
     },
     {
       "document_id": "860e0046-2347-4321-a030-26a84e09b01c",
@@ -2307,10 +2324,10 @@
       "tags": [],
       "source": "2508.05650v1_omnibench-rag_a_multi-domain_evaluation_platform_for_retrieval-augmented_generat.pdf",
       "chunk_count": 71,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.11273696273565292,
-      "y": -0.09355238825082779
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.12075931578874588,
+      "y": 0.06383286416530609
     },
     {
       "document_id": "f3399e7b-7fdf-41d2-9969-bd25a697211c",
@@ -2322,10 +2339,10 @@
       "tags": [],
       "source": "2508.05652v1_lessons_from_a_large_language_model-based_outdoor_trail_recommendation_chatbot_w.pdf",
       "chunk_count": 52,
-      "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": 0.2753686308860779,
-      "y": 0.04322268068790436
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.30787813663482666,
+      "y": 0.13243702054023743
     },
     {
       "document_id": "88578b66-ae92-4a9a-9e1f-4219edbf7a03",
@@ -2338,9 +2355,9 @@
       "source": "2508.09460v1_towards_self-cognitive_exploration_metacognitive_knowledge_graph_retrieval_augme.pdf",
       "chunk_count": 227,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.10710069537162781,
-      "y": -0.2540866434574127
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.11637737601995468,
+      "y": 0.18311743438243866
     },
     {
       "document_id": "5a5a2a5f-8385-42f9-92ac-9f20997e9116",
@@ -2352,10 +2369,10 @@
       "tags": [],
       "source": "2508.16007v2_data_auctions_for_retrieval_augmented_generation.pdf",
       "chunk_count": 242,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.05427802354097366,
-      "y": -0.129062220454216
+      "x": -0.036283887922763824,
+      "y": 0.3362032175064087
     },
     {
       "document_id": "b2e49629-9dc2-41b7-b2c5-e44157a9d2df",
@@ -2368,9 +2385,9 @@
       "source": "2508.20131v1_argrag_explainable_retrieval_augmented_generation_using_quantitative_bipolar_arg.pdf",
       "chunk_count": 200,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.028107546269893646,
-      "y": -0.34390968084335327
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.022159406915307045,
+      "y": 0.10154096782207489
     },
     {
       "document_id": "8cbcf6a3-9dd9-4788-b347-edd97bef684d",
@@ -2382,10 +2399,10 @@
       "tags": [],
       "source": "2509.01030v2_identifying_origins_of_place_names_via_retrieval_augmented_generation.pdf",
       "chunk_count": 150,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.17393988370895386,
-      "y": -0.1924944967031479
+      "x": -0.1669139862060547,
+      "y": 0.3635646402835846
     },
     {
       "document_id": "9f156ae3-3c31-49e3-bfda-6ff5f9f5c2c4",
@@ -2398,9 +2415,9 @@
       "source": "2509.04820v1_fishing_for_answers_exploring_one-shot_vs._iterative_retrieval_strategies_for_re.pdf",
       "chunk_count": 154,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.08274612575769424,
-      "y": -0.24146056175231934
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.08246394991874695,
+      "y": 0.25708651542663574
     },
     {
       "document_id": "8d17b9e5-4529-49c2-b061-9a3a3130af9c",
@@ -2412,10 +2429,10 @@
       "tags": [],
       "source": "2509.19567v2_retrieval_augmented_generation_based_context_discovery_for_asr.pdf",
       "chunk_count": 105,
-      "cluster_id": 4,
+      "cluster_id": 5,
       "cluster_label": "Retro Small Scale Supporting",
-      "x": -0.20817826688289642,
-      "y": 0.3809252083301544
+      "x": -0.23635491728782654,
+      "y": -0.41028714179992676
     },
     {
       "document_id": "4411d9be-c5b6-40a9-9a6d-6f36db827078",
@@ -2427,10 +2444,10 @@
       "tags": [],
       "source": "2509.21237v1_query-centric_graph_retrieval_augmented_generation.pdf",
       "chunk_count": 230,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.2443315088748932,
-      "y": -0.31370824575424194
+      "x": -0.24035468697547913,
+      "y": 0.44468316435813904
     },
     {
       "document_id": "1a767e90-68ae-4b95-8c0d-6aaa2f716ca9",
@@ -2442,10 +2459,10 @@
       "tags": [],
       "source": "2509.21336v1_hetarag_hybrid_deep_retrieval-augmented_generation_across_heterogeneous_data_sto.pdf",
       "chunk_count": 160,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": 0.03180188685655594,
-      "y": -0.15730634331703186
+      "x": 0.04854234680533409,
+      "y": 0.3163747191429138
     },
     {
       "document_id": "9dfaee69-12d3-4b48-8e92-c40129b02cd8",
@@ -2457,10 +2474,10 @@
       "tags": [],
       "source": "2510.01600v2_a_comparison_of_independent_and_joint_fine-tuning_strategies_for_retrieval-augme.pdf",
       "chunk_count": 72,
-      "cluster_id": 4,
+      "cluster_id": 5,
       "cluster_label": "Retro Small Scale Supporting",
-      "x": -0.37653475999832153,
-      "y": 0.28291812539100647
+      "x": -0.40586066246032715,
+      "y": -0.23086148500442505
     },
     {
       "document_id": "4065da16-6a50-4768-b865-13bfeff19944",
@@ -2473,9 +2490,9 @@
       "source": "2510.12323_test2.pdf",
       "chunk_count": 708,
       "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": -0.041350431740283966,
-      "y": 0.20684169232845306
+      "cluster_label": "Graph Knowledge Guided Enhanced",
+      "x": -0.04210749268531799,
+      "y": -0.051831964403390884
     },
     {
       "document_id": "0fde718a-9f44-41cd-9191-f8075bcd81a7",
@@ -2487,10 +2504,10 @@
       "tags": [],
       "source": "2510.14271v1_less_is_more_denoising_knowledge_graphs_for_retrieval_augmented_generation.pdf",
       "chunk_count": 240,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.18386909365653992,
-      "y": -0.37343788146972656
+      "x": -0.16653914749622345,
+      "y": 0.5928865075111389
     },
     {
       "document_id": "127917d0-2f1c-43b1-8a0c-eee83584069f",
@@ -2503,9 +2520,9 @@
       "source": "2510.15682v1_squai_scientific_question-answering_with_multi-agent_retrieval-augmented_generat.pdf",
       "chunk_count": 119,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.0577600821852684,
-      "y": -0.21754862368106842
+      "cluster_label": "Question Open Domain Dense",
+      "x": 0.05495936796069145,
+      "y": 0.07793352752923965
     },
     {
       "document_id": "3305bb0f-1fea-48f3-aa0d-8da313cbb035",
@@ -2518,9 +2535,9 @@
       "source": "2510.17354v1_towards_mixed-modal_retrieval_for_universal_retrieval-augmented_generation.pdf",
       "chunk_count": 261,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.30343756079673767,
-      "y": 0.4569430351257324
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.34019795060157776,
+      "y": -0.44196778535842896
     },
     {
       "document_id": "5cf15ed7-4064-44ff-ad13-e3e79ef2a8ce",
@@ -2533,9 +2550,9 @@
       "source": "2510.22344v1_fair-rag_faithful_adaptive_iterative_refinement_for_retrieval-augmented_generati.pdf",
       "chunk_count": 382,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.17359954118728638,
-      "y": -0.43211865425109863
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.18757221102714539,
+      "y": 0.29932481050491333
     },
     {
       "document_id": "bbd4a959-f48d-41b2-8586-00b20085fde0",
@@ -2548,9 +2565,9 @@
       "source": "2510.24402v1_metadata-driven_retrieval-augmented_generation_for_financial_question_answering.pdf",
       "chunk_count": 297,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.08454252779483795,
-      "y": -0.2387114018201828
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.08483155071735382,
+      "y": 0.2598132789134979
     },
     {
       "document_id": "02b6db21-318f-4cd9-a2cb-fb66fe637f78",
@@ -2562,10 +2579,10 @@
       "tags": [],
       "source": "2510.24870v2_seeing_through_the_mirage_evaluating_multimodal_retrieval_augmented_generation.pdf",
       "chunk_count": 269,
-      "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.02641112729907036,
-      "y": 0.12598975002765656
+      "cluster_id": 0,
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": 0.006556537933647633,
+      "y": -0.3284558355808258
     },
     {
       "document_id": "f4b89e67-bf5f-46f4-8a3a-a949220f7bf0",
@@ -2577,10 +2594,10 @@
       "tags": [],
       "source": "2511.00678v1_repairing_responsive_layout_failures_using_retrieval_augmented_generation.pdf",
       "chunk_count": 96,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.46870237588882446,
-      "y": 0.04229255020618439
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.5065606832504272,
+      "y": 0.04040157049894333
     },
     {
       "document_id": "d7afae14-62f1-4135-acf3-4f9d650aa6ba",
@@ -2593,9 +2610,9 @@
       "source": "2511.01059v1_efficient_test-time_retrieval_augmented_generation.pdf",
       "chunk_count": 159,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.1381572186946869,
-      "y": 0.06602910906076431
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.1505068838596344,
+      "y": -0.04228632152080536
     },
     {
       "document_id": "c6f4b635-76a6-4aaf-9d0f-1ca95addfd87",
@@ -2608,9 +2625,9 @@
       "source": "2512.00367v1_breaking_it_down_domain-aware_semantic_segmentation_for_retrieval_augmented_gene.pdf",
       "chunk_count": 120,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.457692950963974,
-      "y": 0.08381862193346024
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.4926726520061493,
+      "y": -0.06810112297534943
     },
     {
       "document_id": "f9480a1e-ab57-431e-9b52-f16ef881f5b3",
@@ -2623,9 +2640,9 @@
       "source": "2512.14313v1_dynamic_context_selection_for_retrieval-augmented_generation_mitigating_distract.pdf",
       "chunk_count": 97,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.2714230716228485,
-      "y": -0.08344735205173492
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.2912352383136749,
+      "y": 0.055592942982912064
     },
     {
       "document_id": "4f5d89b5-8e2c-43f3-a931-c3381ec5bf3e",
@@ -2637,10 +2654,10 @@
       "tags": [],
       "source": "2512.20626v2_megarag_multimodal_knowledge_graph-based_retrieval_augmented_generation.pdf",
       "chunk_count": 338,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.004375396762043238,
-      "y": 0.07376168668270111
+      "x": 0.0073085566982626915,
+      "y": 0.12219227105379105
     },
     {
       "document_id": "4609e4ac-8442-41ab-b2e6-a033bb104bdc",
@@ -2652,10 +2669,10 @@
       "tags": [],
       "source": "2601.04568v2_neurosymbolic_retrievers_for_retrieval-augmented_generation.pdf",
       "chunk_count": 126,
-      "cluster_id": 3,
-      "cluster_label": "Medical Question Multi Representative",
-      "x": 0.21467964351177216,
-      "y": -0.1445046067237854
+      "cluster_id": 1,
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.23181746900081635,
+      "y": 0.13755753636360168
     },
     {
       "document_id": "47c3d092-91e9-4130-b613-a1f4bea99e89",
@@ -2667,10 +2684,10 @@
       "tags": [],
       "source": "2601.05254v3_tagrag_tag-guided_hierarchical_knowledge_graph_retrieval-augmented_generation.pdf",
       "chunk_count": 244,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": 0.0928998738527298,
-      "y": -0.22039976716041565
+      "x": 0.127837136387825,
+      "y": 0.4769359827041626
     },
     {
       "document_id": "4cdc4d59-ebac-4bd1-937f-10e59b5bc259",
@@ -2682,10 +2699,10 @@
       "tags": [],
       "source": "2601.05264v1_engineering_the_rag_stack_a_comprehensive_review_of_the_architecture_and_trust_f.pdf",
       "chunk_count": 510,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.4293714463710785,
-      "y": -0.09601426869630814
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.46506285667419434,
+      "y": 0.1287151426076889
     },
     {
       "document_id": "0b525fee-2cdc-44fd-bce8-25a99ec520b7",
@@ -2698,9 +2715,9 @@
       "source": "2601.08670v1_parallel_context-of-experts_decoding_for_retrieval_augmented_generation.pdf",
       "chunk_count": 136,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.2975989878177643,
-      "y": 0.03227407485246658
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.32225629687309265,
+      "y": -0.04197627678513527
     },
     {
       "document_id": "97410bba-106d-491d-b7ab-9f901c4e0344",
@@ -2713,9 +2730,9 @@
       "source": "2601.13222v2_incorporating_q_a_nuggets_into_retrieval-augmented_generation.pdf",
       "chunk_count": 80,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.06620083004236221,
-      "y": -0.16445916891098022
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.07804042100906372,
+      "y": 0.03570431098341942
     },
     {
       "document_id": "9a133684-68aa-4bd0-af53-a6c395beba7c",
@@ -2728,9 +2745,9 @@
       "source": "2601.18886v1_xprovence_zero-cost_multilingual_context_pruning_for_retrieval-augmented_generat.pdf",
       "chunk_count": 96,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.41983330249786377,
-      "y": 0.027248291298747063
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.45544689893722534,
+      "y": -0.08741293102502823
     },
     {
       "document_id": "524b1569-783b-4838-a6d5-4af7a846c833",
@@ -2743,9 +2760,9 @@
       "source": "2602.03652v1_ragturk_best_practices_for_retrieval_augmented_generation_in_turkish.pdf",
       "chunk_count": 210,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.12265823781490326,
-      "y": -0.22930490970611572
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.12840424478054047,
+      "y": 0.17964856326580048
     },
     {
       "document_id": "2ef2bbb3-2bf2-47fb-997d-b480f591fc2f",
@@ -2758,9 +2775,9 @@
       "source": "2602.07739v2_hyprag_hyperbolic_dense_retrieval_for_retrieval_augmented_generation.pdf",
       "chunk_count": 288,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.4134320318698883,
-      "y": 0.2283315509557724
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.43976783752441406,
+      "y": -0.08641030639410019
     },
     {
       "document_id": "faccb499-9ba8-4f96-916f-bb37b1dcb95b",
@@ -2773,9 +2790,9 @@
       "source": "2602.10271v3_mldocrag_multimodal_long-context_document_retrieval_augmented_generation.pdf",
       "chunk_count": 236,
       "cluster_id": 9,
-      "cluster_label": "Video Multimodal Long Context",
-      "x": -0.23858989775180817,
-      "y": 0.198826864361763
+      "cluster_label": "Graph Knowledge Guided Enhanced",
+      "x": -0.2539517283439636,
+      "y": -0.07234244793653488
     },
     {
       "document_id": "98ba4377-9fb5-47ba-bc33-ee653554e7cc",
@@ -2788,9 +2805,9 @@
       "source": "2602.17216v1_ntlrag_narrative_topic_labels_derived_with_retrieval_augmented_generation.pdf",
       "chunk_count": 228,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.18250533938407898,
-      "y": -0.01894814521074295
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.1844111680984497,
+      "y": -0.09475066512823105
     },
     {
       "document_id": "905f9dd5-3765-415b-a830-91c92ee60cca",
@@ -2803,9 +2820,9 @@
       "source": "2603.00511v1_multimodal_adaptive_retrieval_augmented_generation_through_internal_representati.pdf",
       "chunk_count": 139,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.17835679650306702,
-      "y": 0.6459353566169739
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.21358852088451385,
+      "y": -0.6216018199920654
     },
     {
       "document_id": "634eaf18-2f48-409a-b919-79f0f15bb7aa",
@@ -2818,9 +2835,9 @@
       "source": "2603.02153v1_scaling_retrieval_augmented_generation_with_rag_fusion_lessons_from_an_industry.pdf",
       "chunk_count": 127,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.12920880317687988,
-      "y": -0.3432048559188843
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.12293767929077148,
+      "y": 0.4252101182937622
     },
     {
       "document_id": "67d65758-ee8e-4c5c-b662-90ae9ba4db2b",
@@ -2833,9 +2850,9 @@
       "source": "2603.04647v1_coordinated_semantic_alignment_and_evidence_constraints_for_retrieval-augmented.pdf",
       "chunk_count": 97,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.14242568612098694,
-      "y": -0.19282564520835876
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.14289450645446777,
+      "y": 0.03710811585187912
     },
     {
       "document_id": "f80b4ebc-ce2e-4310-864a-b00abfed2ef1",
@@ -2847,10 +2864,10 @@
       "tags": [],
       "source": "2603.07233v1_retrieval-augmented_generation_for_predicting_cellular_responses_to_gene_perturb.pdf",
       "chunk_count": 260,
-      "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.24989737570285797,
-      "y": 0.28270477056503296
+      "cluster_id": 5,
+      "cluster_label": "Retro Small Scale Supporting",
+      "x": -0.2701650559902191,
+      "y": -0.22911527752876282
     },
     {
       "document_id": "c41729fd-417f-4416-9b40-2cc84ab95263",
@@ -2863,9 +2880,9 @@
       "source": "2603.09891v1_overview_of_the_trec_2025_retrieval_augmented_generation_rag_track.pdf",
       "chunk_count": 236,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.12308887392282486,
-      "y": -0.11768151819705963
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.13145722448825836,
+      "y": 0.05213026702404022
     },
     {
       "document_id": "671aa77f-3ce6-4c4e-b0e3-8d8b48181df7",
@@ -2878,9 +2895,9 @@
       "source": "2603.16169v1_open-source_reproduction_and_explainability_analysis_of_corrective_retrieval_aug.pdf",
       "chunk_count": 87,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.0035377454478293657,
-      "y": -0.18349862098693848
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.00647889357060194,
+      "y": -0.002881837310269475
     },
     {
       "document_id": "b4df0773-6983-4045-921a-4f3c24fd0852",
@@ -2892,10 +2909,10 @@
       "tags": [],
       "source": "2603.20309v1_bubblerag_evidence-driven_retrieval-augmented_generation_for_black-box_knowledge.pdf",
       "chunk_count": 275,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.28161993622779846,
-      "y": -0.45030149817466736
+      "x": -0.2679055631160736,
+      "y": 0.6906558871269226
     },
     {
       "document_id": "61beca00-209a-4170-9709-26b2e974bf83",
@@ -2907,10 +2924,10 @@
       "tags": [],
       "source": "2603.26668v2_bridge-rag_an_abstract_bridge_tree_based_retrieval_augmented_generation_algorith.pdf",
       "chunk_count": 129,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.23865240812301636,
-      "y": -0.19023866951465607
+      "x": -0.2313733994960785,
+      "y": 0.4184158146381378
     },
     {
       "document_id": "793670e8-4cc1-4c40-b8d9-2da9bef1a5e1",
@@ -2923,9 +2940,9 @@
       "source": "2604.19899v1_a_reproducibility_study_of_metacognitive_retrieval-augmented_generation.pdf",
       "chunk_count": 190,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.05018863454461098,
-      "y": -0.23308292031288147
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.055251240730285645,
+      "y": 0.16853545606136322
     },
     {
       "document_id": "3e6e12ec-d76c-4334-91cc-81b98be145f7",
@@ -2938,9 +2955,9 @@
       "source": "2604.22757v1_stratrag_a_multi-hop_retrieval_evaluation_dataset_for_retrieval-augmented_genera.pdf",
       "chunk_count": 50,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.2799678146839142,
-      "y": -0.185175821185112
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.2978992164134979,
+      "y": 0.16439032554626465
     },
     {
       "document_id": "ef789879-9379-4f1a-a70b-aba16cc53732",
@@ -2952,10 +2969,10 @@
       "tags": [],
       "source": "2604.22843v1_structure_guided_retrieval-augmented_generation_for_factual_queries.pdf",
       "chunk_count": 246,
-      "cluster_id": 8,
+      "cluster_id": 9,
       "cluster_label": "Graph Knowledge Guided Enhanced",
-      "x": -0.3270513117313385,
-      "y": -0.3494478166103363
+      "x": -0.3136613965034485,
+      "y": 0.637786865234375
     },
     {
       "document_id": "cecc7ef2-f5c6-45bc-bb9d-34acac7cae7f",
@@ -2968,9 +2985,9 @@
       "source": "2605.00957v1_i_don_t_know_--_towards_appropriate_trust_with_certainty-aware_retrieval_augment.pdf",
       "chunk_count": 181,
       "cluster_id": 1,
-      "cluster_label": "Evaluation Evidence Aware Through",
-      "x": 0.5485073924064636,
-      "y": -0.174148827791214
+      "cluster_label": "Evaluation Evidence Ragas Automated",
+      "x": 0.5649159550666809,
+      "y": -0.13524773716926575
     },
     {
       "document_id": "6baa2811-8f8f-490e-8696-85d6909c934c",
@@ -2983,9 +3000,9 @@
       "source": "2605.05244v1_towards_dependable_retrieval-augmented_generation_using_factual_confidence_predi.pdf",
       "chunk_count": 123,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.21801739931106567,
-      "y": -0.04702739417552948
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.24691039323806763,
+      "y": -0.12134239077568054
     },
     {
       "document_id": "f0afcb8b-0ceb-4a60-9419-f54ae897a5be",
@@ -2999,8 +3016,8 @@
       "chunk_count": 360,
       "cluster_id": 3,
       "cluster_label": "Medical Question Multi Representative",
-      "x": 0.10950542241334915,
-      "y": 0.2760699391365051
+      "x": 0.11008898168802261,
+      "y": -0.25773167610168457
     },
     {
       "document_id": "de8da441-7792-4c61-aec1-9bf7f8970dd7",
@@ -3012,10 +3029,10 @@
       "tags": [],
       "source": "2605.18769v1_clusterrag_cluster-based_collaborative_filtering_for_personalized_retrieval-augm.pdf",
       "chunk_count": 225,
-      "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": 0.0335962139070034,
-      "y": 0.014783153310418129
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": 0.048737816512584686,
+      "y": 0.17900720238685608
     },
     {
       "document_id": "1c8eadae-7cf5-4df4-a19b-99fed215f0d0",
@@ -3027,10 +3044,10 @@
       "tags": [],
       "source": "2605.20123v1_bird_a_bidirectional_ranking_defense_mechanism_for_retrieval_augmented_generatio.pdf",
       "chunk_count": 204,
-      "cluster_id": 2,
-      "cluster_label": "Pandora Jailbreak Gpts Poisoning",
-      "x": -0.024920977652072906,
-      "y": -0.3141295909881592
+      "cluster_id": 4,
+      "cluster_label": "Federated Evaluation Recommendation Multi",
+      "x": -0.024495573714375496,
+      "y": 0.2465563416481018
     },
     {
       "document_id": "a271b48a-904b-4e44-8fbd-14a7c7b97956",
@@ -3042,10 +3059,10 @@
       "tags": [],
       "source": "2605.24366v1_structure-aware_rag_structured_retrieval_augmented_generation_from_noisy_data_fo.pdf",
       "chunk_count": 215,
-      "cluster_id": 5,
-      "cluster_label": "Multi Enhancing Recommendation System",
-      "x": 0.12258955836296082,
-      "y": -0.21915310621261597
+      "cluster_id": 9,
+      "cluster_label": "Graph Knowledge Guided Enhanced",
+      "x": 0.13991588354110718,
+      "y": 0.25627800822257996
     },
     {
       "document_id": "8f66cb30-7092-41ab-9509-6e96e71aa67f",
@@ -3058,9 +3075,9 @@
       "source": "2605.27444v1_a_systematic_evaluation_of_retrieval-augmented_generation_and_language_models_fo.pdf",
       "chunk_count": 164,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.06516875326633453,
-      "y": -0.18484707176685333
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.07118422538042068,
+      "y": 0.12897644937038422
     },
     {
       "document_id": "d5dfdf77-4479-41b3-8b60-89c232bc49c9",
@@ -3073,9 +3090,9 @@
       "source": "2605.29956v1_uncertainty_quantification_for_multimodal_retrieval_augmented_generation.pdf",
       "chunk_count": 219,
       "cluster_id": 0,
-      "cluster_label": "Multimodal Evaluating Similarity Adaptive",
-      "x": -0.17674821615219116,
-      "y": 0.2049860954284668
+      "cluster_label": "Multimodal Evaluating Uncertainty Similarity",
+      "x": -0.20583775639533997,
+      "y": -0.3284633457660675
     },
     {
       "document_id": "3fc31883-b5ca-42d2-b62f-45cd148b4d9f",
@@ -3088,9 +3105,9 @@
       "source": "3fc31883-b5ca-42d2-b62f-45cd148b4d9f",
       "chunk_count": 294,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.06062595918774605,
-      "y": -0.06975207477807999
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.06920354813337326,
+      "y": 0.020167171955108643
     },
     {
       "document_id": "c8a1fbc2-d20d-4edf-bbf5-8f00d7add6d2",
@@ -3103,9 +3120,9 @@
       "source": "c8a1fbc2-d20d-4edf-bbf5-8f00d7add6d2",
       "chunk_count": 187,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.3081231117248535,
-      "y": 0.011838750913739204
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.3431541919708252,
+      "y": -0.16620711982250214
     },
     {
       "document_id": "e910f27b-3164-400e-83d1-27e8a0c1dd4e",
@@ -3118,9 +3135,9 @@
       "source": "e910f27b-3164-400e-83d1-27e8a0c1dd4e",
       "chunk_count": 178,
       "cluster_id": 6,
-      "cluster_label": "Question Context Open Domain",
-      "x": -0.042604465037584305,
-      "y": -0.11173538118600845
+      "cluster_label": "Question Open Domain Dense",
+      "x": -0.05235092714428902,
+      "y": 0.009420560672879219
     }
   ],
   "scope": {

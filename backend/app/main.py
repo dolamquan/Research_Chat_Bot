@@ -11,7 +11,9 @@ from app.routes import (
     crawler,
     documents,
     evaluate,
+    graph_rag,
     ingest,
+    mcp_bridge,
     upload,
     visuals,
 )
@@ -41,7 +43,9 @@ app.include_router(clusters.router)
 app.include_router(crawler.router)
 app.include_router(documents.router)
 app.include_router(evaluate.router)
+app.include_router(graph_rag.router)
 app.include_router(ingest.router)
+app.include_router(mcp_bridge.router)
 app.include_router(upload.router)
 app.include_router(visuals.router)
 
