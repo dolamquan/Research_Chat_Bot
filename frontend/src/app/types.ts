@@ -66,6 +66,7 @@ export type ClusterGraph = {
   scope?: {
     domain?: string | null;
     category?: string | null;
+    article_ids?: string[];
   };
   stale?: boolean;
 };
@@ -248,6 +249,7 @@ export type ChatResponse = {
   intent?: string;
   topology?: ClusterGraph | null;
   tool_trace?: AgentToolTrace[];
+  retrieval_strategy?: RetrievalStrategy | "whole_document";
 };
 
 export type AgentToolTrace = {
@@ -277,6 +279,7 @@ export type McpCallResponse = {
 };
 
 export type ContextMode = "retrieval" | "whole_document";
+export type RetrievalStrategy = "vector" | "graph" | "hybrid";
 
 export type ChatSession = {
   id: string;

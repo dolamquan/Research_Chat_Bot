@@ -19,6 +19,7 @@ import type {
   IngestionJob,
   McpCallResponse,
   McpToolsResponse,
+  RetrievalStrategy,
   Source,
   VisualAsset,
 } from "./types";
@@ -90,13 +91,20 @@ export function buildClusters(scope?: {
 export function getGraphRag(scope?: {
   domain?: string;
   category?: string;
+  articleIds?: string[];
 }): Promise<GraphRagGraph> {
-  return requestJson(`/graph-rag${scopedQuery(scope)}`);
+  const params = new URLSearchParams(scopedQuery(scope).replace(/^\?/, ""));
+  for (const articleId of scope?.articleIds || []) {
+    params.append("article_ids", articleId);
+  }
+  const query = params.toString();
+  return requestJson(`/graph-rag${query ? `?${query}` : ""}`);
 }
 
 export function buildGraphRag(scope?: {
   domain?: string;
   category?: string;
+  articleIds?: string[];
   conceptLimit?: number;
   similarityThreshold?: number;
 }): Promise<GraphRagGraph> {
@@ -106,6 +114,7 @@ export function buildGraphRag(scope?: {
     body: JSON.stringify({
       domain: scope?.domain || null,
       category: scope?.category || null,
+      article_ids: scope?.articleIds || [],
       concept_limit: scope?.conceptLimit ?? 12,
       similarity_threshold: scope?.similarityThreshold ?? 2,
     }),
@@ -116,6 +125,7 @@ export function queryGraphRag(payload: {
   query: string;
   domain?: string;
   category?: string;
+  articleIds?: string[];
   limit?: number;
 }): Promise<GraphRagQueryResponse> {
   return requestJson("/graph-rag/query", {
@@ -125,6 +135,7 @@ export function queryGraphRag(payload: {
       query: payload.query,
       domain: payload.domain || null,
       category: payload.category || null,
+      article_ids: payload.articleIds || [],
       limit: payload.limit ?? 8,
     }),
   });
@@ -295,6 +306,7 @@ export function sendChat({
   category,
   tags,
   contextMode = "retrieval",
+  retrievalStrategy = "vector",
 }: {
   sessionId?: string;
   question: string;
@@ -306,6 +318,7 @@ export function sendChat({
   category?: string;
   tags?: string[];
   contextMode?: ContextMode;
+  retrievalStrategy?: RetrievalStrategy;
 }): Promise<ChatResponse> {
   return requestJson("/chat", {
     method: "POST",
@@ -316,6 +329,7 @@ export function sendChat({
       retrieval_limit: 20,
       context_limit: 5,
       context_mode: contextMode,
+      retrieval_strategy: retrievalStrategy,
       use_reranking: true,
       parallel_reranking: true,
       rerank_workers: 3,

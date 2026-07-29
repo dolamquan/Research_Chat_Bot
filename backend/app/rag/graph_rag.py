@@ -1,6 +1,7 @@
 import json
 import math
 import re
+import hashlib
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
@@ -77,16 +78,32 @@ def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-") or "unknown"
 
 
-def _scope_name(domain: str | None = None, category: str | None = None) -> str:
+def _normalize_article_ids(article_ids: List[str] | None = None) -> List[str]:
+    return sorted({str(article_id).strip() for article_id in article_ids or [] if str(article_id).strip()})
+
+
+def _scope_name(
+    domain: str | None = None,
+    category: str | None = None,
+    article_ids: List[str] | None = None,
+) -> str:
     parts = [
         _slug(domain) if domain else "all-domains",
         _slug(category) if category else "all-categories",
     ]
+    selected_ids = _normalize_article_ids(article_ids)
+    if selected_ids:
+        digest = hashlib.sha1("|".join(selected_ids).encode("utf-8")).hexdigest()[:12]
+        parts.append(f"papers-{digest}")
     return "__".join(parts)
 
 
-def _graph_path(domain: str | None = None, category: str | None = None) -> Path:
-    return GRAPH_DIR / f"{_scope_name(domain, category)}.json"
+def _graph_path(
+    domain: str | None = None,
+    category: str | None = None,
+    article_ids: List[str] | None = None,
+) -> Path:
+    return GRAPH_DIR / f"{_scope_name(domain, category, article_ids)}.json"
 
 
 def _terms(text: str) -> List[str]:
@@ -191,13 +208,21 @@ def _paper_text(article: Dict[str, Any], concepts: Iterable[str]) -> str:
 def build_graph_rag(
     domain: str | None = None,
     category: str | None = None,
+    article_ids: List[str] | None = None,
     concept_limit: int = 12,
     similarity_threshold: int = 2,
 ) -> Dict[str, Any]:
+    selected_ids = _normalize_article_ids(article_ids)
+    selected_set = set(selected_ids)
     articles = [
         article
         for article in list_articles(domain=domain, category=category, limit=5000)
         if article.get("status") == "indexed"
+        and (
+            not selected_set
+            or str(article.get("article_id")) in selected_set
+            or str(article.get("source")) in selected_set
+        )
     ]
 
     nodes_by_id: Dict[str, Dict[str, Any]] = {}
@@ -283,7 +308,11 @@ def build_graph_rag(
     graph = {
         "nodes": nodes,
         "edges": list(edges_by_id.values()),
-        "scope": {"domain": domain, "category": category},
+        "scope": {
+            "domain": domain,
+            "category": category,
+            "article_ids": selected_ids,
+        },
         "stats": {
             "paper_count": sum(1 for node in nodes if node["type"] == "paper"),
             "concept_count": sum(1 for node in nodes if node["type"] == "concept"),
@@ -293,17 +322,29 @@ def build_graph_rag(
     }
 
     GRAPH_DIR.mkdir(parents=True, exist_ok=True)
-    _graph_path(domain, category).write_text(json.dumps(graph, indent=2), encoding="utf-8")
+    _graph_path(domain, category, selected_ids).write_text(
+        json.dumps(graph, indent=2),
+        encoding="utf-8",
+    )
     return graph
 
 
-def load_graph_rag(domain: str | None = None, category: str | None = None) -> Dict[str, Any]:
-    path = _graph_path(domain, category)
+def load_graph_rag(
+    domain: str | None = None,
+    category: str | None = None,
+    article_ids: List[str] | None = None,
+) -> Dict[str, Any]:
+    selected_ids = _normalize_article_ids(article_ids)
+    path = _graph_path(domain, category, selected_ids)
     if not path.exists():
         return {
             "nodes": [],
             "edges": [],
-            "scope": {"domain": domain, "category": category},
+            "scope": {
+                "domain": domain,
+                "category": category,
+                "article_ids": selected_ids,
+            },
             "stats": {"paper_count": 0, "concept_count": 0, "edge_count": 0},
             "stale": True,
         }
@@ -314,11 +355,13 @@ def query_graph_rag(
     query: str,
     domain: str | None = None,
     category: str | None = None,
+    article_ids: List[str] | None = None,
     limit: int = 8,
 ) -> Dict[str, Any]:
-    graph = load_graph_rag(domain, category)
+    selected_ids = _normalize_article_ids(article_ids)
+    graph = load_graph_rag(domain, category, selected_ids)
     if graph.get("stale"):
-        graph = build_graph_rag(domain, category)
+        graph = build_graph_rag(domain, category, selected_ids)
 
     query_terms = set(_terms(query))
     node_by_id = {node["id"]: node for node in graph.get("nodes", [])}

@@ -63,6 +63,7 @@ import type {
   Message,
   Source,
   ContextMode,
+  RetrievalStrategy,
 } from "./types";
 
 const EMPTY_GRAPH: ClusterGraph = { clusters: [], documents: [] };
@@ -327,6 +328,7 @@ export default function App() {
   const [sources, setSources] = useState<Source[]>([]);
   const [pinnedSources, setPinnedSources] = useState<Source[]>([]);
   const [contextMode, setContextMode] = useState<ContextMode>("retrieval");
+  const [retrievalStrategy, setRetrievalStrategy] = useState<RetrievalStrategy>("hybrid");
   const [input, setInput] = useState("");
   const [activeView, setActiveView] = useState<"chat" | "library" | "crawler" | "notes" | "agent" | "graph">("chat");
   const [librarySearch, setLibrarySearch] = useState("");
@@ -871,6 +873,7 @@ export default function App() {
         domain?: string;
         category?: string;
         contextMode: ContextMode;
+        retrievalStrategy: RetrievalStrategy;
       } = {
         sessionId: activeSessionId,
         question,
@@ -881,6 +884,7 @@ export default function App() {
         domain: selectedDomain || undefined,
         category: selectedCategory || undefined,
         contextMode: selectedDocument ? contextMode : "retrieval",
+        retrievalStrategy: selectedDocument ? "vector" : retrievalStrategy,
       };
       const result = await sendChat(chatRequest);
 
@@ -1922,6 +1926,40 @@ export default function App() {
                 ))}
               </div>
             )}
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
+              <div className="flex items-center gap-1 rounded border border-border bg-background p-1">
+                {(["vector", "graph", "hybrid"] as RetrievalStrategy[]).map((strategy) => {
+                  const isActive = retrievalStrategy === strategy;
+                  const disabled = Boolean(selectedDocument) && strategy !== "vector";
+                  return (
+                    <button
+                      key={strategy}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => setRetrievalStrategy(strategy)}
+                      className={`h-7 rounded px-2.5 text-[11px] font-medium capitalize transition-colors ${
+                        isActive && !selectedDocument
+                          ? "bg-primary text-primary-foreground"
+                          : selectedDocument && strategy === "vector"
+                            ? "bg-primary/10 text-primary"
+                            : "text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35 disabled:hover:bg-transparent"
+                      }`}
+                    >
+                      {strategy}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {selectedDocument
+                  ? "Article chat uses selected-paper retrieval"
+                  : retrievalStrategy === "hybrid"
+                    ? "Vector + graph-guided retrieval"
+                    : retrievalStrategy === "graph"
+                      ? "Graph-guided paper retrieval"
+                      : "Vector similarity retrieval"}
+              </span>
+            </div>
             <div className="relative rounded-lg border border-border bg-background focus-within:border-primary/50">
               <textarea
                 value={input}
@@ -1955,7 +1993,7 @@ export default function App() {
             <div className="mt-2 px-1 flex items-center gap-2">
               <CheckCircle2 size={11} className="text-primary" />
               <p className="font-mono text-[10px] text-muted-foreground truncate">
-                Grounded retrieval - {scopeLabel}
+                {selectedDocument ? "Grounded retrieval" : `${retrievalStrategy} retrieval`} - {scopeLabel}
               </p>
             </div>
           </div>

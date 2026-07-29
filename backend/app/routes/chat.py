@@ -23,6 +23,7 @@ class ChatRequest(BaseModel):
     retrieval_limit: int = Field(default=20, ge=1, le=50)
     context_limit: int = Field(default=5, ge=1, le=20)
     context_mode: str = Field(default="retrieval")
+    retrieval_strategy: str = Field(default="vector")
     use_reranking: bool = True
     parallel_reranking: bool = True
     rerank_workers: int = Field(default=3, ge=1, le=8)
@@ -39,6 +40,7 @@ class ChatResponse(BaseModel):
     session_id: str
     answer: str
     sources: List[Dict[str, Any]]
+    retrieval_strategy: str | None = None
 
 
 class ChatSessionCreateRequest(BaseModel):
@@ -79,6 +81,7 @@ def chat(request: ChatRequest) -> ChatResponse:
             retrieval_limit=request.retrieval_limit,
             context_limit=request.context_limit,
             context_mode=request.context_mode,
+            retrieval_strategy=request.retrieval_strategy,
             use_reranking=request.use_reranking,
             parallel_reranking=request.parallel_reranking,
             rerank_workers=request.rerank_workers,
@@ -107,6 +110,7 @@ def chat(request: ChatRequest) -> ChatResponse:
         session_id=session_id,
         answer=result["answer"],
         sources=result["sources"],
+        retrieval_strategy=result.get("retrieval_strategy"),
     )
 
 
