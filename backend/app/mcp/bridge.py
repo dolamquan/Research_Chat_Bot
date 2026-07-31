@@ -7,10 +7,11 @@ from fastapi import HTTPException
 import requests
 
 from app.ingestion.url_ingester import ingest_article_url
+from app.integrations.reddit_mcp import list_reddit_tools, search_reddit_posts
 from app.rag.clusterer import build_cluster_graph
 from app.rag.graph_rag import build_graph_rag, query_graph_rag
 from app.rag.research_tools import generate_visualization, summarize_paper
-from app.routes.crawler import ArxivSearchRequest, search_arxiv
+from app.routes.crawler import ArxivSearchRequest, PaperSearchRequest, search_arxiv, search_multi_source
 from app.storage.annotations import create_annotation
 from app.storage.article_store import list_articles
 
@@ -399,6 +400,33 @@ def _search_arxiv(args: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+def _search_papers(args: Dict[str, Any]) -> Dict[str, Any]:
+    description = _string(args.get("description") or args.get("query")).strip()
+    if not description:
+        raise ValueError("description is required")
+
+    result = search_multi_source(
+        PaperSearchRequest(
+            description=description,
+            category=_string(args.get("category") or "").strip() or None,
+            sort_by=_string(args.get("sort_by"), "relevance"),
+            max_results=int(args.get("max_results") or 10),
+            sources=_string_list(args.get("sources")) or ["arxiv", "pubmed", "biorxiv", "medrxiv", "semantic_scholar"],
+        )
+    )
+    return _tool_result(
+        "research.search_papers",
+        {
+            "provider": result.get("provider"),
+            "query": result["query"],
+            "sources": result.get("sources", []),
+            "papers": result["papers"],
+            "warning": result.get("warning", ""),
+            "summary": f"Found {len(result['papers'])} papers from {result.get('provider', 'paper search')}.",
+        },
+    )
+
+
 def _search_library(args: Dict[str, Any]) -> Dict[str, Any]:
     query = _string(args.get("query") or "").lower()
     articles = list_articles(
@@ -431,6 +459,36 @@ def _search_library(args: Dict[str, Any]) -> Dict[str, Any]:
         {
             "articles": articles,
             "summary": f"Returned {len(articles)} indexed papers.",
+        },
+    )
+
+
+def _reddit_list_tools(args: Dict[str, Any]) -> Dict[str, Any]:
+    tools = list_reddit_tools()
+    return _tool_result(
+        "reddit.list_tools",
+        {
+            "tools": tools,
+            "summary": f"Loaded {len(tools)} Reddit MCP tools.",
+        },
+    )
+
+
+def _reddit_search_posts(args: Dict[str, Any]) -> Dict[str, Any]:
+    query = _string(args.get("query") or args.get("description")).strip()
+    if not query:
+        raise ValueError("query is required")
+
+    result = search_reddit_posts(
+        query=query,
+        subreddit=_string(args.get("subreddit") or "").strip() or None,
+        limit=int(args.get("limit") or 10),
+    )
+    return _tool_result(
+        "reddit.search_posts",
+        {
+            **result,
+            "summary": f"Found {len(result['posts'])} Reddit posts.",
         },
     )
 
@@ -562,6 +620,26 @@ def _generate_visualization(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 TOOLS: Dict[str, McpTool] = {
+    "research.search_papers": McpTool(
+        name="research.search_papers",
+        description="Search multiple external academic sources through Paper Search MCP/CLI.",
+        input_schema={
+            "type": "object",
+            "required": ["description"],
+            "properties": {
+                "description": {"type": "string"},
+                "sources": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Sources such as arxiv, pubmed, biorxiv, medrxiv, semantic_scholar, crossref, openalex.",
+                },
+                "category": {"type": "string", "description": "Optional source category/filter."},
+                "sort_by": {"type": "string", "enum": ["relevance", "newest", "last_updated"]},
+                "max_results": {"type": "integer", "minimum": 1, "maximum": 25},
+            },
+        },
+        handler=_search_papers,
+    ),
     "research.search_arxiv": McpTool(
         name="research.search_arxiv",
         description="Search arXiv for new external research papers.",
@@ -590,6 +668,29 @@ TOOLS: Dict[str, McpTool] = {
             },
         },
         handler=_search_library,
+    ),
+    "reddit.list_tools": McpTool(
+        name="reddit.list_tools",
+        description="List read-only tools exposed by the configured Reddit MCP Docker server.",
+        input_schema={
+            "type": "object",
+            "properties": {},
+        },
+        handler=_reddit_list_tools,
+    ),
+    "reddit.search_posts": McpTool(
+        name="reddit.search_posts",
+        description="Search Reddit posts/discussions for external practitioner context.",
+        input_schema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string"},
+                "subreddit": {"type": "string", "description": "Optional subreddit name, with or without r/."},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+            },
+        },
+        handler=_reddit_search_posts,
     ),
     "research.add_paper": McpTool(
         name="research.add_paper",

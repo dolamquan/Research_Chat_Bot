@@ -16,17 +16,24 @@ from app.agents.tools import (
     rebuild_topology_tool,
     save_note_tool,
     search_arxiv_tool,
+    search_papers_tool,
     search_github_tool,
     search_library_tool,
+    search_reddit_tool,
+    small_talk_tool,
     summarize_paper_tool,
 )
 from app.rag.generator import get_llm
+from app.rag.prompt_cache import cached_llm_text
 
 
 INTENTS: set[str] = {
+    "small_talk",
     "rag_question",
+    "search_papers",
     "search_arxiv",
     "search_library",
+    "search_reddit",
     "ingest_paper",
     "save_note",
     "rebuild_topology",
@@ -46,8 +53,44 @@ def _looks_like_paper_url(text: str) -> bool:
     )
 
 
+def _looks_like_small_talk(text: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9\s']", " ", text.lower())
+    normalized = " ".join(normalized.split())
+    if not normalized:
+        return True
+
+    greetings = {
+        "hi",
+        "hello",
+        "hey",
+        "yo",
+        "sup",
+        "howdy",
+        "good morning",
+        "good afternoon",
+        "good evening",
+        "thanks",
+        "thank you",
+        "ok",
+        "okay",
+    }
+    if normalized in greetings:
+        return True
+
+    casual_patterns = [
+        r"^(hi|hello|hey)\s+(there|researchmind|agent|bot)?$",
+        r"^how are you$",
+        r"^what can you do$",
+        r"^who are you$",
+    ]
+    return any(re.match(pattern, normalized) for pattern in casual_patterns)
+
+
 def _heuristic_intent(question: str) -> AgentIntent | None:
     lowered = question.lower()
+
+    if _looks_like_small_talk(question):
+        return "small_talk"
 
     if _looks_like_paper_url(question) and any(
         phrase in lowered
@@ -104,6 +147,21 @@ def _heuristic_intent(question: str) -> AgentIntent | None:
     ):
         return "search_github"
 
+    if ("reddit" in lowered or re.search(r"\br/[A-Za-z0-9_]+\b", question)) and any(
+        phrase in lowered
+        for phrase in [
+            "search",
+            "find",
+            "discover",
+            "look for",
+            "posts",
+            "threads",
+            "discussions",
+            "what are people saying",
+        ]
+    ):
+        return "search_reddit"
+
     if any(
         phrase in lowered
         for phrase in [
@@ -158,11 +216,31 @@ def _heuristic_intent(question: str) -> AgentIntent | None:
     ):
         return "rebuild_topology"
 
+    if any(source in lowered for source in ["pubmed", "biorxiv", "medrxiv", "semantic scholar", "crossref", "openalex"]) and any(
+        phrase in lowered
+        for phrase in ["search", "find", "discover", "look for", "papers about"]
+    ):
+        return "search_papers"
+
     if "arxiv" in lowered and any(
         phrase in lowered
         for phrase in ["search", "find", "discover", "look for", "papers about"]
     ):
         return "search_arxiv"
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "search papers",
+            "find papers",
+            "discover papers",
+            "look for papers",
+            "new papers about",
+            "recent papers about",
+            "latest papers about",
+        ]
+    ):
+        return "search_papers"
 
     if any(
         phrase in lowered
@@ -197,9 +275,12 @@ def classify_intent(state: AgentState) -> Dict[str, Any]:
 Classify the user request into exactly one intent.
 
 Allowed intents:
+- small_talk: greeting, thanks, help-like conversational message, or capability question that should not use tools
 - rag_question: answer a research question using the indexed papers
-- search_arxiv: search arXiv for new external research papers
+- search_papers: search multiple academic sources for new external research papers
+- search_arxiv: search arXiv only for new external research papers
 - search_library: find papers already indexed in the local research library
+- search_reddit: search Reddit posts/discussions for practitioner or community context
 - ingest_paper: add/index/store an arXiv or PDF URL into the database
 - save_note: save a note about a selected/pinned paper passage
 - rebuild_topology: rebuild/update/refresh the paper topology or cluster map
@@ -217,8 +298,11 @@ User request:
 """
 
     try:
-        response = llm.invoke(prompt)
-        content = getattr(response, "content", str(response)).strip().lower()
+        content = cached_llm_text(
+            llm=llm,
+            prompt=prompt,
+            namespace="agent_intent_classifier",
+        ).strip().lower()
         intent = content.split()[0] if content else "rag_question"
     except Exception:
         intent = "rag_question"
@@ -226,20 +310,32 @@ User request:
     if intent not in INTENTS:
         intent = "rag_question"
 
+    if _looks_like_small_talk(question):
+        intent = "small_talk"
+
     return {"intent": intent}
 
 
 def route_intent(state: AgentState) -> str:
     intent = state.get("intent", "rag_question")
 
+    if intent == "small_talk":
+        return "small_talk"
+
     if intent == "ingest_paper":
         return "ingest_paper"
+
+    if intent == "search_papers":
+        return "search_papers"
 
     if intent == "search_arxiv":
         return "search_arxiv"
 
     if intent == "search_library":
         return "search_library"
+
+    if intent == "search_reddit":
+        return "search_reddit"
 
     if intent == "save_note":
         return "save_note"
@@ -272,9 +368,12 @@ def build_agent_graph():
     graph = StateGraph(AgentState)
 
     graph.add_node("classify_intent", classify_intent)
+    graph.add_node("small_talk", small_talk_tool)
     graph.add_node("rag_question", rag_tool)
+    graph.add_node("search_papers", search_papers_tool)
     graph.add_node("search_arxiv", search_arxiv_tool)
     graph.add_node("search_library", search_library_tool)
+    graph.add_node("search_reddit", search_reddit_tool)
     graph.add_node("ingest_paper", ingest_paper_tool)
     graph.add_node("save_note", save_note_tool)
     graph.add_node("rebuild_topology", rebuild_topology_tool)
@@ -290,9 +389,12 @@ def build_agent_graph():
         "classify_intent",
         route_intent,
         {
+            "small_talk": "small_talk",
             "rag_question": "rag_question",
+            "search_papers": "search_papers",
             "search_arxiv": "search_arxiv",
             "search_library": "search_library",
+            "search_reddit": "search_reddit",
             "ingest_paper": "ingest_paper",
             "save_note": "save_note",
             "rebuild_topology": "rebuild_topology",
@@ -304,9 +406,12 @@ def build_agent_graph():
             "export_visualization_notion": "export_visualization_notion",
         },
     )
+    graph.add_edge("small_talk", END)
     graph.add_edge("rag_question", END)
+    graph.add_edge("search_papers", END)
     graph.add_edge("search_arxiv", END)
     graph.add_edge("search_library", END)
+    graph.add_edge("search_reddit", END)
     graph.add_edge("ingest_paper", END)
     graph.add_edge("save_note", END)
     graph.add_edge("rebuild_topology", END)

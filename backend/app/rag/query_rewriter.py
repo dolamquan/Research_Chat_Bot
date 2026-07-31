@@ -2,6 +2,8 @@ from typing import Any, Dict, List
 
 from langsmith import traceable
 
+from app.rag.prompt_cache import cached_llm_text
+
 
 MAX_HISTORY_TURNS = 6
 MAX_PINNED_SOURCES = 3
@@ -160,7 +162,13 @@ Standalone retrieval query:
 """.strip()
 
     try:
-        rewritten_query = _normalize_query(_get_llm_text(llm.invoke(prompt)))
+        rewritten_query = _normalize_query(
+            cached_llm_text(
+                llm=llm,
+                prompt=prompt,
+                namespace="query_rewriter",
+            )
+        )
     except Exception:
         return original_query
 

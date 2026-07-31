@@ -1,7 +1,7 @@
 
-  # Profession Themed Chatbot
+  # ResearchMind
 
-  This is a code bundle for Profession Themed Chatbot. The original project is available at https://www.figma.com/design/gT580zUprFDJwJaNdHk1rO/Profession-Themed-Chatbot.
+  ResearchMind is a research topology chatbot for exploring, reading, and discussing indexed papers.
 
   ## Running the code
 

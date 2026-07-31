@@ -8,6 +8,16 @@ import {
 
 import type { ArxivPaper, IngestionJob } from "../types";
 
+const SOURCE_OPTIONS = [
+  { id: "arxiv", label: "arXiv" },
+  { id: "pubmed", label: "PubMed" },
+  { id: "biorxiv", label: "bioRxiv" },
+  { id: "medrxiv", label: "medRxiv" },
+  { id: "semantic_scholar", label: "Semantic Scholar" },
+  { id: "crossref", label: "Crossref" },
+  { id: "openalex", label: "OpenAlex" },
+];
+
 function dateLabel(value?: string): string {
   if (!value) return "";
   const date = new Date(value);
@@ -29,11 +39,16 @@ function isPaperQueued(paper: ArxivPaper, ingestionJobs: IngestionJob[]): boolea
   );
 }
 
+function paperKey(paper: ArxivPaper): string {
+  return paper.arxiv_id || paper.paper_id || paper.pdf_url || paper.url || paper.title;
+}
+
 export function CrawlerView({
   description,
   category,
   sortBy,
   maxResults,
+  sources,
   results,
   query,
   status,
@@ -44,6 +59,7 @@ export function CrawlerView({
   onCategoryChange,
   onSortByChange,
   onMaxResultsChange,
+  onSourcesChange,
   onSearch,
   onAddPaper,
 }: {
@@ -51,6 +67,7 @@ export function CrawlerView({
   category: string;
   sortBy: "relevance" | "newest" | "last_updated";
   maxResults: number;
+  sources: string[];
   results: ArxivPaper[];
   query: string;
   status: string;
@@ -61,6 +78,7 @@ export function CrawlerView({
   onCategoryChange: (value: string) => void;
   onSortByChange: (value: "relevance" | "newest" | "last_updated") => void;
   onMaxResultsChange: (value: number) => void;
+  onSourcesChange: (value: string[]) => void;
   onSearch: () => void;
   onAddPaper: (paper: ArxivPaper) => void;
 }) {
@@ -73,7 +91,7 @@ export function CrawlerView({
           </div>
           <div className="min-w-0 flex-1">
             <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              arXiv crawler
+              paper crawler
             </p>
             <h2
               className="mt-1 text-2xl font-semibold tracking-tight text-foreground"
@@ -82,7 +100,7 @@ export function CrawlerView({
               Discover papers by topic
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Describe the research area and add promising arXiv papers directly to your library.
+              Describe the research area and add papers from academic sources directly to your library.
             </p>
           </div>
         </div>
@@ -107,13 +125,40 @@ export function CrawlerView({
             />
           </label>
 
-          <div className="mt-3 grid gap-2 md:grid-cols-[1fr_150px_150px_140px]">
+          <div className="mt-3 flex flex-wrap gap-2">
+            {SOURCE_OPTIONS.map((source) => {
+              const selected = sources.includes(source.id);
+              return (
+                <button
+                  key={source.id}
+                  type="button"
+                  onClick={() => {
+                    if (selected && sources.length === 1) return;
+                    onSourcesChange(
+                      selected
+                        ? sources.filter((item) => item !== source.id)
+                        : [...sources, source.id],
+                    );
+                  }}
+                  className={`rounded border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide ${
+                    selected
+                      ? "border-primary/50 bg-primary/15 text-primary"
+                      : "border-border bg-card text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {source.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-3 grid gap-2 md:grid-cols-[1fr_150px_150px_160px]">
             <label className="block">
               <span className="sr-only">Optional arXiv category</span>
               <input
                 value={category}
                 onChange={(event) => onCategoryChange(event.target.value)}
-                placeholder="Optional category, e.g. cs.CL"
+                placeholder="Optional category/filter, e.g. cs.CL"
                 className="h-9 w-full rounded border border-border bg-card px-3 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
               />
             </label>
@@ -145,7 +190,7 @@ export function CrawlerView({
               className="h-9 rounded bg-primary text-primary-foreground text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-40"
             >
               {isSearching ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
-              Search arXiv
+              Search papers
             </button>
           </div>
         </form>
@@ -163,7 +208,7 @@ export function CrawlerView({
             )}
             {query && (
               <p className="font-mono text-[10px] text-muted-foreground truncate">
-                arXiv query: {query}
+                Query: {query}
               </p>
             )}
           </div>
@@ -182,19 +227,24 @@ export function CrawlerView({
           <div className="space-y-3">
             {results.map((paper) => {
               const queued = isPaperQueued(paper, ingestionJobs);
-              const adding = addingPaperId === paper.arxiv_id;
+              const adding = addingPaperId === paperKey(paper);
 
               return (
                 <article
-                  key={paper.arxiv_id}
+                  key={`${paper.source_provider || "paper"}-${paperKey(paper)}`}
                   className="rounded border border-border bg-card p-4"
                 >
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded border border-primary/25 bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary">
-                          {paper.arxiv_id}
+                          {paper.source_provider || "paper"}
                         </span>
+                        {paper.arxiv_id && (
+                          <span className="rounded border border-border bg-background px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                            {paper.arxiv_id}
+                          </span>
+                        )}
                         {dateLabel(paper.published_at) && (
                           <span className="font-mono text-[10px] text-muted-foreground">
                             {dateLabel(paper.published_at)}
@@ -228,7 +278,7 @@ export function CrawlerView({
                     <div className="shrink-0 flex lg:flex-col gap-2">
                       <button
                         type="button"
-                        disabled={queued || adding}
+                        disabled={queued || adding || (!paper.pdf_url && !paper.url)}
                         onClick={() => onAddPaper(paper)}
                         className="h-9 px-3 rounded bg-primary text-primary-foreground text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-45"
                       >
@@ -237,7 +287,7 @@ export function CrawlerView({
                         ) : (
                           <FilePlus2 size={13} />
                         )}
-                        {queued ? "Queued" : adding ? "Adding" : "Add to library"}
+                        {queued ? "Queued" : adding ? "Adding" : paper.pdf_url || paper.url ? "Add to library" : "No PDF URL"}
                       </button>
                       <a
                         href={paper.url}
@@ -246,7 +296,7 @@ export function CrawlerView({
                         className="h-9 px-3 rounded border border-border text-xs text-foreground flex items-center justify-center gap-2 hover:bg-secondary"
                       >
                         <ExternalLink size={13} />
-                        arXiv
+                        Open
                       </a>
                     </div>
                   </div>

@@ -170,32 +170,32 @@ export function NotesView({
             {filteredAnnotations.map((annotation) => (
               <article
                 key={annotation.annotation_id}
-                className="rounded border border-border bg-card p-4"
+                className="min-w-0 overflow-hidden rounded border border-border bg-card p-4"
               >
                 <div className="flex items-start gap-3">
                   <div className="w-8 h-8 shrink-0 rounded border border-border bg-background flex items-center justify-center text-primary">
                     <NotebookPen size={14} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-foreground line-clamp-2">
+                    <p className="text-sm font-semibold text-foreground line-clamp-2 break-words">
                       {titleFromAnnotation(annotation)}
                     </p>
-                    <p className="mt-1 font-mono text-[10px] text-primary">
+                    <p className="mt-1 max-w-full font-mono text-[10px] text-primary break-all">
                       p.{annotation.page} - {annotation.source}
                     </p>
                   </div>
                 </div>
 
-                <p className="mt-3 text-sm leading-relaxed text-muted-foreground line-clamp-4">
+                <p className="mt-3 overflow-hidden text-sm leading-relaxed text-muted-foreground line-clamp-4 break-words">
                   {annotation.selected_text}
                 </p>
                 {annotation.note && (
-                  <p className="mt-3 rounded border border-primary/20 bg-primary/10 px-3 py-2 text-sm leading-relaxed text-foreground line-clamp-4">
+                  <p className="mt-3 overflow-hidden rounded border border-primary/20 bg-primary/10 px-3 py-2 text-sm leading-relaxed text-foreground line-clamp-4 break-words">
                     {annotation.note}
                   </p>
                 )}
 
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-4 flex min-w-0 flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => onOpenNote(annotation)}
@@ -215,7 +215,7 @@ export function NotesView({
                   <button
                     type="button"
                     onClick={() => void removeAnnotation(annotation.annotation_id)}
-                    className="ml-auto h-8 px-3 rounded border border-border text-muted-foreground text-xs flex items-center gap-2 hover:text-destructive hover:bg-secondary"
+                    className="h-8 px-3 rounded border border-border text-muted-foreground text-xs flex items-center gap-2 hover:text-destructive hover:bg-secondary sm:ml-auto"
                   >
                     <Trash2 size={12} />
                     Delete

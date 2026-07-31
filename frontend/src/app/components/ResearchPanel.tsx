@@ -27,6 +27,15 @@ function scoreFor(source: Source): string | undefined {
   return typeof score === "number" ? score.toFixed(3) : undefined;
 }
 
+function sourceTextValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function sourceKeyPart(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  return "";
+}
+
 export function ResearchPanel({
   selectedCluster,
   documents,
@@ -221,10 +230,15 @@ export function ResearchPanel({
                   item.source === source.source &&
                   item.text === source.text,
               );
+              const sourceName = sourceTextValue(source.source);
+              const sourceTitle = sourceTextValue(source.title);
+              const sourceSummary = sourceTextValue(source.summary);
+              const sourceText = sourceTextValue(source.text);
+              const sourcePreview = sourceText || sourceSummary || "No preview available.";
 
               return (
                 <article
-                  key={`${String(source.id ?? index)}-${index}`}
+                  key={`${sourceKeyPart(source.id) || sourceName || index}-${index}`}
                   className="border border-border rounded bg-background p-3"
                 >
                   <div className="flex items-center gap-2">
@@ -239,17 +253,17 @@ export function ResearchPanel({
                     )}
                   </div>
                   <p className="font-mono text-[10px] text-primary/80 mt-2 truncate">
-                    {source.source || "Indexed document"}
+                    {sourceName || "Indexed document"}
                   </p>
                   {typeof source.image_url === "string" && source.image_url && (
                     <img
                       src={getVisualImageUrl(source.image_url)}
-                      alt={source.title || source.source || "Retrieved visual"}
+                      alt={sourceTitle || sourceName || "Retrieved visual"}
                       className="mt-2 w-full max-h-40 rounded border border-border object-contain bg-card"
                     />
                   )}
                   <p className="text-xs text-muted-foreground leading-relaxed mt-2 line-clamp-5">
-                    {source.text || source.summary || "No preview available."}
+                    {sourcePreview}
                   </p>
                   <button
                     type="button"

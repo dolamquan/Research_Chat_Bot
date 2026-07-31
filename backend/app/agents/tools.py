@@ -23,6 +23,21 @@ def _trace(tool: str, message: str, status: str = "success") -> Dict[str, Any]:
     }
 
 
+@traceable(name="agent_small_talk_tool", run_type="tool")
+def small_talk_tool(state: AgentState) -> Dict[str, Any]:
+    return {
+        "answer": (
+            "Hi. I can search your indexed research library, discover new papers, "
+            "add papers to the database, summarize papers, generate visualizations, "
+            "save notes, export to Notion, or rebuild the topology graph. Type `/help` "
+            "to see the available commands."
+        ),
+        "sources": [],
+        "tool_trace": state.get("tool_trace", [])
+        + [_trace("small_talk", "Answered without running a retrieval or crawler tool.")],
+    }
+
+
 def _extract_url(text: str) -> str | None:
     match = URL_PATTERN.search(text)
     if not match:
@@ -67,13 +82,67 @@ def _keywords(text: str) -> List[str]:
 
 def _clean_search_query(question: str) -> str:
     cleaned = re.sub(
-        r"\b(search|find|discover|look for|arxiv|papers?|recent|latest|about|related to)\b",
+        r"\b(search|find|discover|look for|papers?|recent|latest|about|related to|from|pubmed|arxiv|biorxiv|medrxiv|semantic scholar|crossref|openalex)\b",
         " ",
         question,
         flags=re.IGNORECASE,
     )
     cleaned = " ".join(cleaned.split())
     return cleaned or question
+
+
+def _clean_reddit_query(question: str) -> str:
+    cleaned = re.sub(
+        r"\b(search|find|discover|look for|reddit|subreddit|posts?|threads?|discussions?|about|related to|from)\b",
+        " ",
+        question,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"\br/[A-Za-z0-9_]+\b", " ", cleaned)
+    cleaned = " ".join(cleaned.split())
+    return cleaned or question
+
+
+def _requested_subreddit(question: str) -> str | None:
+    match = re.search(r"\br/([A-Za-z0-9_]+)\b", question)
+    if match:
+        return match.group(1)
+
+    match = re.search(r"\bsubreddit\s+([A-Za-z0-9_]+)\b", question, flags=re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    return None
+
+
+def _requested_paper_sources(question: str) -> List[str]:
+    lowered = question.lower()
+    source_aliases = [
+        ("arxiv", ["arxiv", "arxiv.org"]),
+        ("pubmed", ["pubmed"]),
+        ("biorxiv", ["biorxiv", "bio rxiv"]),
+        ("medrxiv", ["medrxiv", "med rxiv"]),
+        ("semantic_scholar", ["semantic scholar", "semanticscholar"]),
+        ("crossref", ["crossref"]),
+        ("openalex", ["openalex", "open alex"]),
+    ]
+    requested = [
+        source
+        for source, aliases in source_aliases
+        if any(alias in lowered for alias in aliases)
+    ]
+    return requested or ["arxiv", "pubmed", "biorxiv", "medrxiv", "semantic_scholar"]
+
+
+def _paper_identifier(paper: Dict[str, Any]) -> str:
+    return str(
+        paper.get("paper_id")
+        or paper.get("arxiv_id")
+        or paper.get("doi")
+        or paper.get("url")
+        or paper.get("title")
+        or "paper"
+    )
 
 
 def _score_text(text: str, terms: List[str]) -> int:
@@ -159,65 +228,81 @@ def rag_tool(state: AgentState) -> Dict[str, Any]:
 
 @traceable(name="agent_search_arxiv_tool", run_type="tool")
 def search_arxiv_tool(state: AgentState) -> Dict[str, Any]:
+    return search_papers_tool({**state, "paper_sources": ["arxiv"]})
+
+
+@traceable(name="agent_search_papers_tool", run_type="tool")
+def search_papers_tool(state: AgentState) -> Dict[str, Any]:
     description = _clean_search_query(state["question"])
+    sources = state.get("paper_sources") or _requested_paper_sources(state["question"])
 
     try:
         result = call_mcp_tool(
-            "research.search_arxiv",
+            "research.search_papers",
             {
                 "description": description,
                 "category": state.get("category"),
-                "max_results": min(state.get("retrieval_limit", 10), 10),
+                "max_results": min(state.get("retrieval_limit", 10), 25),
                 "sort_by": "relevance",
+                "sources": sources,
             },
         )
     except HTTPException as exc:
         return {
             "answer": (
-                "I tried to search arXiv, but arXiv did not respond in time. "
-                "Please try again in a moment, or narrow the query with a category like `cs.CL`, `cs.AI`, or `cs.IR`."
+                "I tried to search external paper sources, but the paper search service did not respond. "
+                "Please try again in a moment, or narrow the query with a source like arXiv or PubMed."
             ),
             "sources": [],
             "tool_trace": state.get("tool_trace", [])
-            + [_trace("search_arxiv", str(exc.detail), "error")],
-            "error": "arxiv_search_failed",
+            + [_trace("search_papers", str(exc.detail), "error")],
+            "error": "paper_search_failed",
         }
     except Exception as exc:
         return {
             "answer": (
-                "I tried to search arXiv, but the search tool failed. "
-                "Please try again with a shorter query."
+                "I tried to search external paper sources, but the paper search tool failed. "
+                "Please try again with a shorter query or only select arXiv."
             ),
             "sources": [],
             "tool_trace": state.get("tool_trace", [])
-            + [_trace("search_arxiv", str(exc), "error")],
-            "error": "arxiv_search_failed",
+            + [_trace("search_papers", str(exc), "error")],
+            "error": "paper_search_failed",
         }
 
     papers = result["papers"]
+    provider = result.get("provider") or "paper search"
+    source_label = ", ".join(result.get("sources") or sources)
 
     lines = [
-        f"I searched arXiv for `{description}` and found {len(papers)} papers.",
+        f"I searched {source_label} for `{description}` and found {len(papers)} papers.",
     ]
+    if result.get("warning"):
+        lines.append(str(result["warning"]))
+
     for index, paper in enumerate(papers[:5], start=1):
         categories = ", ".join(paper.get("categories", [])[:3])
+        identifier = _paper_identifier(paper)
+        provider_label = paper.get("source_provider") or provider
         lines.append(
-            f"{index}. **{paper['title']}** ({paper['arxiv_id']})"
+            f"{index}. **{paper['title']}** ({identifier})"
+            + f" - {provider_label}"
             + (f" - {categories}" if categories else "")
-            + f"\n   {paper['url']}"
+            + f"\n   {paper.get('url') or paper.get('pdf_url') or ''}"
         )
 
     if papers:
-        lines.append("\nAsk me to add a specific arXiv URL if you want it indexed.")
+        lines.append("\nAsk me to add a specific paper URL if you want it indexed.")
 
     sources = [
         {
-            "id": paper["arxiv_id"],
+            "id": _paper_identifier(paper),
             "title": paper["title"],
             "text": paper.get("abstract", ""),
             "source": paper.get("pdf_url", ""),
             "url": paper.get("url", ""),
-            "topic": "arxiv_search",
+            "topic": "paper_search",
+            "provider": paper.get("source_provider") or provider,
             "categories": paper.get("categories", []),
         }
         for paper in papers[:8]
@@ -227,7 +312,7 @@ def search_arxiv_tool(state: AgentState) -> Dict[str, Any]:
         "answer": "\n\n".join(lines),
         "sources": sources,
         "tool_trace": state.get("tool_trace", [])
-        + [_trace("search_arxiv", f"Found {len(papers)} arXiv candidates.")],
+        + [_trace("search_papers", f"Found {len(papers)} paper candidates via {provider}.")],
     }
 
 
@@ -277,6 +362,76 @@ def search_library_tool(state: AgentState) -> Dict[str, Any]:
         "sources": sources,
         "tool_trace": state.get("tool_trace", [])
         + [_trace("search_library", f"Returned {len(matches)} indexed papers.")],
+    }
+
+
+@traceable(name="agent_search_reddit_tool", run_type="tool")
+def search_reddit_tool(state: AgentState) -> Dict[str, Any]:
+    query = _clean_reddit_query(state["question"])
+    subreddit = _requested_subreddit(state["question"])
+
+    try:
+        result = call_mcp_tool(
+            "reddit.search_posts",
+            {
+                "query": query,
+                "subreddit": subreddit,
+                "limit": min(state.get("retrieval_limit", 10), 10),
+            },
+        )
+    except Exception as exc:
+        return {
+            "answer": (
+                "I tried to search Reddit, but the Reddit MCP server is not ready yet. "
+                "Make sure the Reddit Docker MCP image is available and your Reddit API "
+                "credentials are configured in the backend `.env`."
+            ),
+            "sources": [],
+            "tool_trace": state.get("tool_trace", [])
+            + [_trace("search_reddit", str(exc), "error")],
+            "error": "reddit_search_failed",
+        }
+
+    posts = result.get("posts", [])
+    scope = f" in r/{subreddit}" if subreddit else ""
+    lines = [f"I searched Reddit{scope} for `{query}` and found {len(posts)} posts."]
+
+    for index, post in enumerate(posts[:5], start=1):
+        subreddit_label = post.get("subreddit") or subreddit or "reddit"
+        score = post.get("score")
+        comments = post.get("num_comments")
+        stats = []
+        if score is not None:
+            stats.append(f"score {score}")
+        if comments is not None:
+            stats.append(f"{comments} comments")
+        stat_text = f" - {', '.join(stats)}" if stats else ""
+        lines.append(
+            f"{index}. **{post.get('title', 'Reddit post')}** - {subreddit_label}{stat_text}"
+            + f"\n   {post.get('url', '')}"
+        )
+
+    sources = [
+        {
+            "id": post.get("id") or post.get("url"),
+            "title": post.get("title"),
+            "text": post.get("text") or post.get("title"),
+            "source": post.get("url"),
+            "url": post.get("url"),
+            "topic": "reddit_search",
+            "provider": "reddit",
+            "subreddit": post.get("subreddit") or subreddit,
+            "score": post.get("score"),
+            "num_comments": post.get("num_comments"),
+        }
+        for post in posts[:8]
+    ]
+
+    return {
+        "answer": "\n\n".join(lines),
+        "sources": sources,
+        "tool_trace": state.get("tool_trace", [])
+        + [_trace("search_reddit", f"Found {len(posts)} Reddit posts.")],
     }
 
 

@@ -2,7 +2,7 @@ import json
 import math
 import re
 import hashlib
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
@@ -423,4 +423,187 @@ def query_graph_rag(
         "edges": related_edges,
         "papers": papers,
         "concepts": concept_matches[:limit],
+    }
+
+
+def _load_ready_graph(
+    domain: str | None = None,
+    category: str | None = None,
+    article_ids: List[str] | None = None,
+) -> Dict[str, Any]:
+    selected_ids = _normalize_article_ids(article_ids)
+    graph = load_graph_rag(domain, category, selected_ids)
+    if graph.get("stale"):
+        graph = build_graph_rag(domain, category, selected_ids)
+    return graph
+
+
+def get_node_neighborhood(
+    node_id: str,
+    domain: str | None = None,
+    category: str | None = None,
+    article_ids: List[str] | None = None,
+    limit: int = 30,
+) -> Dict[str, Any]:
+    graph = _load_ready_graph(domain, category, article_ids)
+    node_by_id = {node["id"]: node for node in graph.get("nodes", [])}
+    if node_id not in node_by_id:
+        return {
+            "node": None,
+            "nodes": [],
+            "edges": [],
+            "papers": [],
+            "concepts": [],
+            "answer": "That graph node was not found in the current scope.",
+        }
+
+    related_edges = [
+        edge
+        for edge in graph.get("edges", [])
+        if edge.get("source") == node_id or edge.get("target") == node_id
+    ][:limit]
+    related_ids = {node_id}
+    for edge in related_edges:
+        related_ids.add(edge["source"])
+        related_ids.add(edge["target"])
+
+    related_nodes = [node_by_id[node_id] for node_id in related_ids if node_id in node_by_id]
+    papers = [node for node in related_nodes if node.get("type") == "paper"]
+    concepts = [node for node in related_nodes if node.get("type") == "concept"]
+    selected = node_by_id[node_id]
+    relation_count = len(related_edges)
+
+    if selected.get("type") == "concept":
+        answer = (
+            f"{selected.get('label')} connects {len(papers)} paper"
+            f"{'' if len(papers) == 1 else 's'} in this graph."
+        )
+    elif selected.get("type") == "paper":
+        answer = (
+            f"{selected.get('label')} is connected to {len(concepts)} concept"
+            f"{'' if len(concepts) == 1 else 's'} and {relation_count} graph relationship"
+            f"{'' if relation_count == 1 else 's'}."
+        )
+    else:
+        answer = (
+            f"{selected.get('label')} has {relation_count} graph relationship"
+            f"{'' if relation_count == 1 else 's'} in this scope."
+        )
+
+    return {
+        "node": selected,
+        "nodes": related_nodes,
+        "edges": related_edges,
+        "papers": papers[:limit],
+        "concepts": concepts[:limit],
+        "answer": answer,
+    }
+
+
+def _adjacency(edges: List[Dict[str, Any]]) -> Dict[str, List[Tuple[str, Dict[str, Any]]]]:
+    graph: Dict[str, List[Tuple[str, Dict[str, Any]]]] = defaultdict(list)
+    for edge in edges:
+        source = str(edge.get("source"))
+        target = str(edge.get("target"))
+        graph[source].append((target, edge))
+        graph[target].append((source, edge))
+    return graph
+
+
+def explain_graph_connection(
+    source_id: str,
+    target_id: str,
+    domain: str | None = None,
+    category: str | None = None,
+    article_ids: List[str] | None = None,
+    max_depth: int = 5,
+) -> Dict[str, Any]:
+    graph = _load_ready_graph(domain, category, article_ids)
+    node_by_id = {node["id"]: node for node in graph.get("nodes", [])}
+    edges = graph.get("edges", [])
+
+    if source_id not in node_by_id or target_id not in node_by_id:
+        return {
+            "answer": "One of those nodes was not found in the current graph scope.",
+            "nodes": [],
+            "edges": [],
+            "papers": [],
+            "concepts": [],
+            "path": [],
+            "shared_concepts": [],
+        }
+
+    adjacency = _adjacency(edges)
+    queue = deque([(source_id, [source_id], [])])
+    visited = {source_id}
+    path_nodes: List[str] = []
+    path_edges: List[Dict[str, Any]] = []
+
+    while queue:
+        current, current_path, current_edges = queue.popleft()
+        if current == target_id:
+            path_nodes = current_path
+            path_edges = current_edges
+            break
+        if len(current_path) > max_depth:
+            continue
+
+        for neighbor, edge in adjacency.get(current, []):
+            if neighbor in visited:
+                continue
+            visited.add(neighbor)
+            queue.append((neighbor, [*current_path, neighbor], [*current_edges, edge]))
+
+    if not path_nodes:
+        source = node_by_id[source_id]
+        target = node_by_id[target_id]
+        return {
+            "answer": f"No short graph path was found between {source.get('label')} and {target.get('label')}.",
+            "nodes": [source, target],
+            "edges": [],
+            "papers": [node for node in [source, target] if node.get("type") == "paper"],
+            "concepts": [],
+            "path": [],
+            "shared_concepts": [],
+        }
+
+    nodes = [node_by_id[node_id] for node_id in path_nodes if node_id in node_by_id]
+    concepts = [node for node in nodes if node.get("type") == "concept"]
+    papers = [node for node in nodes if node.get("type") == "paper"]
+    shared_concepts = [
+        node
+        for node in concepts
+        if any(edge.get("relation") == "MENTIONS" for edge in path_edges)
+    ]
+    labels = [str(node.get("label")) for node in nodes]
+    relation_labels = [str(edge.get("relation", "RELATED_TO")).replace("_", " ").lower() for edge in path_edges]
+
+    steps = []
+    for index, relation in enumerate(relation_labels):
+        left = labels[index] if index < len(labels) else "Unknown"
+        right = labels[index + 1] if index + 1 < len(labels) else "Unknown"
+        steps.append(f"{left} -- {relation} -- {right}")
+
+    source = node_by_id[source_id]
+    target = node_by_id[target_id]
+    if shared_concepts:
+        concept_text = ", ".join(str(node.get("label")) for node in shared_concepts[:5])
+        answer = (
+            f"{source.get('label')} and {target.get('label')} are connected through "
+            f"{concept_text}. Path: {'; '.join(steps)}."
+        )
+    else:
+        answer = (
+            f"{source.get('label')} and {target.get('label')} are connected by this graph path: "
+            f"{'; '.join(steps)}."
+        )
+
+    return {
+        "answer": answer,
+        "nodes": nodes,
+        "edges": path_edges,
+        "papers": papers,
+        "concepts": concepts,
+        "path": path_nodes,
+        "shared_concepts": shared_concepts,
     }

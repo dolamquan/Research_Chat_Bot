@@ -1,10 +1,12 @@
 import type {
+  AgentSession,
+  AgentSessionDetail,
   Article,
   ArticleDomain,
   Annotation,
   AnnotationPayload,
-  ArxivSearchPayload,
-  ArxivSearchResponse,
+  PaperSearchPayload,
+  PaperSearchResponse,
   ChatHistoryItem,
   ChatResponse,
   ChatSession,
@@ -12,7 +14,12 @@ import type {
   ClusterGraph,
   ContextMode,
   DocumentDetail,
+  EvaluationRun,
+  EvaluationRunPayload,
+  EvaluationRunsResponse,
   GraphRagGraph,
+  GraphRagNeighborsResponse,
+  GraphRagPathResponse,
   GraphRagQueryResponse,
   IngestUrlPayload,
   IngestUrlResponse,
@@ -20,6 +27,7 @@ import type {
   McpCallResponse,
   McpToolsResponse,
   RetrievalStrategy,
+  ResearchBriefResponse,
   Source,
   VisualAsset,
 } from "./types";
@@ -141,6 +149,92 @@ export function queryGraphRag(payload: {
   });
 }
 
+export function getGraphRagNeighbors(payload: {
+  nodeId: string;
+  domain?: string;
+  category?: string;
+  articleIds?: string[];
+  limit?: number;
+}): Promise<GraphRagNeighborsResponse> {
+  return requestJson("/graph-rag/neighbors", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      node_id: payload.nodeId,
+      domain: payload.domain || null,
+      category: payload.category || null,
+      article_ids: payload.articleIds || [],
+      limit: payload.limit ?? 30,
+    }),
+  });
+}
+
+export function explainGraphRagPath(payload: {
+  sourceId: string;
+  targetId: string;
+  domain?: string;
+  category?: string;
+  articleIds?: string[];
+  maxDepth?: number;
+}): Promise<GraphRagPathResponse> {
+  return requestJson("/graph-rag/path", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      source_id: payload.sourceId,
+      target_id: payload.targetId,
+      domain: payload.domain || null,
+      category: payload.category || null,
+      article_ids: payload.articleIds || [],
+      max_depth: payload.maxDepth ?? 5,
+    }),
+  });
+}
+
+export function generateResearchBrief(payload: {
+  topic?: string;
+  domain?: string;
+  category?: string;
+  articleIds?: string[];
+  limit?: number;
+}): Promise<ResearchBriefResponse> {
+  return requestJson("/brief/research", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      topic: payload.topic || "",
+      domain: payload.domain || null,
+      category: payload.category || null,
+      article_ids: payload.articleIds || [],
+      limit: payload.limit ?? 8,
+    }),
+  });
+}
+
+export function getEvaluationRuns(): Promise<EvaluationRunsResponse> {
+  return requestJson("/evaluate/runs");
+}
+
+export function getEvaluationRun(runId: string): Promise<EvaluationRun> {
+  return requestJson(`/evaluate/runs/${encodeURIComponent(runId)}`);
+}
+
+export function runRagasEvaluation(
+  payload: EvaluationRunPayload = {},
+): Promise<unknown> {
+  return requestJson("/evaluate/ragas", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      retrieval_limit: payload.retrieval_limit ?? 20,
+      context_limit: payload.context_limit ?? 5,
+      use_reranking: payload.use_reranking ?? true,
+      parallel_reranking: payload.parallel_reranking ?? true,
+      rerank_workers: payload.rerank_workers ?? 3,
+    }),
+  });
+}
+
 export function getArticleDomains(): Promise<{ domains: ArticleDomain[] }> {
   return requestJson("/articles/domains");
 }
@@ -249,13 +343,38 @@ export function deleteAnnotation(
 }
 
 export function searchArxivPapers(
-  payload: ArxivSearchPayload,
-): Promise<ArxivSearchResponse> {
+  payload: PaperSearchPayload,
+): Promise<PaperSearchResponse> {
   return requestJson("/crawler/arxiv/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export async function searchPapers(
+  payload: PaperSearchPayload,
+): Promise<PaperSearchResponse> {
+  try {
+    return await requestJson("/crawler/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "";
+    if (detail === "Not Found" || detail.includes("404")) {
+      const fallback = await searchArxivPapers(payload);
+      return {
+        ...fallback,
+        provider: "arxiv_fallback",
+        sources: ["arxiv"],
+        warning:
+          "The multi-source crawler endpoint is not available on the running backend, so arXiv fallback was used.",
+      };
+    }
+    throw error;
+  }
 }
 
 export function ingestUrlPaper(
@@ -387,6 +506,20 @@ export function sendAgentChat({
       category: category ?? null,
       tags: tags ?? [],
     }),
+  });
+}
+
+export function getAgentSessions(): Promise<{ sessions: AgentSession[] }> {
+  return requestJson("/agent/sessions");
+}
+
+export function getAgentSession(sessionId: string): Promise<AgentSessionDetail> {
+  return requestJson(`/agent/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+export function deleteAgentSession(sessionId: string): Promise<{ status: string }> {
+  return requestJson(`/agent/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
   });
 }
 

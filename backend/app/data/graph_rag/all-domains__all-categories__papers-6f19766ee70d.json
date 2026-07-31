@@ -1,0 +1,656 @@
+{
+  "nodes": [
+    {
+      "id": "paper:arxiv:2502.07223v1",
+      "type": "paper",
+      "label": "Graph RAG-Tool Fusion",
+      "article_id": "arxiv:2502.07223v1",
+      "source": "2502.07223v1_graph_rag_tool_fusion.pdf",
+      "url": "https://arxiv.org/abs/2502.07223v1",
+      "domain": "research",
+      "category": "cs.cl",
+      "tags": [
+        "cs.cl"
+      ],
+      "abstract": "Recent developments in retrieval-augmented generation (RAG) for selecting relevant tools from a tool knowledge base enable LLM agents to scale their complex tool calling capabilities to hundreds or thousands of external tools, APIs, or agents-as-tools. However, traditional RAG-based tool retrieval fails to capture structured dependencies between tools, limiting the retrieval accuracy of a retrieved tool's dependencies. For example, among a vector database of tools, a \"get stock price\" API requires a \"stock ticker\" parameter from a \"get stock ticker\" API, and both depend on OS-level internet connectivity tools. In this paper, we address this limitation by introducing Graph RAG-Tool Fusion, a novel plug-and-play approach that combines the strengths of vector-based retrieval with efficient graph traversal to capture all relevant tools (nodes) along with any nested dependencies (edges) within the predefined tool knowledge graph. We also present ToolLinkOS, a new tool selection benchmark of 573 fictional tools, spanning over 15 industries, each with an average of 6.3 tool dependencies. We demonstrate that Graph RAG-Tool Fusion achieves absolute improvements of 71.7% and 22.1% over na\u00efve RAG on ToolLinkOS and ToolSandbox benchmarks, respectively (mAP@10). ToolLinkOS dataset is available at https://github.com/EliasLumer/Graph-RAG-Tool-Fusion-ToolLinkOS",
+      "weight": 1,
+      "x": 0.7206,
+      "y": 0.2985
+    },
+    {
+      "id": "domain:research",
+      "type": "domain",
+      "label": "research",
+      "weight": 3,
+      "x": 0.0,
+      "y": -0.0
+    },
+    {
+      "id": "category:cs-cl",
+      "type": "category",
+      "label": "cs.cl",
+      "weight": 3,
+      "x": 0.1061,
+      "y": -0.1061
+    },
+    {
+      "id": "concept:tools",
+      "type": "concept",
+      "label": "Tools",
+      "weight": 1,
+      "x": 0.42,
+      "y": 0.0
+    },
+    {
+      "id": "concept:tool",
+      "type": "concept",
+      "label": "Tool",
+      "weight": 1,
+      "x": 0.4615,
+      "y": 0.0889
+    },
+    {
+      "id": "concept:dependencies",
+      "type": "concept",
+      "label": "Dependencies",
+      "weight": 1,
+      "x": 0.4828,
+      "y": 0.1933
+    },
+    {
+      "id": "concept:rag-tool",
+      "type": "concept",
+      "label": "Rag Tool",
+      "weight": 1,
+      "x": 0.4795,
+      "y": 0.3082
+    },
+    {
+      "id": "concept:fusion",
+      "type": "concept",
+      "label": "Fusion",
+      "weight": 1,
+      "x": 0.4487,
+      "y": 0.4278
+    },
+    {
+      "id": "concept:stock",
+      "type": "concept",
+      "label": "Stock",
+      "weight": 1,
+      "x": 0.2436,
+      "y": 0.3421
+    },
+    {
+      "id": "concept:toollinkos",
+      "type": "concept",
+      "label": "Toollinkos",
+      "weight": 1,
+      "x": 0.1952,
+      "y": 0.4275
+    },
+    {
+      "id": "concept:for",
+      "type": "concept",
+      "label": "For",
+      "weight": 3,
+      "x": 0.1226,
+      "y": 0.5053
+    },
+    {
+      "id": "concept:relevant",
+      "type": "concept",
+      "label": "Relevant",
+      "weight": 1,
+      "x": 0.0271,
+      "y": 0.5694
+    },
+    {
+      "id": "concept:knowledge",
+      "type": "concept",
+      "label": "Knowledge",
+      "weight": 2,
+      "x": -0.0882,
+      "y": 0.6137
+    },
+    {
+      "id": "concept:capture",
+      "type": "concept",
+      "label": "Capture",
+      "weight": 1,
+      "x": -0.1374,
+      "y": 0.3969
+    },
+    {
+      "id": "concept:get",
+      "type": "concept",
+      "label": "Get",
+      "weight": 1,
+      "x": -0.235,
+      "y": 0.407
+    },
+    {
+      "id": "paper:arxiv:2504.01346v4",
+      "type": "paper",
+      "label": "RAG over Tables: Hierarchical Memory Index, Multi-Stage Retrieval, and Benchmarking",
+      "article_id": "arxiv:2504.01346v4",
+      "source": "2504.01346v4_rag_over_tables_hierarchical_memory_index_multi_stage_retrieval_and_benchmarking.pdf",
+      "url": "https://arxiv.org/abs/2504.01346v4",
+      "domain": "research",
+      "category": "cs.cl",
+      "tags": [
+        "cs.cl",
+        "cs.ir",
+        "cs.lg"
+      ],
+      "abstract": "Retrieval-Augmented Generation (RAG) enhances Large Language Models (LLMs) by integrating them with an external knowledge base to improve the answer relevance and accuracy. In real-world scenarios, beyond pure text, a substantial amount of knowledge is stored in tables, and user questions often require retrieving answers that are distributed across multiple tables. Retrieving knowledge from a table corpora (i.e., various individual tables) for a question remains nascent, at least, for (i) how to understand intra- and inter-table knowledge effectively, (ii) how to filter unnecessary tables and how to retrieve the most relevant tables efficiently, (iii) how to prompt LLMs to infer over the retrieval, (iv) how to evaluate the corresponding performance in a realistic setting. Facing the above challenges, in this paper, we first propose a table-corpora-aware RAG framework, named T-RAG, which consists of the hierarchical memory index, multi-stage retrieval, and graph-aware prompting for effective and efficient table knowledge retrieval and inference. Further, we first develop a multi-table question answering benchmark named MultiTableQA, which spans 3 different task types, 57,193 tables, and 23,758 questions in total, and the sources are all from real-world scenarios. Based on MultiTableQA, we did the holistic comparison over table retrieval methods, RAG methods, and table-to-graph representation learning methods, where T-RAG shows the leading accuracy, recall, and running time performance. Also, under T-RAG, we evaluate the inference ability upgrade of different LLMs. Code and Data are available at https://github.com/jiaruzouu/T-RAG",
+      "weight": 1,
+      "x": -0.6585,
+      "y": 0.5053
+    },
+    {
+      "id": "concept:tables",
+      "type": "concept",
+      "label": "Tables",
+      "weight": 1,
+      "x": -0.3405,
+      "y": 0.393
+    },
+    {
+      "id": "concept:t-rag",
+      "type": "concept",
+      "label": "T Rag",
+      "weight": 1,
+      "x": -0.4481,
+      "y": 0.3524
+    },
+    {
+      "id": "concept:over",
+      "type": "concept",
+      "label": "Over",
+      "weight": 1,
+      "x": -0.5511,
+      "y": 0.2841
+    },
+    {
+      "id": "concept:table",
+      "type": "concept",
+      "label": "Table",
+      "weight": 1,
+      "x": -0.403,
+      "y": 0.1183
+    },
+    {
+      "id": "concept:methods",
+      "type": "concept",
+      "label": "Methods",
+      "weight": 1,
+      "x": -0.4679,
+      "y": 0.0447
+    },
+    {
+      "id": "concept:hierarchical",
+      "type": "concept",
+      "label": "Hierarchical",
+      "weight": 1,
+      "x": -0.5176,
+      "y": -0.0494
+    },
+    {
+      "id": "concept:memory",
+      "type": "concept",
+      "label": "Memory",
+      "weight": 1,
+      "x": -0.5469,
+      "y": -0.1606
+    },
+    {
+      "id": "concept:index",
+      "type": "concept",
+      "label": "Index",
+      "weight": 1,
+      "x": -0.5511,
+      "y": -0.2841
+    },
+    {
+      "id": "concept:multi-stage",
+      "type": "concept",
+      "label": "Multi Stage",
+      "weight": 1,
+      "x": -0.3301,
+      "y": -0.2596
+    },
+    {
+      "id": "concept:accuracy",
+      "type": "concept",
+      "label": "Accuracy",
+      "weight": 1,
+      "x": -0.3078,
+      "y": -0.3552
+    },
+    {
+      "id": "paper:arxiv:2303.18223v19",
+      "type": "paper",
+      "label": "Test3",
+      "article_id": "arxiv:2303.18223v19",
+      "source": "2303.18223v19_test3.pdf",
+      "url": "https://arxiv.org/abs/2303.18223v19",
+      "domain": "research",
+      "category": "cs.cl",
+      "tags": [
+        "cs.cl",
+        "cs.ai"
+      ],
+      "abstract": "Language is essentially a complex, intricate system of human expressions governed by grammatical rules. It poses a significant challenge to develop capable AI algorithms for comprehending and grasping a language. As a major approach, language modeling has been widely studied for language understanding and generation in the past two decades, evolving from statistical language models to neural language models. Recently, pre-trained language models (PLMs) have been proposed by pre-training Transformer models over large-scale corpora, showing strong capabilities in solving various NLP tasks. Since researchers have found that model scaling can lead to performance improvement, they further study the scaling effect by increasing the model size to an even larger size. Interestingly, when the parameter scale exceeds a certain level, these enlarged language models not only achieve a significant performance improvement but also show some special abilities that are not present in small-scale language models. To discriminate the difference in parameter scale, the research community has coined the term large language models (LLM) for the PLMs of significant size. Recently, the research on LLMs has been largely advanced by both academia and industry, and a remarkable progress is the launch of ChatGPT, which has attracted widespread attention from society. The technical evolution of LLMs has been making an important impact on the entire AI community, which would revolutionize the way how we develop and use AI algorithms. In this survey, we review the recent advances of LLMs by introducing the background, key findings, and mainstream techniques. In particular, we focus on four major aspects of LLMs, namely pre-training, adaptation tuning, utilization, and capacity evaluation. Besides, we also summarize the available resources for developing LLMs and discuss the remaining issues for future directions.",
+      "weight": 1,
+      "x": -0.1149,
+      "y": -0.8725
+    },
+    {
+      "id": "concept:has",
+      "type": "concept",
+      "label": "Has",
+      "weight": 1,
+      "x": -0.26,
+      "y": -0.4503
+    },
+    {
+      "id": "concept:significant",
+      "type": "concept",
+      "label": "Significant",
+      "weight": 1,
+      "x": -0.1864,
+      "y": -0.5387
+    },
+    {
+      "id": "concept:size",
+      "type": "concept",
+      "label": "Size",
+      "weight": 1,
+      "x": -0.0882,
+      "y": -0.6137
+    },
+    {
+      "id": "concept:research",
+      "type": "concept",
+      "label": "Research",
+      "weight": 1,
+      "x": 0.02,
+      "y": -0.4195
+    },
+    {
+      "id": "concept:develop",
+      "type": "concept",
+      "label": "Develop",
+      "weight": 1,
+      "x": 0.1108,
+      "y": -0.4568
+    },
+    {
+      "id": "concept:algorithms",
+      "type": "concept",
+      "label": "Algorithms",
+      "weight": 1,
+      "x": 0.216,
+      "y": -0.473
+    },
+    {
+      "id": "concept:major",
+      "type": "concept",
+      "label": "Major",
+      "weight": 1,
+      "x": 0.3306,
+      "y": -0.4643
+    },
+    {
+      "id": "concept:recently",
+      "type": "concept",
+      "label": "Recently",
+      "weight": 1,
+      "x": 0.4487,
+      "y": -0.4278
+    },
+    {
+      "id": "concept:plms",
+      "type": "concept",
+      "label": "Plms",
+      "weight": 1,
+      "x": 0.3533,
+      "y": -0.2271
+    },
+    {
+      "id": "concept:pre-training",
+      "type": "concept",
+      "label": "Pre Training",
+      "weight": 1,
+      "x": 0.4363,
+      "y": -0.1747
+    },
+    {
+      "id": "concept:scaling",
+      "type": "concept",
+      "label": "Scaling",
+      "weight": 1,
+      "x": 0.5106,
+      "y": -0.0984
+    }
+  ],
+  "edges": [
+    {
+      "id": "IN_DOMAIN:paper:arxiv:2502.07223v1->domain:research",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "domain:research",
+      "relation": "IN_DOMAIN",
+      "weight": 1
+    },
+    {
+      "id": "IN_CATEGORY:paper:arxiv:2502.07223v1->category:cs-cl",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "category:cs-cl",
+      "relation": "IN_CATEGORY",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:tools",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:tools",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:tool",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:tool",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:dependencies",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:dependencies",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:rag-tool",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:rag-tool",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:fusion",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:fusion",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:stock",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:stock",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:toollinkos",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:toollinkos",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:for",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:for",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:relevant",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:relevant",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:knowledge",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:knowledge",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:capture",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:capture",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:get",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:get",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "IN_DOMAIN:paper:arxiv:2504.01346v4->domain:research",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "domain:research",
+      "relation": "IN_DOMAIN",
+      "weight": 1
+    },
+    {
+      "id": "IN_CATEGORY:paper:arxiv:2504.01346v4->category:cs-cl",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "category:cs-cl",
+      "relation": "IN_CATEGORY",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:tables",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:tables",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:knowledge",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:knowledge",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:t-rag",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:t-rag",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:over",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:over",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:table",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:table",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:for",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:for",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:methods",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:methods",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:hierarchical",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:hierarchical",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:memory",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:memory",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:index",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:index",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:multi-stage",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:multi-stage",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:accuracy",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:accuracy",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "IN_DOMAIN:paper:arxiv:2303.18223v19->domain:research",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "domain:research",
+      "relation": "IN_DOMAIN",
+      "weight": 1
+    },
+    {
+      "id": "IN_CATEGORY:paper:arxiv:2303.18223v19->category:cs-cl",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "category:cs-cl",
+      "relation": "IN_CATEGORY",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:for",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:for",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:has",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:has",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:significant",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:significant",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:size",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:size",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:research",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:research",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:develop",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:develop",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:algorithms",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:algorithms",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:major",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:major",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:recently",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:recently",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:plms",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:plms",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:pre-training",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:pre-training",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2303.18223v19->concept:scaling",
+      "source": "paper:arxiv:2303.18223v19",
+      "target": "concept:scaling",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "SIMILAR_TO:paper:arxiv:2502.07223v1->paper:arxiv:2504.01346v4",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "paper:arxiv:2504.01346v4",
+      "relation": "SIMILAR_TO",
+      "weight": 2
+    }
+  ],
+  "scope": {
+    "domain": null,
+    "category": null,
+    "article_ids": [
+      "arxiv:2303.18223v19",
+      "arxiv:2502.07223v1",
+      "arxiv:2504.01346v4"
+    ]
+  },
+  "stats": {
+    "paper_count": 3,
+    "concept_count": 33,
+    "edge_count": 43
+  },
+  "stale": false
+}

@@ -118,6 +118,62 @@ export type GraphRagQueryResponse = {
   concepts: GraphRagNode[];
 };
 
+export type GraphRagNeighborsResponse = GraphRagQueryResponse & {
+  node?: GraphRagNode | null;
+};
+
+export type GraphRagPathResponse = GraphRagQueryResponse & {
+  path: string[];
+  shared_concepts: GraphRagNode[];
+};
+
+export type ResearchBriefResponse = {
+  topic: string;
+  brief: string;
+  papers: GraphRagNode[];
+  sources: Source[];
+};
+
+export type EvaluationMetrics = Record<string, number | null | undefined>;
+
+export type EvaluationCase = {
+  id: string;
+  question: string;
+  answer: string;
+  expected_answer: string;
+  latency_seconds: number;
+  source_count: number;
+  metrics: EvaluationMetrics;
+  overall?: number | null;
+  feedback?: string;
+};
+
+export type EvaluationRun = {
+  run_id: string;
+  filename: string;
+  kind: "ragas" | "llm_judge" | string;
+  created_at: string;
+  case_count: number;
+  average_latency_seconds: number;
+  average_source_count?: number | null;
+  metrics: EvaluationMetrics;
+  overall?: number | null;
+  cases?: EvaluationCase[];
+};
+
+export type EvaluationRunsResponse = {
+  runs: EvaluationRun[];
+  latest?: EvaluationRun | null;
+};
+
+export type EvaluationRunPayload = {
+  retrieval_limit?: number;
+  context_limit?: number;
+  use_reranking?: boolean;
+  parallel_reranking?: boolean;
+  rerank_workers?: number;
+};
+
 export type DocumentDetail = ClusterDocument & {
   preview_chunks?: Source[];
 };
@@ -198,8 +254,10 @@ export type AnnotationPayload = {
   title?: string;
 };
 
-export type ArxivPaper = {
+export type PaperSearchPaper = {
+  paper_id?: string;
   arxiv_id: string;
+  source_provider?: string;
   title: string;
   abstract: string;
   authors: string[];
@@ -207,20 +265,31 @@ export type ArxivPaper = {
   published_at: string;
   updated_at: string;
   url: string;
-  pdf_url: string;
+  pdf_url?: string;
+  doi?: string;
+  venue?: string;
 };
 
-export type ArxivSearchPayload = {
+export type ArxivPaper = PaperSearchPaper;
+
+export type PaperSearchPayload = {
   description: string;
   max_results?: number;
   category?: string;
+  sources?: string[];
   sort_by?: "relevance" | "newest" | "last_updated";
 };
 
-export type ArxivSearchResponse = {
+export type PaperSearchResponse = {
+  provider?: string;
   query: string;
-  papers: ArxivPaper[];
+  sources?: string[];
+  warning?: string;
+  papers: PaperSearchPaper[];
 };
+
+export type ArxivSearchPayload = PaperSearchPayload;
+export type ArxivSearchResponse = PaperSearchResponse;
 
 export type VisualAsset = {
   asset_id: string;
@@ -303,4 +372,16 @@ export type StoredChatMessage = {
 export type ChatSessionDetail = {
   session: ChatSession;
   messages: StoredChatMessage[];
+};
+
+export type AgentSession = ChatSession;
+
+export type StoredAgentMessage = StoredChatMessage & {
+  intent?: string | null;
+  tool_trace?: AgentToolTrace[];
+};
+
+export type AgentSessionDetail = {
+  session: AgentSession;
+  messages: StoredAgentMessage[];
 };

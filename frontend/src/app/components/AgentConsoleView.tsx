@@ -14,8 +14,8 @@ import {
   User,
 } from "lucide-react";
 
-import { callMcpTool, getMcpTools } from "../api";
-import type { ChatResponse, McpTool } from "../types";
+import { callMcpTool, getAgentSession, getAgentSessions, getMcpTools } from "../api";
+import type { AgentSession, ChatHistoryItem, ChatResponse, McpTool } from "../types";
 
 declare global {
   interface Window {
@@ -126,9 +126,21 @@ const SLASH_COMMANDS: SlashCommand[] = [
     local: true,
   },
   {
+    name: "/resume",
+    label: "Resume session",
+    description: "List or resume previous agent console conversations.",
+    template: "/resume ",
+  },
+  {
+    name: "/search-papers",
+    label: "Search papers",
+    description: "Find new external papers across academic sources.",
+    template: "search papers for ",
+  },
+  {
     name: "/search-arxiv",
     label: "Search arXiv",
-    description: "Find new external arXiv papers.",
+    description: "Find new external arXiv papers only.",
     template: "search arXiv for ",
   },
   {
@@ -195,7 +207,8 @@ const SLASH_COMMANDS: SlashCommand[] = [
 
 const TOOL_HELP = [
   ["retrieve_papers", "Answer research questions using Qdrant retrieval."],
-  ["search_arxiv", "Search for new papers from arXiv."],
+  ["search_papers", "Search for new papers across arXiv, PubMed, bioRxiv, medRxiv, and Semantic Scholar."],
+  ["search_arxiv", "Search for new papers from arXiv only."],
   ["search_library", "Find indexed papers in your local library."],
   ["add_paper", "Index an arXiv or PDF URL into your database."],
   ["save_note", "Save a note attached to selected PDF context."],
@@ -233,6 +246,7 @@ function helpText(): string {
     ),
     "",
     "Examples:",
+    "  /search-papers graph RAG",
     "  /search-arxiv graph RAG",
     "  /search-library retrieval augmented generation",
     "  /add-paper https://arxiv.org/abs/...",
@@ -243,6 +257,11 @@ function helpText(): string {
     "  /visualize",
     "  /notion-visual",
     "  /rebuild-topology",
+    "",
+    "Agent sessions:",
+    "  /resume            list previous agent sessions",
+    "  /resume 1          resume the first listed session",
+    "  /resume <id>       resume a session by id prefix",
   ].join("\n");
 }
 
@@ -264,6 +283,7 @@ function mcpToolsText(tools: McpTool[]): string {
     "",
     "Example:",
     '  /mcp-call research.search_library {"query":"graph rag","limit":5}',
+    '  /mcp-call research.search_papers {"description":"graph rag","sources":["arxiv","pubmed"],"max_results":5}',
     '  /mcp-call research.summarize_paper {"title":"Graph RAG","query":"graph rag"}',
     '  /mcp-call research.generate_visualization {"query":"graph rag","visualization_type":"concept_map"}',
     '  /mcp-call notion.create_research_page {"title":"Graph RAG notes","summary":"Key findings"}',
@@ -421,10 +441,15 @@ function AgentContent({ content, kind }: { content: string; kind: ConsoleEntry["
 export function AgentConsoleView({
   onRun,
 }: {
-  onRun: (command: string) => Promise<ChatResponse>;
+  onRun: (
+    command: string,
+    options?: { sessionId?: string; chatHistory?: ChatHistoryItem[] },
+  ) => Promise<ChatResponse>;
 }) {
   const [command, setCommand] = useState("");
   const [mcpTools, setMcpTools] = useState<McpTool[]>([]);
+  const [, setAgentSessions] = useState<AgentSession[]>([]);
+  const [activeAgentSessionId, setActiveAgentSessionId] = useState<string | undefined>();
   const [entries, setEntries] = useState<ConsoleEntry[]>([
     {
       id: "welcome",
@@ -446,6 +471,7 @@ export function AgentConsoleView({
 
   useEffect(() => {
     let active = true;
+    void refreshAgentSessions(active);
     getMcpTools()
       .then((result) => {
         if (active) setMcpTools(result.tools);
@@ -457,6 +483,24 @@ export function AgentConsoleView({
       active = false;
     };
   }, []);
+
+  async function refreshAgentSessions(active = true) {
+    try {
+      const result = await getAgentSessions();
+      if (active) setAgentSessions(result.sessions);
+    } catch {
+      if (active) setAgentSessions([]);
+    }
+  }
+
+  function agentChatHistory(): ChatHistoryItem[] {
+    return entries
+      .filter((entry) => entry.kind === "user" || entry.kind === "agent")
+      .map((entry) => ({
+        role: entry.kind === "user" ? "user" : "assistant",
+        content: entry.content,
+      }));
+  }
 
   const matchingCommands = command.trim().startsWith("/")
     ? SLASH_COMMANDS.filter((item) =>
@@ -504,6 +548,124 @@ export function AgentConsoleView({
     }
 
     return false;
+  }
+
+  function resumeListText(sessions: AgentSession[]): string {
+    if (sessions.length === 0) {
+      return "No saved agent sessions yet. Run a command, then use `/resume` later.";
+    }
+
+    return [
+      "Saved agent sessions:",
+      ...sessions.slice(0, 20).map((session, index) => {
+        const updated = new Date(session.updated_at).toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        return `${String(index + 1).padStart(2, " ")}. ${session.title}\n    ${session.id} - ${updated}`;
+      }),
+      "",
+      "Resume with `/resume 1` or `/resume <session-id>`.",
+    ].join("\n");
+  }
+
+  async function runResumeCommand(trimmed: string): Promise<boolean> {
+    if (!trimmed.toLowerCase().startsWith("/resume")) {
+      return false;
+    }
+
+    setIsRunning(true);
+    try {
+      const sessionsResult = await getAgentSessions();
+      const sessions = sessionsResult.sessions;
+      setAgentSessions(sessions);
+      const target = trimmed.replace(/^\/resume\s*/i, "").trim();
+
+      if (!target) {
+        setEntries((current) => [
+          ...current,
+          makeLocalResponse(resumeListText(sessions), "resume"),
+        ]);
+        return true;
+      }
+
+      const numeric = Number.parseInt(target, 10);
+      const session =
+        Number.isFinite(numeric) && String(numeric) === target
+          ? sessions[numeric - 1]
+          : sessions.find(
+              (item) =>
+                item.id.startsWith(target) ||
+                item.title.toLowerCase().includes(target.toLowerCase()),
+            );
+
+      if (!session) {
+        setEntries((current) => [
+          ...current,
+          makeLocalResponse(`No agent session matched \`${target}\`.\n\n${resumeListText(sessions)}`, "resume"),
+        ]);
+        return true;
+      }
+
+      const detail = await getAgentSession(session.id);
+      const loadedEntries: ConsoleEntry[] = detail.messages.map((message, index) => {
+        const timestamp = new Date(message.created_at);
+        if (message.role === "user") {
+          return {
+            id: `loaded-user-${index}-${message.created_at}`,
+            kind: "user",
+            content: message.content,
+            timestamp,
+          };
+        }
+
+        return {
+          id: `loaded-agent-${index}-${message.created_at}`,
+          kind: "agent",
+          content: message.content,
+          intent: message.intent || undefined,
+          response: {
+            session_id: session.id,
+            answer: message.content,
+            sources: message.sources || [],
+            intent: message.intent || undefined,
+            tool_trace: message.tool_trace || [],
+          },
+          timestamp,
+        };
+      });
+
+      setActiveAgentSessionId(session.id);
+      setEntries([
+        makeLocalResponse(`Resumed agent session: ${session.title}\n${session.id}`, "resume"),
+        ...loadedEntries,
+      ]);
+    } catch (error) {
+      const detail =
+        error instanceof Error
+          ? error.message
+          : "Could not resume agent session.";
+      const content =
+        detail === "Not Found" || detail.includes("404")
+          ? "Agent session history is not available on the running backend. Restart the backend so it loads the latest `/agent/sessions` routes, then try `/resume` again."
+          : detail;
+
+      setEntries((current) => [
+        ...current,
+        {
+          id: `error-${Date.now()}`,
+          kind: "error",
+          content,
+          timestamp: new Date(),
+        },
+      ]);
+    } finally {
+      setIsRunning(false);
+    }
+
+    return true;
   }
 
   async function runMcpCall(trimmed: string): Promise<boolean> {
@@ -560,6 +722,10 @@ export function AgentConsoleView({
       return;
     }
 
+    if (await runResumeCommand(trimmed)) {
+      return;
+    }
+
     if (await runMcpCall(trimmed)) {
       return;
     }
@@ -567,7 +733,12 @@ export function AgentConsoleView({
     setIsRunning(true);
 
     try {
-      const response = await onRun(trimmed);
+      const response = await onRun(trimmed, {
+        sessionId: activeAgentSessionId,
+        chatHistory: agentChatHistory(),
+      });
+      setActiveAgentSessionId(response.session_id);
+      void refreshAgentSessions();
       setEntries((current) => [
         ...current,
         {

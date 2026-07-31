@@ -2,9 +2,12 @@ from typing import Any, Dict, List, Literal, TypedDict
 
 
 AgentIntent = Literal[
+    "small_talk",
     "rag_question",
+    "search_papers",
     "search_arxiv",
     "search_library",
+    "search_reddit",
     "ingest_paper",
     "save_note",
     "rebuild_topology",

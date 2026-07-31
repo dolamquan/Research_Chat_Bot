@@ -2,6 +2,8 @@ from typing import Any, List
 
 from langsmith import traceable
 
+from app.rag.prompt_cache import cached_llm_text
+
 
 MAX_SUBQUERIES = 3
 MAX_SUBQUERY_CHARS = 300
@@ -139,7 +141,13 @@ Sub-queries:
 """.strip()
 
     try:
-        subqueries = _parse_subqueries(_get_llm_text(llm.invoke(prompt)))
+        subqueries = _parse_subqueries(
+            cached_llm_text(
+                llm=llm,
+                prompt=prompt,
+                namespace="query_decomposer",
+            )
+        )
     except Exception:
         return [original_query]
 

@@ -1,5 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  ErrorInfo,
+  KeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from "react";
 import {
   Bot,
   BrainCircuit,
@@ -9,7 +14,7 @@ import {
   FileText,
   History,
   Link,
-  Map,
+  Map as MapIcon,
   Menu,
   MessageSquare,
   Network,
@@ -35,16 +40,18 @@ import {
   getIngestionJobs,
   getVisualImageUrl,
   ingestUrlPaper,
-  searchArxivPapers,
+  searchPapers,
   sendAgentChat,
   sendChat,
 } from "./api";
 import { AgentConsoleView } from "./components/AgentConsoleView";
 import { CrawlerView } from "./components/CrawlerView";
 import { DocumentReader } from "./components/DocumentReader";
+import { EvaluationDashboard } from "./components/EvaluationDashboard";
 import { GraphRagView } from "./components/GraphRagView";
 import { NotesView } from "./components/NotesView";
 import { PaperLibraryView } from "./components/PaperLibraryView";
+import { RedditView } from "./components/RedditView";
 import { ResearchPanel } from "./components/ResearchPanel";
 import { TopologyExplorer } from "./components/TopologyExplorer";
 import { TopologyPanel } from "./components/TopologyPanel";
@@ -67,6 +74,85 @@ import type {
 } from "./types";
 
 const EMPTY_GRAPH: ClusterGraph = { clusters: [], documents: [] };
+
+class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  { error?: Error; info?: ErrorInfo }
+> {
+  state: { error?: Error; info?: ErrorInfo } = {};
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("ResearchMind render error", error, info);
+    this.setState({ error, info });
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#0b0d10",
+          color: "#f8fafc",
+          padding: 32,
+          fontFamily:
+            "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 920,
+            border: "1px solid #7f1d1d",
+            background: "#1f1212",
+            borderRadius: 12,
+            padding: 24,
+          }}
+        >
+          <h1 style={{ margin: 0, fontSize: 24 }}>ResearchMind crashed while rendering</h1>
+          <p style={{ color: "#cbd5e1", lineHeight: 1.6 }}>
+            The app is loaded, but a frontend runtime error stopped React from drawing the UI.
+            This message is here so we can see the real issue instead of a black screen.
+          </p>
+          <pre
+            style={{
+              whiteSpace: "pre-wrap",
+              color: "#fca5a5",
+              background: "#0b0d10",
+              border: "1px solid #3f1b1b",
+              borderRadius: 8,
+              padding: 16,
+              overflow: "auto",
+            }}
+          >
+            {this.state.error.message}
+            {this.state.info?.componentStack ? `\n${this.state.info.componentStack}` : ""}
+          </pre>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={{
+              marginTop: 12,
+              border: "1px solid #d6a937",
+              background: "#d6a937",
+              color: "#111827",
+              borderRadius: 8,
+              padding: "10px 14px",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Reload
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
 
 function initialMessage(cluster?: Cluster): Message {
   return {
@@ -91,11 +177,12 @@ function articleTitle(article: Article): string {
 }
 
 function sourceKey(source: Source): string {
+  const text = sourceTextValue(source?.text);
   return [
-    source.id,
-    source.source,
-    source.page,
-    source.text?.slice(0, 100),
+    source?.id,
+    sourceTextValue(source?.source),
+    typeof source?.page === "number" ? source.page : "",
+    text.slice(0, 100),
   ].join(":");
 }
 
@@ -166,10 +253,12 @@ function FormattedText({ content }: { content: string }) {
 
 function contextLabel(source: Source, index: number): string {
   if (source.document_type === "visual_asset" || source.image_url) {
-    return source.page ? `Figure/image - p.${source.page}` : "Figure/image";
+    return typeof source.page === "number" ? `Figure/image - p.${source.page}` : "Figure/image";
   }
-  if (source.selection) return source.page ? `PDF selection - p.${source.page}` : "PDF selection";
-  return source.title || source.source || `Context ${index + 1}`;
+  if (source.selection) {
+    return typeof source.page === "number" ? `PDF selection - p.${source.page}` : "PDF selection";
+  }
+  return sourceTextValue(source.title) || sourceTextValue(source.source) || `Context ${index + 1}`;
 }
 
 function MessageContextCard({ source, index }: { source: Source; index: number }) {
@@ -183,7 +272,7 @@ function MessageContextCard({ source, index }: { source: Source; index: number }
         <div className="border-b border-primary/20 bg-background/60">
           <img
             src={imageUrl}
-            alt={source.title || "Pinned visual context"}
+            alt={sourceTextValue(source.title) || "Pinned visual context"}
             className="max-h-36 w-full object-contain"
           />
         </div>
@@ -208,12 +297,107 @@ function MessageContextCard({ source, index }: { source: Source; index: number }
 }
 
 function sourceCitationLabel(source: Source, index: number): string {
-  if (source.page) return `[p.${source.page}]`;
+  if (typeof source.page === "number") return `[p.${source.page}]`;
   return `[${index + 1}]`;
 }
 
 function citationTitle(source: Source): string {
-  return source.title || source.source || "Open source";
+  return sourceTextValue(source.title) || sourceTextValue(source.source) || "Open source";
+}
+
+function sourceTextValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function paperSourceKey(source: Source): string {
+  return String(source?.article_id || source?.source || source?.id || "");
+}
+
+function isPaperSource(source: Source): boolean {
+  if (!source || typeof source !== "object") return false;
+  return Boolean(
+    typeof source.source === "string" &&
+      source.source &&
+      !source.selection &&
+      source.document_type !== "visual_asset" &&
+      !source.image_url,
+  );
+}
+
+function paperTitle(source: Source): string {
+  const title = sourceTextValue(source.title);
+  const file = sourceTextValue(source.source);
+  return title || (file ? titleFromSource(file) : "Indexed paper");
+}
+
+function paperSubtitle(source: Source): string {
+  return [sourceTextValue(source.category), sourceTextValue(source.domain)]
+    .filter(Boolean)
+    .join(" - ");
+}
+
+function MessagePaperCards({
+  sources,
+  onOpenSource,
+}: {
+  sources: Source[];
+  onOpenSource: (source: Source) => void;
+}) {
+  const safeSources = Array.isArray(sources) ? sources : [];
+  const paperSources = Array.from(
+    safeSources
+      .filter(isPaperSource)
+      .reduce((papers, source) => {
+        const key = paperSourceKey(source);
+        if (key && !papers.has(key)) papers.set(key, source);
+        return papers;
+      }, new Map<string, Source>())
+      .values(),
+  ).slice(0, 5);
+
+  if (paperSources.length === 0) return null;
+
+  return (
+    <div className="mt-2 w-full space-y-2">
+      <p className="px-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+        Retrieved papers
+      </p>
+      <div className="grid gap-2">
+        {paperSources.map((source) => (
+          <article
+            key={paperSourceKey(source)}
+            className="rounded border border-border bg-card px-3 py-2"
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded border border-primary/25 bg-primary/10 text-primary">
+                <FileText size={13} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="line-clamp-2 break-words text-xs font-semibold text-foreground">
+                  {paperTitle(source)}
+                </p>
+                <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                  {paperSubtitle(source) || sourceTextValue(source.source)}
+                </p>
+                {(sourceTextValue(source.summary) || sourceTextValue(source.text)) && (
+                  <p className="mt-1 line-clamp-2 break-words text-xs leading-relaxed text-muted-foreground">
+                    {sourceTextValue(source.summary) || sourceTextValue(source.text)}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => onOpenSource(source)}
+                className="shrink-0 rounded border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-medium text-primary hover:bg-primary/20"
+              >
+                Read PDF
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function MessageBubble({
@@ -224,9 +408,10 @@ function MessageBubble({
   onOpenSource: (source: Source) => void;
 }) {
   const isUser = message.role === "user";
-  const pinnedSources = message.pinnedSources || [];
-  const citationSources = (message.sources || []).filter(
-    (source) => source.source && source.page,
+  const pinnedSources = Array.isArray(message.pinnedSources) ? message.pinnedSources : [];
+  const messageSources = Array.isArray(message.sources) ? message.sources : [];
+  const citationSources = messageSources.filter(
+    (source) => typeof source?.source === "string" && typeof source?.page === "number",
   );
 
   return (
@@ -269,11 +454,14 @@ function MessageBubble({
             <FormattedText content={message.content} />
           </div>
         </div>
-        {message.sources && message.sources.length > 0 && (
+        {!isUser && messageSources.length > 0 && (
+          <MessagePaperCards sources={messageSources} onOpenSource={onOpenSource} />
+        )}
+        {messageSources.length > 0 && (
           <div className="px-1 flex flex-wrap items-center gap-1.5">
             <span className="font-mono text-[10px] text-muted-foreground">
-              {message.sources.length} grounded source
-              {message.sources.length === 1 ? "" : "s"}
+              {messageSources.length} grounded source
+              {messageSources.length === 1 ? "" : "s"}
             </span>
             {citationSources.slice(0, 8).map((source, index) => (
               <button
@@ -315,7 +503,7 @@ function MessageBubble({
   );
 }
 
-export default function App() {
+function AppContent() {
   const [graph, setGraph] = useState<ClusterGraph>(EMPTY_GRAPH);
   const [selectedCluster, setSelectedCluster] = useState<Cluster>();
   const [selectedDocument, setSelectedDocument] = useState<ClusterDocument>();
@@ -330,10 +518,17 @@ export default function App() {
   const [contextMode, setContextMode] = useState<ContextMode>("retrieval");
   const [retrievalStrategy, setRetrievalStrategy] = useState<RetrievalStrategy>("hybrid");
   const [input, setInput] = useState("");
-  const [activeView, setActiveView] = useState<"chat" | "library" | "crawler" | "notes" | "agent" | "graph">("chat");
+  const [activeView, setActiveView] = useState<"chat" | "library" | "crawler" | "reddit" | "notes" | "agent" | "graph" | "evaluation">("chat");
   const [librarySearch, setLibrarySearch] = useState("");
   const [crawlerDescription, setCrawlerDescription] = useState("");
   const [crawlerCategory, setCrawlerCategory] = useState("");
+  const [crawlerSources, setCrawlerSources] = useState<string[]>([
+    "arxiv",
+    "pubmed",
+    "biorxiv",
+    "medrxiv",
+    "semantic_scholar",
+  ]);
   const [crawlerSortBy, setCrawlerSortBy] = useState<"relevance" | "newest" | "last_updated">("relevance");
   const [crawlerMaxResults, setCrawlerMaxResults] = useState(10);
   const [crawlerResults, setCrawlerResults] = useState<ArxivPaper[]>([]);
@@ -739,29 +934,32 @@ export default function App() {
     if (!description || isCrawlerSearching) return;
 
     setIsCrawlerSearching(true);
-    setCrawlerStatus("Searching arXiv...");
+    setCrawlerStatus("Searching academic sources...");
     setCrawlerQuery("");
 
     try {
-      const result = await searchArxivPapers({
+      const result = await searchPapers({
         description,
         category: crawlerCategory.trim() || undefined,
+        sources: crawlerSources,
         sort_by: crawlerSortBy,
         max_results: crawlerMaxResults,
       });
       setCrawlerResults(result.papers);
       setCrawlerQuery(result.query);
       setCrawlerStatus(
-        result.papers.length
-          ? `Found ${result.papers.length} related arXiv papers.`
-          : "No arXiv papers matched that description.",
+        result.warning
+          ? `${result.warning} Found ${result.papers.length} papers.`
+          : result.papers.length
+            ? `Found ${result.papers.length} related papers from ${result.provider || "paper search"}.`
+            : "No papers matched that description.",
       );
       setBackendOnline(true);
     } catch (error) {
       setCrawlerStatus(
         error instanceof Error
-          ? `Could not search arXiv: ${error.message}`
-          : "Could not search arXiv.",
+          ? `Could not search papers: ${error.message}`
+          : "Could not search academic sources.",
       );
       setBackendOnline(false);
     } finally {
@@ -775,12 +973,12 @@ export default function App() {
   ) {
     if (addingCrawlerPaperId) return;
 
-    setAddingCrawlerPaperId(paper.arxiv_id);
+    setAddingCrawlerPaperId(paper.arxiv_id || paper.paper_id || paper.pdf_url || paper.url || paper.title);
     setCrawlerStatus(`Queuing ${paper.title} for indexing...`);
 
     try {
       const result = await ingestUrlPaper({
-        url: paper.url || paper.pdf_url,
+        url: paper.pdf_url || paper.url,
         title: paper.title,
         domain: metadata.domain?.trim() || paperDomain.trim() || "research",
         category:
@@ -884,7 +1082,7 @@ export default function App() {
         domain: selectedDomain || undefined,
         category: selectedCategory || undefined,
         contextMode: selectedDocument ? contextMode : "retrieval",
-        retrievalStrategy: selectedDocument ? "vector" : retrievalStrategy,
+        retrievalStrategy,
       };
       const result = await sendChat(chatRequest);
 
@@ -931,10 +1129,14 @@ export default function App() {
     }
   }
 
-  async function runAgentCommand(command: string) {
+  async function runAgentCommand(
+    command: string,
+    options?: { sessionId?: string; chatHistory?: ChatHistoryItem[] },
+  ) {
     const result = await sendAgentChat({
+      sessionId: options?.sessionId,
       question: command,
-      chatHistory: [],
+      chatHistory: options?.chatHistory || [],
       pinnedSources,
       clusterId: selectedCluster?.cluster_id,
       documentSource: selectedDocument?.source,
@@ -943,8 +1145,6 @@ export default function App() {
       contextMode: selectedDocument ? contextMode : "retrieval",
     });
 
-    setActiveSessionId(result.session_id);
-    void refreshChatSessions();
     setSources(result.sources || []);
     if (result.topology) {
       setGraph(result.topology);
@@ -998,13 +1198,14 @@ export default function App() {
   }
 
   function documentFromSourceReference(source: Source): ClusterDocument | undefined {
-    if (!source.source) return undefined;
+    const sourceName = sourceTextValue(source.source);
+    if (!sourceName) return undefined;
     return (
-      graph.documents.find((document) => document.source === source.source) ||
+      graph.documents.find((document) => document.source === sourceName) ||
       documentFromArticle({
-        article_id: String(source.article_id || source.source),
-        title: source.title || titleFromSource(source.source),
-        source: source.source,
+        article_id: String(source.article_id || sourceName),
+        title: sourceTextValue(source.title) || titleFromSource(sourceName),
+        source: sourceName,
         url: typeof source.url === "string" ? source.url : undefined,
         pdf_url: undefined,
         domain: typeof source.domain === "string" ? source.domain : "research",
@@ -1063,10 +1264,14 @@ export default function App() {
   const headerTitle =
     activeView === "crawler"
       ? "Crawler"
+      : activeView === "reddit"
+        ? "Reddit"
       : activeView === "agent"
         ? "Agent Console"
       : activeView === "graph"
         ? "Graph RAG"
+      : activeView === "evaluation"
+        ? "Evaluation"
       : activeView === "library"
         ? "Paper Library"
         : activeView === "notes"
@@ -1075,10 +1280,14 @@ export default function App() {
   const headerSubtitle =
     activeView === "crawler"
       ? "arXiv paper discovery"
+      : activeView === "reddit"
+        ? "Community research signals"
       : activeView === "agent"
         ? "Internal research tool calling"
       : activeView === "graph"
         ? "Concept and relationship retrieval"
+      : activeView === "evaluation"
+        ? "RAG quality and latency tracking"
       : activeView === "library"
         ? "Indexed papers and ingestion status"
         : activeView === "notes"
@@ -1772,7 +1981,7 @@ export default function App() {
                   : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
               }`}
             >
-              <Map size={13} />
+              <MapIcon size={13} />
               {topologyExplorerOpen ? "Chat" : "Topology"}
             </button>
           )}
@@ -1792,9 +2001,11 @@ export default function App() {
           className={`flex-1 min-h-0 px-5 md:px-8 py-6 ${
             activeView === "library" ||
             activeView === "crawler" ||
+            activeView === "reddit" ||
             activeView === "notes" ||
             activeView === "agent" ||
-            activeView === "graph"
+            activeView === "graph" ||
+            activeView === "evaluation"
               ? "overflow-hidden p-0"
               : topologyExplorerOpen
                 ? "overflow-hidden"
@@ -1828,6 +2039,8 @@ export default function App() {
               domain={selectedDomain || undefined}
               category={selectedCategory || undefined}
             />
+          ) : activeView === "evaluation" ? (
+            <EvaluationDashboard />
           ) : activeView === "notes" ? (
             <NotesView
               onOpenNote={openAnnotation}
@@ -1842,6 +2055,7 @@ export default function App() {
               category={crawlerCategory}
               sortBy={crawlerSortBy}
               maxResults={crawlerMaxResults}
+              sources={crawlerSources}
               results={crawlerResults}
               query={crawlerQuery}
               status={crawlerStatus}
@@ -1852,9 +2066,12 @@ export default function App() {
               onCategoryChange={setCrawlerCategory}
               onSortByChange={setCrawlerSortBy}
               onMaxResultsChange={setCrawlerMaxResults}
+              onSourcesChange={setCrawlerSources}
               onSearch={() => void searchCrawler()}
               onAddPaper={(paper) => void addCrawlerPaper(paper)}
             />
+          ) : activeView === "reddit" ? (
+            <RedditView />
           ) : topologyExplorerOpen ? (
             <TopologyExplorer
               graph={graph}
@@ -1918,8 +2135,8 @@ export default function App() {
                   >
                     <span className="text-[10px] truncate">
                       {source.selection
-                        ? `PDF selection · p.${source.page}`
-                        : source.source || `Source ${index + 1}`}
+                        ? `PDF selection · ${typeof source.page === "number" ? `p.${source.page}` : "selected text"}`
+                        : sourceTextValue(source.source) || `Source ${index + 1}`}
                     </span>
                     <X size={10} />
                   </button>
@@ -1930,19 +2147,15 @@ export default function App() {
               <div className="flex items-center gap-1 rounded border border-border bg-background p-1">
                 {(["vector", "graph", "hybrid"] as RetrievalStrategy[]).map((strategy) => {
                   const isActive = retrievalStrategy === strategy;
-                  const disabled = Boolean(selectedDocument) && strategy !== "vector";
                   return (
                     <button
                       key={strategy}
                       type="button"
-                      disabled={disabled}
                       onClick={() => setRetrievalStrategy(strategy)}
                       className={`h-7 rounded px-2.5 text-[11px] font-medium capitalize transition-colors ${
-                        isActive && !selectedDocument
+                        isActive
                           ? "bg-primary text-primary-foreground"
-                          : selectedDocument && strategy === "vector"
-                            ? "bg-primary/10 text-primary"
-                            : "text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35 disabled:hover:bg-transparent"
+                          : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                       }`}
                     >
                       {strategy}
@@ -1951,9 +2164,7 @@ export default function App() {
                 })}
               </div>
               <span className="font-mono text-[10px] text-muted-foreground">
-                {selectedDocument
-                  ? "Article chat uses selected-paper retrieval"
-                  : retrievalStrategy === "hybrid"
+                {retrievalStrategy === "hybrid"
                     ? "Vector + graph-guided retrieval"
                     : retrievalStrategy === "graph"
                       ? "Graph-guided paper retrieval"
@@ -2034,5 +2245,13 @@ export default function App() {
         />
       ) : null}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AppErrorBoundary>
+      <AppContent />
+    </AppErrorBoundary>
   );
 }

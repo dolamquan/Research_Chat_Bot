@@ -2,8 +2,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
 import { GitBranch, Loader2, Maximize2, Network, RefreshCw, Search } from "lucide-react";
 
-import { buildGraphRag, getArticles, getGraphRag, queryGraphRag } from "../api";
-import type { Article, GraphRagGraph, GraphRagNode, GraphRagQueryResponse } from "../types";
+import {
+  buildGraphRag,
+  explainGraphRagPath,
+  generateResearchBrief,
+  getArticles,
+  getGraphRag,
+  getGraphRagNeighbors,
+  queryGraphRag,
+} from "../api";
+import type {
+  Article,
+  GraphRagGraph,
+  GraphRagNeighborsResponse,
+  GraphRagNode,
+  GraphRagPathResponse,
+  GraphRagQueryResponse,
+  ResearchBriefResponse,
+} from "../types";
 
 const EMPTY_GRAPH: GraphRagGraph = {
   nodes: [],
@@ -53,7 +69,17 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
   const [articles, setArticles] = useState<Article[]>([]);
   const [selectedArticleIds, setSelectedArticleIds] = useState<string[]>([]);
   const [paperSearch, setPaperSearch] = useState("");
+  const [graphSearch, setGraphSearch] = useState("");
+  const [neighbors, setNeighbors] = useState<GraphRagNeighborsResponse | null>(null);
+  const [pathStart, setPathStart] = useState<GraphRagNode | null>(null);
+  const [pathEnd, setPathEnd] = useState<GraphRagNode | null>(null);
+  const [pathResult, setPathResult] = useState<GraphRagPathResponse | null>(null);
+  const [briefTopic, setBriefTopic] = useState("");
+  const [briefResult, setBriefResult] = useState<ResearchBriefResponse | null>(null);
   const [isLoadingArticles, setIsLoadingArticles] = useState(false);
+  const [isLoadingNeighbors, setIsLoadingNeighbors] = useState(false);
+  const [isExplainingPath, setIsExplainingPath] = useState(false);
+  const [isGeneratingBrief, setIsGeneratingBrief] = useState(false);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
   const [dragState, setDragState] = useState<
     | {
@@ -115,6 +141,9 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
       setStatus("Graph rebuilt.");
       setSelectedNode(null);
       setQueryResult(null);
+      setNeighbors(null);
+      setPathResult(null);
+      setBriefResult(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not build Graph RAG.");
     } finally {
@@ -130,6 +159,8 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
     try {
       const result = await queryGraphRag({ query: trimmed, ...graphScope });
       setQueryResult(result);
+      setPathResult(null);
+      setBriefResult(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not query Graph RAG.");
     } finally {
@@ -160,18 +191,81 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
   useEffect(() => {
     setSelectedArticleIds([]);
     setPaperSearch("");
+    setGraphSearch("");
+    setPathStart(null);
+    setPathEnd(null);
+    setPathResult(null);
+    setBriefResult(null);
   }, [domain, category]);
+
+  useEffect(() => {
+    if (!selectedNode) {
+      setNeighbors(null);
+      return;
+    }
+
+    let active = true;
+    setIsLoadingNeighbors(true);
+    getGraphRagNeighbors({
+      nodeId: selectedNode.id,
+      ...graphScope,
+    })
+      .then((result) => {
+        if (active) setNeighbors(result);
+      })
+      .catch(() => {
+        if (active) setNeighbors(null);
+      })
+      .finally(() => {
+        if (active) setIsLoadingNeighbors(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [selectedNode?.id, graphScope]);
 
   const nodeById = useMemo(() => {
     return new Map(graph.nodes.map((node) => [node.id, node]));
   }, [graph.nodes]);
 
+  const filteredGraphNodes = useMemo(() => {
+    const terms = graphSearch
+      .toLowerCase()
+      .split(/\s+/)
+      .map((term) => term.trim())
+      .filter(Boolean);
+    if (!terms.length) return [];
+
+    return graph.nodes
+      .filter((node) => {
+        const text = [
+          node.label,
+          node.type,
+          node.domain,
+          node.category,
+          node.source,
+          (node.tags || []).join(" "),
+          node.abstract,
+        ]
+          .join(" ")
+          .toLowerCase();
+        return terms.every((term) => text.includes(term));
+      })
+      .slice(0, 12);
+  }, [graph.nodes, graphSearch]);
+
   const highlightedIds = useMemo(() => {
     const ids = new Set<string>();
     queryResult?.nodes.forEach((node) => ids.add(node.id));
+    neighbors?.nodes.forEach((node) => ids.add(node.id));
+    pathResult?.nodes.forEach((node) => ids.add(node.id));
+    filteredGraphNodes.forEach((node) => ids.add(node.id));
     if (selectedNode) ids.add(selectedNode.id);
+    if (pathStart) ids.add(pathStart.id);
+    if (pathEnd) ids.add(pathEnd.id);
     return ids;
-  }, [queryResult, selectedNode]);
+  }, [filteredGraphNodes, neighbors, pathEnd, pathResult, pathStart, queryResult, selectedNode]);
 
   const selectedArticleSet = useMemo(
     () => new Set(selectedArticleIds),
@@ -201,6 +295,18 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
       .slice(0, 80);
   }, [articles, paperSearch]);
 
+  const connectedPapers = useMemo(
+    () => (neighbors?.papers || []).filter((node) => node.id !== selectedNode?.id),
+    [neighbors, selectedNode],
+  );
+
+  const connectedConcepts = useMemo(
+    () => (neighbors?.concepts || []).filter((node) => node.id !== selectedNode?.id),
+    [neighbors, selectedNode],
+  );
+
+  const activeGraphResult = pathResult || queryResult;
+
   function toggleArticle(articleId: string) {
     setSelectedArticleIds((current) =>
       current.includes(articleId)
@@ -209,6 +315,7 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
     );
     setQueryResult(null);
     setSelectedNode(null);
+    setBriefResult(null);
   }
 
   function selectVisibleArticles() {
@@ -221,6 +328,60 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
     });
     setQueryResult(null);
     setSelectedNode(null);
+    setBriefResult(null);
+  }
+
+  function handleNodeClick(node: GraphRagNode) {
+    setSelectedNode(node);
+    if (!pathStart || pathEnd) {
+      setPathStart(node);
+      setPathEnd(null);
+      setPathResult(null);
+      return;
+    }
+    if (pathStart.id !== node.id) {
+      setPathEnd(node);
+      setPathResult(null);
+    }
+  }
+
+  async function explainPath() {
+    if (!pathStart || !pathEnd || pathStart.id === pathEnd.id) return;
+    setIsExplainingPath(true);
+    setError("");
+    try {
+      const result = await explainGraphRagPath({
+        sourceId: pathStart.id,
+        targetId: pathEnd.id,
+        ...graphScope,
+      });
+      setPathResult(result);
+      setQueryResult(null);
+      setBriefResult(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not explain graph path.");
+    } finally {
+      setIsExplainingPath(false);
+    }
+  }
+
+  async function runBrief() {
+    setIsGeneratingBrief(true);
+    setError("");
+    try {
+      const result = await generateResearchBrief({
+        topic: briefTopic.trim(),
+        ...graphScope,
+        limit: 8,
+      });
+      setBriefResult(result);
+      setQueryResult(null);
+      setPathResult(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not generate research brief.");
+    } finally {
+      setIsGeneratingBrief(false);
+    }
   }
 
   const width = 1600;
@@ -373,7 +534,7 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
                 tabIndex={0}
                 className={isDragging ? "cursor-grabbing" : "cursor-pointer"}
                 onPointerDown={(event) => handleNodePointerDown(event, node)}
-                onClick={() => setSelectedNode(node)}
+                onClick={() => handleNodeClick(node)}
               >
                 <circle
                   cx={point.x}
@@ -464,6 +625,7 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
       </div>
 
       <aside className="absolute bottom-5 right-5 top-5 flex w-[380px] flex-col overflow-hidden rounded-lg border border-border bg-card/95 shadow-2xl backdrop-blur">
+        <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="border-b border-border p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -522,7 +684,47 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto border-b border-border">
+        <div className="border-b border-border p-4">
+          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            Search graph
+          </p>
+          <div className="relative mt-3">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={graphSearch}
+              onChange={(event) => setGraphSearch(event.target.value)}
+              placeholder="Find concepts, papers, domains..."
+              className="h-10 w-full rounded border border-border bg-background pl-9 pr-3 text-sm outline-none focus:border-primary"
+            />
+          </div>
+          {graphSearch && (
+            <div className="mt-3 max-h-36 space-y-1 overflow-y-auto">
+              {filteredGraphNodes.length ? (
+                filteredGraphNodes.map((node) => (
+                  <button
+                    key={node.id}
+                    type="button"
+                    onClick={() => setSelectedNode(node)}
+                    className="flex w-full items-center gap-2 rounded border border-border bg-background px-2 py-1.5 text-left hover:border-primary/40 hover:bg-secondary"
+                  >
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: nodeColor(node.type) }}
+                    />
+                    <span className="min-w-0 flex-1 truncate text-xs">{node.label}</span>
+                    <span className="font-mono text-[9px] uppercase text-muted-foreground">
+                      {node.type}
+                    </span>
+                  </button>
+                ))
+              ) : (
+                <p className="text-xs text-muted-foreground">No graph nodes match.</p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="max-h-64 overflow-y-auto border-b border-border">
           {isLoadingArticles ? (
             <div className="flex h-24 items-center justify-center text-xs text-muted-foreground">
               Loading papers...
@@ -597,15 +799,135 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
                   ))}
                 </div>
               )}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPathStart(selectedNode);
+                    setPathResult(null);
+                  }}
+                  className={`rounded border px-2 py-1.5 text-xs ${
+                    pathStart?.id === selectedNode.id
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-background text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Path start
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPathEnd(selectedNode);
+                    setPathResult(null);
+                  }}
+                  className={`rounded border px-2 py-1.5 text-xs ${
+                    pathEnd?.id === selectedNode.id
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-background text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Path end
+                </button>
+              </div>
+              <div className="rounded border border-border bg-background p-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Neighbors
+                  </span>
+                  {isLoadingNeighbors && <Loader2 size={12} className="animate-spin text-primary" />}
+                </div>
+                {neighbors?.answer && (
+                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{neighbors.answer}</p>
+                )}
+                {connectedPapers.length > 0 && (
+                  <div className="mt-3">
+                    <p className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                      Connected papers
+                    </p>
+                    <div className="space-y-1">
+                      {connectedPapers.slice(0, 5).map((paper) => (
+                        <button
+                          type="button"
+                          key={paper.id}
+                          onClick={() => setSelectedNode(paper)}
+                          className="w-full truncate rounded border border-border bg-card px-2 py-1.5 text-left text-xs hover:border-primary/40"
+                        >
+                          {paper.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {connectedConcepts.length > 0 && (
+                  <div className="mt-3">
+                    <p className="mb-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                      Connected concepts
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {connectedConcepts.slice(0, 8).map((concept) => (
+                        <button
+                          type="button"
+                          key={concept.id}
+                          onClick={() => setSelectedNode(concept)}
+                          className="rounded border border-border bg-card px-2 py-1 text-[10px] hover:border-primary/40"
+                        >
+                          {concept.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           ) : (
             <p className="mt-2 text-sm text-muted-foreground">
-              Click a paper, concept, category, or domain node.
+              Click two nodes to prepare a path explanation, or inspect one node at a time.
             </p>
           )}
         </div>
 
         <div className="p-4">
+          <div className="mb-4 rounded border border-border bg-background p-3">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Explain connection
+            </p>
+            <div className="mt-2 space-y-1 text-xs text-muted-foreground">
+              <p>
+                Start:{" "}
+                <span className="text-foreground">
+                  {pathStart ? clampLabel(pathStart.label, 40) : "Select a node"}
+                </span>
+              </p>
+              <p>
+                End:{" "}
+                <span className="text-foreground">
+                  {pathEnd ? clampLabel(pathEnd.label, 40) : "Select a node"}
+                </span>
+              </p>
+            </div>
+            <div className="mt-3 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void explainPath()}
+                disabled={!pathStart || !pathEnd || pathStart.id === pathEnd.id || isExplainingPath}
+                className="inline-flex h-8 flex-1 items-center justify-center gap-2 rounded bg-primary px-3 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              >
+                {isExplainingPath ? <Loader2 size={13} className="animate-spin" /> : <Network size={13} />}
+                Explain path
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPathStart(null);
+                  setPathEnd(null);
+                  setPathResult(null);
+                }}
+                className="h-8 rounded border border-border bg-card px-3 text-xs text-muted-foreground hover:text-foreground"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
           <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
             Graph query
           </p>
@@ -624,19 +946,28 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
             {isQuerying ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
             Query graph
           </button>
+
+        </div>
         </div>
       </aside>
 
-      {queryResult && (
+      {activeGraphResult && (
         <div className="absolute bottom-5 left-5 right-[425px] grid max-h-56 grid-cols-[minmax(0,1fr)_320px] gap-4 overflow-hidden">
           <section className="rounded-lg border border-border bg-card/95 p-4 shadow-2xl backdrop-blur">
             <div className="mb-3 flex items-center gap-2 text-primary">
               <Network size={15} />
-              <p className="font-mono text-[10px] uppercase tracking-widest">Graph answer</p>
+              <p className="font-mono text-[10px] uppercase tracking-widest">
+                {pathResult ? "Path explanation" : "Graph answer"}
+              </p>
             </div>
             <p className="max-h-36 overflow-y-auto text-sm leading-6 text-foreground">
-              {queryResult.answer}
+              {activeGraphResult.answer}
             </p>
+            {pathResult?.path.length ? (
+              <p className="mt-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                {pathResult.path.length} nodes in path
+              </p>
+            ) : null}
           </section>
           <section className="space-y-3 overflow-y-auto rounded-lg border border-border bg-card/95 p-4 shadow-2xl backdrop-blur">
             <div>
@@ -644,8 +975,8 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
                 Matched concepts
               </p>
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {queryResult.concepts.length ? (
-                  queryResult.concepts.slice(0, 8).map((node) => (
+                {activeGraphResult.concepts.length ? (
+                  activeGraphResult.concepts.slice(0, 8).map((node) => (
                     <button
                       type="button"
                       key={node.id}
@@ -665,7 +996,7 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
                 Matched papers
               </p>
               <div className="mt-2 space-y-2">
-                {queryResult.papers.slice(0, 4).map((paper) => (
+                {activeGraphResult.papers.slice(0, 4).map((paper) => (
                   <button
                     type="button"
                     key={paper.id}

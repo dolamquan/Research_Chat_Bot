@@ -1,3 +1,4 @@
+import re
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
@@ -6,6 +7,7 @@ from langsmith import traceable
 
 from app.rag.prompt import build_no_context_response, build_rag_prompt
 from app.rag.graph_rag import query_graph_rag
+from app.rag.prompt_cache import cached_llm_text
 from app.rag.query_decomposer import decompose_query_for_retrieval
 from app.rag.query_rewriter import rewrite_query_for_retrieval
 from app.rag.reranker import rerank_chunks, rerank_chunks_parallel
@@ -19,6 +21,16 @@ DEFAULT_RERANK_WORKERS = 3
 MAX_WHOLE_DOCUMENT_CHUNKS = 500
 MAX_WHOLE_DOCUMENT_CHARS = 100_000
 GRAPH_PAPER_LIMIT = 8
+
+GREETING_PATTERN = re.compile(
+    r"^\s*(hi|hello|hey|yo|good\s+(morning|afternoon|evening)|thanks|thank\s+you)\s*[!.?]*\s*$",
+    re.IGNORECASE,
+)
+
+PAPER_REQUEST_PATTERN = re.compile(
+    r"\b(paper|papers|article|articles|study|studies|research)\b.*\b(about|on|related|relevant|similar|recommend|show|give|find|list)\b|\b(give|show|find|list|recommend)\b.*\b(paper|papers|article|articles|studies)\b",
+    re.IGNORECASE,
+)
 
 
 def _source_key(source: Dict[str, Any]) -> str:
@@ -187,10 +199,64 @@ def _get_llm_text(response: Any) -> str:
     return str(response)
 
 
+def _is_simple_greeting(query: str) -> bool:
+    return bool(GREETING_PATTERN.match(query))
+
+
+def _is_paper_request(query: str) -> bool:
+    return bool(PAPER_REQUEST_PATTERN.search(query))
+
+
+def _title_from_source(source: str) -> str:
+    title = re.sub(r"\.pdf$", "", source, flags=re.IGNORECASE)
+    title = re.sub(r"^\d{4}\.\d+(?:v\d+)?_", "", title)
+    return re.sub(r"[_-]+", " ", title).strip()
+
+
+def _paper_list_answer(sources: List[Dict[str, Any]]) -> str:
+    papers: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for source in sources:
+        source_name = str(source.get("source") or "").strip()
+        if not source_name or source_name in seen:
+            continue
+
+        seen.add(source_name)
+        papers.append(source)
+
+        if len(papers) >= 5:
+            break
+
+    if not papers:
+        return "I found relevant passages, but I could not identify distinct paper records from the retrieved sources."
+
+    lines = ["Here are papers I found in your indexed library:"]
+    for index, paper in enumerate(papers, start=1):
+        source_name = str(paper.get("source") or "")
+        title = str(paper.get("title") or "").strip() or _title_from_source(source_name)
+        category = str(paper.get("category") or "uncategorized")
+        domain = str(paper.get("domain") or "research")
+        summary = str(paper.get("summary") or paper.get("text") or "").strip()
+        if len(summary) > 220:
+            summary = summary[:217].rstrip() + "..."
+
+        lines.append(f"\n{index}. **{title}**")
+        lines.append(f"   {category} - {domain}")
+        if summary:
+            lines.append(f"   {summary}")
+
+    lines.append("\nUse the **Read PDF** button on any paper card to open it.")
+    return "\n".join(lines)
+
+
 @traceable(name="call_answer_llm", run_type="llm")
 def call_answer_llm(llm: Any, prompt: str) -> str:
-    response = llm.invoke(prompt)
-    return _get_llm_text(response).strip()
+    return cached_llm_text(
+        llm=llm,
+        prompt=prompt,
+        namespace="rag_answer",
+    ).strip()
 
 
 @traceable(name="generate_answer", run_type="chain")
@@ -214,6 +280,13 @@ def generate_answer(
 ) -> Dict[str, Any]:
     if llm is None:
         llm = get_llm()
+
+    if _is_simple_greeting(query):
+        return {
+            "answer": "Hello! Ask me about your indexed research papers, or ask me to find papers on a topic.",
+            "sources": [],
+            "retrieval_strategy": "none",
+        }
 
     selected_sources = pinned_sources or []
     use_whole_document = context_mode == "whole_document" and bool(document_source)
@@ -258,7 +331,7 @@ def generate_answer(
                     )
                 )
 
-        if strategy in {"graph", "hybrid"} and not document_source:
+        if strategy in {"graph", "hybrid"}:
             for current_query in retrieval_queries:
                 retrieved_chunks.extend(
                     _retrieve_graph_guided_chunks(
@@ -300,6 +373,13 @@ def generate_answer(
         selected_sources=selected_sources,
         retrieved_sources=retrieved_context,
     )
+
+    if _is_paper_request(query) and final_sources:
+        return {
+            "answer": _paper_list_answer(final_sources),
+            "sources": final_sources,
+            "retrieval_strategy": "whole_document" if use_whole_document else strategy,
+        }
 
     prompt = build_rag_prompt(
         query=query,

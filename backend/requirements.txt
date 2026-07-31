@@ -1,4 +1,5 @@
 fastapi
+starlette>=0.40.0,<0.50.0
 uvicorn
 python-dotenv
 qdrant-client

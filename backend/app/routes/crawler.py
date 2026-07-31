@@ -6,6 +6,8 @@ import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from app.integrations.paper_search import DEFAULT_SOURCES, search_papers
+
 
 router = APIRouter(prefix="/crawler", tags=["crawler"])
 
@@ -45,6 +47,14 @@ STOPWORDS = {
 class ArxivSearchRequest(BaseModel):
     description: str = Field(..., min_length=3)
     max_results: int = Field(default=10, ge=1, le=25)
+    category: str | None = None
+    sort_by: str = "relevance"
+
+
+class PaperSearchRequest(BaseModel):
+    description: str = Field(..., min_length=3)
+    max_results: int = Field(default=10, ge=1, le=25)
+    sources: List[str] = Field(default_factory=lambda: DEFAULT_SOURCES.copy())
     category: str | None = None
     sort_by: str = "relevance"
 
@@ -170,3 +180,54 @@ def search_arxiv(request: ArxivSearchRequest) -> Dict[str, Any]:
         "query": query,
         "papers": papers,
     }
+
+
+@router.post("/search")
+def search_multi_source(request: PaperSearchRequest) -> Dict[str, Any]:
+    """
+    Search external paper sources through the Paper Search MCP/CLI adapter.
+
+    Falls back to the local arXiv implementation when Paper Search is not configured
+    and arXiv is one of the requested sources.
+    """
+    sources = [source.strip().lower() for source in request.sources if source.strip()]
+    if not sources:
+        sources = DEFAULT_SOURCES.copy()
+
+    try:
+        return search_papers(
+            request.description,
+            max_results=request.max_results,
+            sources=sources,
+            category=request.category,
+            sort_by=request.sort_by,
+        )
+    except Exception as exc:
+        if "arxiv" not in sources:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to search papers with Paper Search MCP: {exc}",
+            ) from exc
+
+        result = search_arxiv(
+            ArxivSearchRequest(
+                description=request.description,
+                category=request.category,
+                sort_by=request.sort_by,
+                max_results=request.max_results,
+            )
+        )
+        return {
+            "provider": "arxiv_fallback",
+            "query": result["query"],
+            "sources": ["arxiv"],
+            "warning": f"Paper Search MCP was unavailable, so arXiv fallback was used: {exc}",
+            "papers": [
+                {
+                    **paper,
+                    "paper_id": paper.get("arxiv_id", ""),
+                    "source_provider": "arxiv",
+                }
+                for paper in result["papers"]
+            ],
+        }
