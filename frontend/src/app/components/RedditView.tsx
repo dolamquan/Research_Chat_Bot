@@ -82,10 +82,7 @@ export function RedditView() {
             <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
               reddit research signals
             </p>
-            <h2
-              className="mt-1 text-2xl font-semibold tracking-tight text-foreground"
-              style={{ fontFamily: "'Epilogue', sans-serif" }}
-            >
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
               Search Reddit discussions
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">

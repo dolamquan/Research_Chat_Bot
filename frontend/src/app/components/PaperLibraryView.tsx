@@ -1,5 +1,6 @@
 import {
   CheckCircle2,
+  ChevronDown,
   ExternalLink,
   FileText,
   ImagePlus,
@@ -82,6 +83,8 @@ export function PaperLibraryView({
   const [imageTitle, setImageTitle] = useState("");
   const [imageStatus, setImageStatus] = useState("");
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showImageUpload, setShowImageUpload] = useState(false);
   const query = search.trim().toLowerCase();
   const filteredArticles = articles.filter((article) => {
     if (selectedDomain && article.domain !== selectedDomain) return false;
@@ -108,36 +111,45 @@ export function PaperLibraryView({
   );
 
   return (
-    <section className="h-full min-h-0 flex flex-col">
-      <div className="shrink-0 border-b border-border bg-card px-5 md:px-8 py-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+    <section className="h-full min-h-0 flex flex-col bg-background">
+      <div className="shrink-0 border-b border-border bg-background px-5 md:px-10 py-7">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4 lg:flex-row lg:items-start">
           <div className="min-w-0 flex-1">
             <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
               Paper library
             </p>
-            <h2
-              className="mt-1 text-2xl font-semibold tracking-tight text-foreground"
-              style={{ fontFamily: "'Epilogue', sans-serif" }}
-            >
-              Indexed research papers
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
+              Your research library
             </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Search indexed papers, open the PDF, or start a focused chat from one document.
+            </p>
           </div>
 
-          <button
-            type="button"
-            onClick={onRebuildTopology}
-            disabled={isBuildingTopology}
-            className="h-9 px-3 rounded border border-primary/30 bg-primary/10 text-primary text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            <RefreshCw
-              size={13}
-              className={isBuildingTopology ? "animate-spin" : ""}
-            />
-            {isBuildingTopology ? "Rebuilding" : "Rebuild topology"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowImageUpload((value) => !value)}
+              className="h-9 px-3 rounded border border-border bg-background text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
+            >
+              Add image
+            </button>
+            <button
+              type="button"
+              onClick={onRebuildTopology}
+              disabled={isBuildingTopology}
+              className="h-9 px-3 rounded border border-border bg-background text-xs font-medium text-muted-foreground flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-secondary hover:text-foreground"
+            >
+              <RefreshCw
+                size={13}
+                className={isBuildingTopology ? "animate-spin" : ""}
+              />
+              {isBuildingTopology ? "Rebuilding" : "Rebuild topology"}
+            </button>
+          </div>
         </div>
 
-        <div className="mt-5 grid gap-3 lg:grid-cols-[1fr_180px_180px]">
+        <div className="mx-auto mt-6 grid max-w-5xl gap-3 lg:grid-cols-[1fr_auto]">
           <label className="relative block">
             <Search
               size={14}
@@ -150,36 +162,53 @@ export function PaperLibraryView({
               className="w-full h-10 rounded border border-border bg-background pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
             />
           </label>
-          <select
-            value={selectedDomain}
-            onChange={(event) => onDomainChange(event.target.value)}
-            className="h-10 rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary/60"
+          <button
+            type="button"
+            onClick={() => setShowFilters((value) => !value)}
+            className="h-10 rounded border border-border bg-background px-3 text-sm text-foreground hover:bg-secondary flex items-center gap-2"
           >
-            <option value="">All domains</option>
-            {domainOptions.map((domain) => (
-              <option key={domain} value={domain}>
-                {domain}
-              </option>
-            ))}
-          </select>
-          <select
-            value={selectedCategory}
-            onChange={(event) => onCategoryChange(event.target.value)}
-            className="h-10 rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary/60"
-          >
-            <option value="">All categories</option>
-            {categoryOptions.map((category) => (
-              <option key={category} value={category}>
-                {category}
-              </option>
-            ))}
-          </select>
+            Filters
+            <ChevronDown
+              size={14}
+              className={`transition-transform ${showFilters ? "rotate-180" : ""}`}
+            />
+          </button>
         </div>
+
+        {showFilters && (
+          <div className="mx-auto mt-3 grid max-w-5xl gap-3 lg:grid-cols-[180px_180px]">
+            <select
+              value={selectedDomain}
+              onChange={(event) => onDomainChange(event.target.value)}
+              className="h-10 rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary/60"
+            >
+              <option value="">All domains</option>
+              {domainOptions.map((domain) => (
+                <option key={domain} value={domain}>
+                  {domain}
+                </option>
+              ))}
+            </select>
+            <select
+              value={selectedCategory}
+              onChange={(event) => onCategoryChange(event.target.value)}
+              className="h-10 rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary/60"
+            >
+              <option value="">All categories</option>
+              {categoryOptions.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 md:px-8 py-5">
-        <form
-          className="mb-5 rounded border border-border bg-card p-4"
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 md:px-10 py-8">
+        {showImageUpload && (
+          <form
+          className="mx-auto mb-6 max-w-5xl rounded border border-border bg-card p-4"
           onSubmit={async (event) => {
             event.preventDefault();
             if (!imageFile || isUploadingImage) return;
@@ -246,16 +275,14 @@ export function PaperLibraryView({
               {imageStatus}
             </p>
           )}
-        </form>
+          </form>
+        )}
 
         {activeJobs.length > 0 && (
-          <div className="mb-5 rounded border border-primary/25 bg-primary/5">
-            <div className="px-4 py-3 border-b border-primary/15 flex items-center gap-2">
-              <RefreshCw size={13} className="text-primary animate-spin" />
-              <p className="text-xs font-medium text-primary">
-                Active ingestion jobs
-              </p>
-            </div>
+          <details className="mx-auto mb-6 max-w-5xl rounded border border-border bg-card">
+            <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-foreground">
+              Active ingestion jobs
+            </summary>
             <div className="divide-y divide-border">
               {activeJobs.map((job) => (
                 <div key={job.job_id} className="px-4 py-3">
@@ -275,109 +302,102 @@ export function PaperLibraryView({
                 </div>
               ))}
             </div>
-          </div>
+          </details>
         )}
 
-        <div className="rounded border border-border bg-card">
-          <div className="grid grid-cols-[1fr_120px_120px_150px] gap-3 border-b border-border px-4 py-3 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            <span>Paper</span>
-            <span>Domain</span>
-            <span>Category</span>
-            <span className="text-right">Actions</span>
-          </div>
-
+        <div className="mx-auto grid max-w-6xl gap-4 xl:grid-cols-2">
           {filteredArticles.length === 0 ? (
-            <div className="px-4 py-12 text-center">
+            <div className="rounded border border-border bg-card px-4 py-12 text-center">
               <p className="text-sm text-muted-foreground">
                 No papers match the current library filters.
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-border">
+            <>
               {filteredArticles.map((article) => {
                 const failed = article.status === "failed";
 
                 return (
                   <article
                     key={article.article_id}
-                    className="grid grid-cols-1 gap-3 px-4 py-4 lg:grid-cols-[1fr_120px_120px_150px] lg:items-center"
+                    className="flex min-h-[210px] flex-col rounded border border-border bg-card px-5 py-5 transition-colors hover:border-border/80 hover:bg-secondary/40"
                   >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        {failed ? (
-                          <XCircle size={13} className="shrink-0 text-destructive" />
-                        ) : (
-                          <CheckCircle2 size={13} className="shrink-0 text-green-500" />
-                        )}
-                        <h3 className="text-sm font-semibold text-foreground truncate">
-                          {articleTitle(article)}
-                        </h3>
-                      </div>
-                      <p className="mt-1 font-mono text-[10px] text-muted-foreground truncate">
-                        {article.source}
-                      </p>
+                    <div className="flex flex-1 flex-col">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start gap-3">
+                          {failed ? (
+                            <XCircle size={15} className="mt-1 shrink-0 text-destructive" />
+                          ) : (
+                            <CheckCircle2 size={15} className="mt-1 shrink-0 text-muted-foreground" />
+                          )}
+                          <div className="min-w-0">
+                            <h3 className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
+                              {articleTitle(article)}
+                            </h3>
+                            <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+                              {(article.domain || "research")} / {(article.category || "uncategorized")}
+                            </p>
+                          </div>
+                        </div>
                       {article.abstract && (
-                        <p className="mt-2 text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                        <p className="mt-4 text-sm leading-6 text-muted-foreground line-clamp-2">
                           {article.abstract}
                         </p>
                       )}
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {(article.tags || []).slice(0, 4).map((tag) => (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {dateLabel(article.updated_at) && (
+                          <span className="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                            {dateLabel(article.updated_at)}
+                          </span>
+                        )}
+                        {(article.tags || []).slice(0, 3).map((tag) => (
                           <span
                             key={tag}
-                            className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                            className="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground"
                           >
                             {tag}
                           </span>
                         ))}
-                        {dateLabel(article.updated_at) && (
-                          <span className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                            {dateLabel(article.updated_at)}
-                          </span>
-                        )}
                       </div>
                     </div>
 
-                    <p className="text-xs text-muted-foreground truncate">
-                      {article.domain || "research"}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {article.category || "uncategorized"}
-                    </p>
-
-                    <div className="flex items-center justify-start gap-2 lg:justify-end">
+                    <div className="mt-5 flex shrink-0 items-center justify-start gap-2 border-t border-border/70 pt-4">
                       <button
                         type="button"
                         disabled={failed}
                         onClick={() => onChatWithArticle(article)}
-                        className="h-8 w-8 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-secondary disabled:opacity-40"
+                        className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40 inline-flex items-center gap-2"
                         title="Chat with paper"
                       >
                         <MessageSquarePlus size={13} />
+                        Chat
                       </button>
                       <button
                         type="button"
                         disabled={failed}
                         onClick={() => onOpenArticle(article)}
-                        className="h-8 w-8 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-secondary disabled:opacity-40"
+                        className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40 inline-flex items-center gap-2"
                         title="Read PDF"
                       >
                         <FileText size={13} />
+                        Read PDF
                       </button>
                       <a
                         href={getPdfUrl(article.source)}
                         target="_blank"
                         rel="noreferrer"
-                        className="h-8 w-8 rounded border border-border flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-secondary"
+                        className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground inline-flex items-center gap-2"
                         title="Open PDF in new tab"
                       >
                         <ExternalLink size={13} />
+                        Open
                       </a>
+                    </div>
                     </div>
                   </article>
                 );
               })}
-            </div>
+            </>
           )}
         </div>
       </div>

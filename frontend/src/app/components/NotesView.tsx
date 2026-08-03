@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  ChevronDown,
   FileText,
   Loader2,
   MessageSquarePlus,
@@ -21,6 +22,17 @@ function titleFromAnnotation(annotation: Annotation): string {
   );
 }
 
+function dateLabel(value?: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export function NotesView({
   onOpenNote,
   onPinNote,
@@ -32,6 +44,8 @@ export function NotesView({
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [noteFilter, setNoteFilter] = useState<"all" | "with-note" | "highlight-only">("all");
 
   useEffect(() => {
     let active = true;
@@ -62,9 +76,15 @@ export function NotesView({
 
   const filteredAnnotations = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return annotations;
+    const filteredByKind = annotations.filter((annotation) => {
+      if (noteFilter === "with-note") return annotation.note.trim().length > 0;
+      if (noteFilter === "highlight-only") return annotation.note.trim().length === 0;
+      return true;
+    });
 
-    return annotations.filter((annotation) =>
+    if (!needle) return filteredByKind;
+
+    return filteredByKind.filter((annotation) =>
       [
         annotation.source,
         annotation.title || "",
@@ -75,7 +95,7 @@ export function NotesView({
         .toLowerCase()
         .includes(needle),
     );
-  }, [annotations, query]);
+  }, [annotations, noteFilter, query]);
 
   async function removeAnnotation(annotationId: string) {
     setAnnotations((current) =>
@@ -111,113 +131,158 @@ export function NotesView({
   }
 
   return (
-    <section className="h-full min-h-0 flex flex-col">
-      <div className="shrink-0 border-b border-border bg-card px-5 md:px-8 py-5">
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded bg-primary/10 border border-primary/25 flex items-center justify-center text-primary">
-            <NotebookPen size={16} />
-          </div>
+    <section className="h-full min-h-0 flex flex-col bg-background">
+      <div className="shrink-0 border-b border-border bg-background px-5 md:px-10 py-7">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4 lg:flex-row lg:items-start">
           <div className="min-w-0 flex-1">
             <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              research notes
+              Research notes
             </p>
-            <h2
-              className="mt-1 text-2xl font-semibold tracking-tight text-foreground"
-              style={{ fontFamily: "'Epilogue', sans-serif" }}
-            >
-              Saved highlights
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
+              Your saved notes
             </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Search notes and highlighted passages across your indexed papers.
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+              Review highlighted passages, reopen the PDF, or send a saved note back into chat.
             </p>
           </div>
         </div>
 
-        <div className="mt-5 relative max-w-2xl">
-          <Search
-            size={14}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-          />
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search notes, selected text, paper titles..."
-            className="h-10 w-full rounded border border-border bg-background pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
-          />
+        <div className="mx-auto mt-6 grid max-w-5xl gap-3 lg:grid-cols-[1fr_auto]">
+          <label className="relative block">
+            <Search
+              size={14}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by note, selected text, paper title..."
+              className="w-full h-10 rounded border border-border bg-background pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-muted-foreground"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => setShowFilters((value) => !value)}
+            className="h-10 rounded border border-border bg-background px-3 text-sm text-foreground hover:bg-secondary flex items-center gap-2"
+          >
+            Filters
+            <ChevronDown
+              size={14}
+              className={`transition-transform ${showFilters ? "rotate-180" : ""}`}
+            />
+          </button>
         </div>
 
+        {showFilters && (
+          <div className="mx-auto mt-3 grid max-w-5xl gap-3 lg:grid-cols-[190px_auto]">
+            <select
+              value={noteFilter}
+              onChange={(event) =>
+                setNoteFilter(event.target.value as "all" | "with-note" | "highlight-only")
+              }
+              className="h-10 rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-muted-foreground"
+            >
+              <option value="all">All notes</option>
+              <option value="with-note">With description</option>
+              <option value="highlight-only">Highlights only</option>
+            </select>
+            <p className="self-center font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              {filteredAnnotations.length} shown
+            </p>
+          </div>
+        )}
+
         {status && (
-          <p className="mt-3 text-xs text-destructive">
+          <p className="mx-auto mt-3 max-w-5xl text-xs text-destructive">
             {status}
           </p>
         )}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 md:px-8 py-5">
+      <div className="flex-1 min-h-0 overflow-y-auto px-5 md:px-10 py-8">
         {isLoading ? (
-          <div className="h-full min-h-80 rounded border border-border bg-card flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <div className="mx-auto h-full min-h-80 max-w-5xl rounded border border-border bg-card flex items-center justify-center gap-2 text-sm text-muted-foreground">
             <Loader2 size={15} className="animate-spin" />
             Loading notes...
           </div>
         ) : filteredAnnotations.length === 0 ? (
-          <div className="h-full min-h-80 rounded border border-border bg-card flex items-center justify-center text-center px-8">
+          <div className="mx-auto h-full min-h-80 max-w-5xl rounded border border-border bg-card flex items-center justify-center text-center px-8">
             <p className="max-w-md text-sm text-muted-foreground">
               No saved notes found. Highlight text inside a PDF and save a note to build your research notebook.
             </p>
           </div>
         ) : (
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div className="mx-auto grid max-w-6xl gap-4 xl:grid-cols-2">
             {filteredAnnotations.map((annotation) => (
               <article
                 key={annotation.annotation_id}
-                className="min-w-0 overflow-hidden rounded border border-border bg-card p-4"
+                className="flex min-h-[250px] min-w-0 flex-col overflow-hidden rounded border border-border bg-card px-5 py-5 transition-colors hover:border-border/80 hover:bg-secondary/40"
               >
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 shrink-0 rounded border border-border bg-background flex items-center justify-center text-primary">
-                    <NotebookPen size={14} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-foreground line-clamp-2 break-words">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start gap-3">
+                    <NotebookPen
+                      size={15}
+                      className="mt-1 shrink-0 text-muted-foreground"
+                    />
+                    <div className="min-w-0">
+                      <h3 className="line-clamp-2 break-words text-base font-semibold leading-snug text-foreground">
                       {titleFromAnnotation(annotation)}
+                      </h3>
+                      <p className="mt-2 max-w-full font-mono text-[11px] text-muted-foreground break-all">
+                        p.{annotation.page} / {annotation.source}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="mt-4 overflow-hidden border-l border-border pl-4 text-sm leading-6 text-muted-foreground line-clamp-3 break-words">
+                    {annotation.selected_text}
+                  </p>
+                  {annotation.note && (
+                    <p className="mt-4 overflow-hidden rounded border border-border bg-background px-3 py-2 text-sm leading-6 text-foreground line-clamp-3 break-words">
+                      {annotation.note}
                     </p>
-                    <p className="mt-1 max-w-full font-mono text-[10px] text-primary break-all">
-                      p.{annotation.page} - {annotation.source}
-                    </p>
+                  )}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {dateLabel(annotation.updated_at) && (
+                      <span className="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                        {dateLabel(annotation.updated_at)}
+                      </span>
+                    )}
+                    {annotation.note ? (
+                      <span className="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                        note
+                      </span>
+                    ) : (
+                      <span className="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                        highlight
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                <p className="mt-3 overflow-hidden text-sm leading-relaxed text-muted-foreground line-clamp-4 break-words">
-                  {annotation.selected_text}
-                </p>
-                {annotation.note && (
-                  <p className="mt-3 overflow-hidden rounded border border-primary/20 bg-primary/10 px-3 py-2 text-sm leading-relaxed text-foreground line-clamp-4 break-words">
-                    {annotation.note}
-                  </p>
-                )}
-
-                <div className="mt-4 flex min-w-0 flex-wrap gap-2">
+                <div className="mt-5 flex shrink-0 items-center justify-start gap-2 border-t border-border/70 pt-4">
                   <button
                     type="button"
                     onClick={() => onOpenNote(annotation)}
-                    className="h-8 px-3 rounded bg-primary text-primary-foreground text-xs flex items-center gap-2"
+                    className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground inline-flex items-center gap-2"
                   >
-                    <FileText size={12} />
+                    <FileText size={13} />
                     Open PDF
                   </button>
                   <button
                     type="button"
                     onClick={() => pinAnnotation(annotation)}
-                    className="h-8 px-3 rounded border border-border text-primary text-xs flex items-center gap-2 hover:bg-secondary"
+                    className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground inline-flex items-center gap-2"
                   >
-                    <MessageSquarePlus size={12} />
+                    <MessageSquarePlus size={13} />
                     Use in chat
                   </button>
                   <button
                     type="button"
                     onClick={() => void removeAnnotation(annotation.annotation_id)}
-                    className="h-8 px-3 rounded border border-border text-muted-foreground text-xs flex items-center gap-2 hover:text-destructive hover:bg-secondary sm:ml-auto"
+                    className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-destructive sm:ml-auto inline-flex items-center gap-2"
                   >
-                    <Trash2 size={12} />
+                    <Trash2 size={13} />
                     Delete
                   </button>
                 </div>

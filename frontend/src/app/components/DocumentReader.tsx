@@ -598,7 +598,7 @@ export function DocumentReader({
               {savedHighlightRects.map((rect) => (
                 <span
                   key={rect.id}
-                  className="absolute rounded-[2px] border border-primary/70 bg-primary/35 shadow-[0_0_0_1px_rgba(224,180,65,0.18)]"
+                  className="absolute rounded-[2px] border border-primary/70 bg-primary/30 shadow-[0_0_0_1px_rgba(215,211,199,0.18)]"
                   style={{
                     left: rect.left,
                     top: rect.top,

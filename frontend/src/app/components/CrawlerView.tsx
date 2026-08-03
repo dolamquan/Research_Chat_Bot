@@ -1,10 +1,4 @@
-import {
-  ExternalLink,
-  FilePlus2,
-  Loader2,
-  Search,
-  Sparkles,
-} from "lucide-react";
+import { ExternalLink, FilePlus2, Loader2, Search } from "lucide-react";
 
 import type { ArxivPaper, IngestionJob } from "../types";
 
@@ -83,49 +77,41 @@ export function CrawlerView({
   onAddPaper: (paper: ArxivPaper) => void;
 }) {
   return (
-    <section className="h-full min-h-0 flex flex-col">
-      <div className="shrink-0 border-b border-border bg-card px-5 md:px-8 py-5">
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded bg-primary/10 border border-primary/25 flex items-center justify-center text-primary">
-            <Sparkles size={16} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              paper crawler
-            </p>
-            <h2
-              className="mt-1 text-2xl font-semibold tracking-tight text-foreground"
-              style={{ fontFamily: "'Epilogue', sans-serif" }}
-            >
-              Discover papers by topic
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Describe the research area and add papers from academic sources directly to your library.
-            </p>
-          </div>
-        </div>
+    <section className="h-full min-h-0 overflow-y-auto">
+      <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col px-5 py-8 md:px-8">
+        <header className="shrink-0">
+          <p className="font-mono text-[10px] uppercase tracking-[0.24em] text-muted-foreground">
+            paper crawler
+          </p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">
+            Discover papers by topic
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            Search academic sources, review promising papers, and queue the useful ones for your library.
+          </p>
+        </header>
 
         <form
-          className="mt-5 rounded border border-border bg-background p-3"
+          className="mt-7 rounded border border-border bg-card/40 p-4"
           onSubmit={(event) => {
             event.preventDefault();
             onSearch();
           }}
         >
           <label className="block">
-            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            <span className="font-mono text-[10px] uppercase tracking-[0.22em] text-muted-foreground">
               Research topic
             </span>
             <textarea
               value={description}
               onChange={(event) => onDescriptionChange(event.target.value)}
-              rows={3}
+              rows={2}
               placeholder="Example: recent papers about graph RAG, query decomposition, and multi-hop retrieval"
-              className="mt-2 block w-full resize-none rounded border border-border bg-card px-3 py-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+              className="mt-2 block w-full resize-none rounded border border-border bg-background px-3 py-3 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground/50"
             />
           </label>
 
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap gap-2">
             {SOURCE_OPTIONS.map((source) => {
               const selected = sources.includes(source.id);
               return (
@@ -142,7 +128,7 @@ export function CrawlerView({
                   }}
                   className={`rounded border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide ${
                     selected
-                      ? "border-primary/50 bg-primary/15 text-primary"
+                      ? "border-foreground/35 bg-secondary text-foreground"
                       : "border-border bg-card text-muted-foreground hover:text-foreground"
                   }`}
                 >
@@ -152,14 +138,14 @@ export function CrawlerView({
             })}
           </div>
 
-          <div className="mt-3 grid gap-2 md:grid-cols-[1fr_150px_150px_160px]">
+          <div className="mt-4 grid gap-2 md:grid-cols-[1fr_150px_140px_auto]">
             <label className="block">
               <span className="sr-only">Optional arXiv category</span>
               <input
                 value={category}
                 onChange={(event) => onCategoryChange(event.target.value)}
                 placeholder="Optional category/filter, e.g. cs.CL"
-                className="h-9 w-full rounded border border-border bg-card px-3 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                className="h-10 w-full rounded border border-border bg-background px-3 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-foreground/50"
               />
             </label>
             <select
@@ -167,7 +153,7 @@ export function CrawlerView({
               onChange={(event) =>
                 onSortByChange(event.target.value as "relevance" | "newest" | "last_updated")
               }
-              className="h-9 rounded border border-border bg-card px-3 text-xs text-foreground outline-none focus:border-primary/60"
+              className="h-10 rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-foreground/50"
             >
               <option value="relevance">Relevance</option>
               <option value="newest">Newest</option>
@@ -176,7 +162,7 @@ export function CrawlerView({
             <select
               value={maxResults}
               onChange={(event) => onMaxResultsChange(Number(event.target.value))}
-              className="h-9 rounded border border-border bg-card px-3 text-xs text-foreground outline-none focus:border-primary/60"
+              className="h-10 rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-foreground/50"
             >
               {[5, 10, 15, 20, 25].map((value) => (
                 <option key={value} value={value}>
@@ -187,7 +173,7 @@ export function CrawlerView({
             <button
               type="submit"
               disabled={!description.trim() || isSearching}
-              className="h-9 rounded bg-primary text-primary-foreground text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-40"
+              className="h-10 rounded bg-foreground px-4 text-sm font-medium text-background flex items-center justify-center gap-2 disabled:opacity-40"
             >
               {isSearching ? <Loader2 size={13} className="animate-spin" /> : <Search size={13} />}
               Search papers
@@ -196,7 +182,7 @@ export function CrawlerView({
         </form>
 
         {(status || query) && (
-          <div className="mt-3 flex flex-col gap-1">
+          <div className="mt-4 flex flex-col gap-1 border-l border-border pl-3">
             {status && (
               <p
                 className={`text-xs ${
@@ -214,17 +200,19 @@ export function CrawlerView({
           </div>
         )}
 
-      </div>
-
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 md:px-8 py-5">
-        {results.length === 0 ? (
-          <div className="h-full min-h-80 rounded border border-border bg-card flex items-center justify-center text-center px-8">
-            <p className="max-w-md text-sm text-muted-foreground">
-              Search results will appear here. Start broad, then narrow with a category such as cs.CL, cs.AI, or cs.IR.
-            </p>
+        <div className="mt-8 flex-1">
+          {results.length === 0 ? (
+          <div className="flex min-h-72 items-center justify-center border-t border-border text-center">
+            <div>
+              <Search className="mx-auto mb-4 text-muted-foreground" size={24} />
+              <p className="text-sm font-medium text-foreground">No search results yet</p>
+              <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+                Start with a broad topic, then narrow it with a category such as cs.CL, cs.AI, or cs.IR.
+              </p>
+            </div>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {results.map((paper) => {
               const queued = isPaperQueued(paper, ingestionJobs);
               const adding = addingPaperId === paperKey(paper);
@@ -232,12 +220,12 @@ export function CrawlerView({
               return (
                 <article
                   key={`${paper.source_provider || "paper"}-${paperKey(paper)}`}
-                  className="rounded border border-border bg-card p-4"
+                  className="group rounded border border-border bg-card/40 p-4 transition-colors hover:border-foreground/25 hover:bg-card"
                 >
-                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded border border-primary/25 bg-primary/10 px-2 py-0.5 font-mono text-[10px] text-primary">
+                        <span className="rounded border border-border bg-background px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
                           {paper.source_provider || "paper"}
                         </span>
                         {paper.arxiv_id && (
@@ -251,7 +239,7 @@ export function CrawlerView({
                           </span>
                         )}
                       </div>
-                      <h3 className="mt-2 text-base font-semibold text-foreground leading-snug">
+                      <h3 className="mt-2 max-w-4xl text-base font-semibold leading-snug text-foreground">
                         {paper.title}
                       </h3>
                       {paper.authors.length > 0 && (
@@ -260,7 +248,7 @@ export function CrawlerView({
                           {paper.authors.length > 6 ? " et al." : ""}
                         </p>
                       )}
-                      <p className="mt-3 text-sm leading-relaxed text-muted-foreground line-clamp-4">
+                      <p className="mt-3 max-w-5xl text-sm leading-6 text-muted-foreground line-clamp-3">
                         {paper.abstract}
                       </p>
                       <div className="mt-3 flex flex-wrap gap-1.5">
@@ -275,12 +263,12 @@ export function CrawlerView({
                       </div>
                     </div>
 
-                    <div className="shrink-0 flex lg:flex-col gap-2">
+                    <div className="shrink-0 flex gap-2 lg:flex-col">
                       <button
                         type="button"
                         disabled={queued || adding || (!paper.pdf_url && !paper.url)}
                         onClick={() => onAddPaper(paper)}
-                        className="h-9 px-3 rounded bg-primary text-primary-foreground text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-45"
+                        className="h-9 min-w-32 px-3 rounded bg-foreground text-background text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-45"
                       >
                         {adding ? (
                           <Loader2 size={13} className="animate-spin" />
@@ -293,7 +281,7 @@ export function CrawlerView({
                         href={paper.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="h-9 px-3 rounded border border-border text-xs text-foreground flex items-center justify-center gap-2 hover:bg-secondary"
+                        className="h-9 min-w-32 px-3 rounded border border-border text-xs text-foreground flex items-center justify-center gap-2 hover:bg-secondary"
                       >
                         <ExternalLink size={13} />
                         Open
@@ -305,6 +293,7 @@ export function CrawlerView({
             })}
           </div>
         )}
+        </div>
       </div>
     </section>
   );

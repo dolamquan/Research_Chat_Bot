@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
-import { GitBranch, Loader2, Maximize2, Network, RefreshCw, Search } from "lucide-react";
+import { ChevronDown, GitBranch, Loader2, Maximize2, Network, RefreshCw, Search } from "lucide-react";
 
 import {
   buildGraphRag,
@@ -34,11 +34,74 @@ type GraphRagViewProps = {
 };
 
 function nodeColor(type: string): string {
-  if (type === "paper") return "#e0b441";
-  if (type === "concept") return "#62b8ad";
-  if (type === "domain") return "#a36fc5";
-  if (type === "category") return "#7698df";
+  if (type === "paper") return "#e8e2d4";
+  if (type === "concept") return "#6ee7d8";
+  if (type === "domain") return "#a5b4fc";
+  if (type === "category") return "#f0abfc";
+  return "#cbd5e1";
+}
+
+function nodeGlowColor(type: string): string {
+  if (type === "paper") return "#f4d58d";
+  if (type === "concept") return "#14b8a6";
+  if (type === "domain") return "#818cf8";
+  if (type === "category") return "#c084fc";
   return "#94a3b8";
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
+function nodeRadius(node: GraphRagNode): number {
+  const base = node.type === "paper" ? 5.8 : node.type === "concept" ? 7.8 : 10;
+  return base + Math.min(Number(node.weight || 1), 18) * 0.24;
+}
+
+function animatedSvgPoint(
+  node: GraphRagNode,
+  width: number,
+  height: number,
+  time: number,
+  isDragging: boolean,
+  panImpulse: { x: number; y: number },
+) {
+  const point = toSvgPoint(node, width, height);
+  const seed = hashString(node.id);
+  const depth = ((seed % 1000) / 1000) * 2 - 1;
+  const lag = 0.025 + ((seed % 17) / 17) * 0.045 + Math.abs(depth) * 0.018;
+  const springX = -panImpulse.x * lag + Math.sin(time * 2.1 + seed * 0.017) * Math.abs(panImpulse.x) * 0.006;
+  const springY = -panImpulse.y * lag + Math.cos(time * 1.9 + seed * 0.019) * Math.abs(panImpulse.y) * 0.006;
+  if (isDragging) {
+    return { x: point.x + springX * 0.2, y: point.y + springY * 0.2, depth, scale: 1 + depth * 0.08 };
+  }
+
+  const amplitude = node.type === "paper" ? 2.6 : node.type === "concept" ? 4.4 : 3.4;
+  const phase = seed * 0.013;
+  return {
+    x: point.x + Math.sin(time * 0.9 + phase) * amplitude + depth * 4 + springX,
+    y: point.y + Math.cos(time * 0.72 + phase * 0.7) * amplitude + depth * 2 + springY,
+    depth,
+    scale: 1 + depth * 0.1 + clamp(Math.hypot(panImpulse.x, panImpulse.y) / 2800, 0, 0.08),
+  };
+}
+
+function edgeCurve(start: { x: number; y: number; depth: number }, end: { x: number; y: number; depth: number }) {
+  const midX = (start.x + end.x) / 2;
+  const midY = (start.y + end.y) / 2;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const distance = Math.hypot(dx, dy) || 1;
+  const bend = clamp(distance * 0.08 + (start.depth - end.depth) * 16, -46, 46);
+  const controlX = midX - (dy / distance) * bend;
+  const controlY = midY + (dx / distance) * bend;
+  return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} Q ${controlX.toFixed(2)} ${controlY.toFixed(
+    2,
+  )} ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
 }
 
 function clampLabel(label: string, limit = 74): string {
@@ -58,6 +121,7 @@ function clamp(value: number, min: number, max: number): number {
 
 export function GraphRagView({ domain, category }: GraphRagViewProps) {
   const svgRef = useRef<SVGSVGElement | null>(null);
+  const lastCanvasDragRef = useRef<{ clientX: number; clientY: number } | null>(null);
   const [graph, setGraph] = useState<GraphRagGraph>(EMPTY_GRAPH);
   const [selectedNode, setSelectedNode] = useState<GraphRagNode | null>(null);
   const [query, setQuery] = useState("");
@@ -80,7 +144,12 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
   const [isLoadingNeighbors, setIsLoadingNeighbors] = useState(false);
   const [isExplainingPath, setIsExplainingPath] = useState(false);
   const [isGeneratingBrief, setIsGeneratingBrief] = useState(false);
+  const [showPaperSet, setShowPaperSet] = useState(false);
+  const [showGraphSearch, setShowGraphSearch] = useState(false);
+  const [showSelectionDetails, setShowSelectionDetails] = useState(false);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
+  const [graphTime, setGraphTime] = useState(0);
+  const [panImpulse, setPanImpulse] = useState({ x: 0, y: 0 });
   const [dragState, setDragState] = useState<
     | {
         type: "canvas";
@@ -106,6 +175,28 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
     }),
     [domain, category, selectedArticleIds],
   );
+
+  useEffect(() => {
+    let frameId = 0;
+    let lastFrame = 0;
+
+    function tick(now: number) {
+      if (now - lastFrame > 32) {
+        setGraphTime(now / 1000);
+        setPanImpulse((current) => {
+          if (Math.abs(current.x) < 0.2 && Math.abs(current.y) < 0.2) {
+            return current.x === 0 && current.y === 0 ? current : { x: 0, y: 0 };
+          }
+          return { x: current.x * 0.86, y: current.y * 0.86 };
+        });
+        lastFrame = now;
+      }
+      frameId = window.requestAnimationFrame(tick);
+    }
+
+    frameId = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frameId);
+  }, []);
 
   const scopeLabel =
     selectedArticleIds.length > 0
@@ -387,6 +478,11 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
   const width = 1600;
   const height = 900;
 
+  function getDisplayPoint(node: GraphRagNode) {
+    const isDragging = dragState?.type === "node" && dragState.nodeId === node.id;
+    return animatedSvgPoint(node, width, height, graphTime, isDragging, panImpulse);
+  }
+
   function clientToSvgPoint(event: ReactPointerEvent<SVGSVGElement> | ReactWheelEvent<SVGSVGElement>) {
     const svg = svgRef.current;
     if (!svg) return { x: width / 2, y: height / 2 };
@@ -409,6 +505,7 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
 
   function resetViewport() {
     setViewport({ x: 0, y: 0, scale: 1 });
+    setPanImpulse({ x: 0, y: 0 });
   }
 
   function handleWheel(event: ReactWheelEvent<SVGSVGElement>) {
@@ -434,6 +531,7 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
       startX: viewport.x,
       startY: viewport.y,
     });
+    lastCanvasDragRef.current = { clientX: event.clientX, clientY: event.clientY };
   }
 
   function handleNodePointerDown(event: ReactPointerEvent<SVGGElement>, node: GraphRagNode) {
@@ -455,6 +553,16 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
       const rect = svgRef.current?.getBoundingClientRect();
       const scaleX = rect ? width / rect.width : 1;
       const scaleY = rect ? height / rect.height : 1;
+      const lastDrag = lastCanvasDragRef.current;
+      if (lastDrag) {
+        const impulseX = (event.clientX - lastDrag.clientX) * scaleX;
+        const impulseY = (event.clientY - lastDrag.clientY) * scaleY;
+        setPanImpulse({
+          x: clamp(impulseX * 16, -260, 260),
+          y: clamp(impulseY * 16, -260, 260),
+        });
+      }
+      lastCanvasDragRef.current = { clientX: event.clientX, clientY: event.clientY };
       setViewport({
         ...viewport,
         x: dragState.startX + (event.clientX - dragState.startClientX) * scaleX,
@@ -482,6 +590,7 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
   function handlePointerUp(event: ReactPointerEvent<SVGSVGElement>) {
     if (dragState?.pointerId === event.pointerId) {
       setDragState(null);
+      lastCanvasDragRef.current = null;
     }
   }
 
@@ -500,32 +609,74 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
         onPointerCancel={handlePointerUp}
       >
         <rect width={width} height={height} fill="#191919" />
+        <defs>
+          <radialGradient id="graphBackdrop" cx="50%" cy="46%" r="72%">
+            <stop offset="0%" stopColor="#27272a" stopOpacity="0.72" />
+            <stop offset="58%" stopColor="#18181b" stopOpacity="0.42" />
+            <stop offset="100%" stopColor="#111111" stopOpacity="0" />
+          </radialGradient>
+          <filter id="graphNodeGlow" x="-120%" y="-120%" width="340%" height="340%">
+            <feGaussianBlur stdDeviation="5" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+          <filter id="graphEdgeGlow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="2.4" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        <ellipse cx={width / 2} cy={height / 2} rx="620" ry="330" fill="url(#graphBackdrop)" />
+        <g opacity="0.15">
+          {[0, 1, 2, 3].map((ring) => (
+            <ellipse
+              key={ring}
+              cx={width / 2}
+              cy={height / 2}
+              rx={250 + ring * 135}
+              ry={110 + ring * 78}
+              fill="none"
+              stroke="#3f3f46"
+              strokeWidth="0.8"
+              transform={`rotate(${ring * 7 - 10} ${width / 2} ${height / 2})`}
+            />
+          ))}
+        </g>
         <g transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}>
           {graph.edges.map((edge) => {
             const source = nodeById.get(edge.source);
             const target = nodeById.get(edge.target);
             if (!source || !target) return null;
-            const start = toSvgPoint(source, width, height);
-            const end = toSvgPoint(target, width, height);
+            const start = getDisplayPoint(source);
+            const end = getDisplayPoint(target);
             const active = highlightedIds.has(source.id) || highlightedIds.has(target.id);
+            const stroke = active ? nodeGlowColor(source.type) : "#3f3f46";
             return (
-              <line
+              <path
                 key={edge.id}
-                x1={start.x}
-                y1={start.y}
-                x2={end.x}
-                y2={end.y}
-                stroke={active ? "#e0b441" : "#4b5563"}
-                strokeWidth={active ? 1.6 : 0.7}
-                opacity={active ? 0.72 : 0.22}
-                className="transition-opacity duration-200"
+                d={edgeCurve(start, end)}
+                fill="none"
+                stroke={stroke}
+                strokeLinecap="round"
+                strokeWidth={active ? 2.1 : 0.82}
+                opacity={active ? 0.76 : 0.2}
+                filter={active ? "url(#graphEdgeGlow)" : undefined}
+                className="transition-[opacity,stroke-width] duration-200"
               />
             );
           })}
-          {graph.nodes.map((node) => {
-            const point = toSvgPoint(node, width, height);
+          {[...graph.nodes]
+            .sort((a, b) => getDisplayPoint(a).depth - getDisplayPoint(b).depth)
+            .map((node) => {
+            const point = getDisplayPoint(node);
             const active = highlightedIds.size === 0 || highlightedIds.has(node.id);
-            const radius = node.type === "paper" ? 5 : node.type === "concept" ? 7 : 9;
+            const radius = nodeRadius(node) * point.scale;
+            const color = nodeColor(node.type);
+            const glow = nodeGlowColor(node.type);
             const isDragging = dragState?.type === "node" && dragState.nodeId === node.id;
             return (
               <g
@@ -537,23 +688,46 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
                 onClick={() => handleNodeClick(node)}
               >
                 <circle
+                  cx={point.x + point.depth * 6}
+                  cy={point.y + 9 + point.depth * 3}
+                  r={radius * 1.18}
+                  fill="#020617"
+                  opacity={active ? 0.42 : 0.16}
+                />
+                <circle
                   cx={point.x}
                   cy={point.y}
-                  r={radius + Math.min(Number(node.weight || 1), 18) * 0.25}
-                  fill={nodeColor(node.type)}
-                  opacity={active ? 0.9 : 0.24}
-                  stroke={selectedNode?.id === node.id ? "#ffffff" : "transparent"}
-                  strokeWidth={2}
+                  r={radius + 10}
+                  fill={glow}
+                  opacity={active ? 0.18 : 0.04}
+                  filter="url(#graphNodeGlow)"
+                />
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={radius}
+                  fill={color}
+                  opacity={active ? 0.96 : 0.26}
+                  stroke={selectedNode?.id === node.id ? "#ffffff" : "rgba(255,255,255,0.22)"}
+                  strokeWidth={selectedNode?.id === node.id ? 2.2 : 0.75}
+                  filter={active ? "url(#graphNodeGlow)" : undefined}
                   className="transition-[opacity,stroke-width] duration-200"
+                />
+                <circle
+                  cx={point.x - radius * 0.28}
+                  cy={point.y - radius * 0.32}
+                  r={Math.max(radius * 0.22, 2)}
+                  fill="#ffffff"
+                  opacity={active ? 0.55 : 0.14}
                 />
                 {selectedNode?.id === node.id && (
                   <>
                     <circle
                       cx={point.x}
                       cy={point.y}
-                      r={radius + 10}
+                      r={radius + 13}
                       fill="none"
-                      stroke="#e0b441"
+                      stroke={glow}
                       strokeWidth={1.2}
                       opacity={0.7}
                       className="animate-pulse"
@@ -561,7 +735,7 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
                     <text
                       x={point.x + 13}
                       y={point.y - 10}
-                      fill="#e5e7eb"
+                      fill="#f5f5f4"
                       fontSize="12"
                       fontFamily="Inter, sans-serif"
                     >
@@ -581,58 +755,54 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
         </div>
       )}
 
-      <div className="absolute left-5 top-5 max-w-md rounded-lg border border-border bg-card/90 p-4 shadow-2xl backdrop-blur">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded border border-primary/30 bg-primary/10 text-primary">
-            <GitBranch size={18} />
+      <div className="absolute left-5 top-5 max-w-xl rounded border border-border bg-background/80 shadow-2xl backdrop-blur-md">
+        <div className="flex items-center gap-3 px-3 py-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border bg-card text-muted-foreground">
+            <GitBranch size={15} />
           </div>
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              Graph RAG
-            </p>
-            <h2 className="text-xl font-semibold">Paper concept graph</h2>
-            <p className="text-sm text-muted-foreground">
-              {scopeLabel} - {graph.stats?.paper_count ?? 0} paper nodes -{" "}
-              {graph.stats?.concept_count ?? 0} concept nodes - {graph.stats?.edge_count ?? 0} edges
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <p className="text-sm font-semibold text-foreground">Paper concept graph</p>
+              <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                {scopeLabel}
+              </p>
+            </div>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {graph.stats?.paper_count ?? 0} papers · {graph.stats?.concept_count ?? 0} concepts ·{" "}
+              {graph.stats?.edge_count ?? 0} edges
             </p>
           </div>
+          <button
+            type="button"
+            onClick={resetViewport}
+            title="Reset graph view"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border bg-card text-muted-foreground hover:text-foreground"
+          >
+            <Maximize2 size={14} />
+          </button>
         </div>
         {(error || status) && (
-          <div className="mt-3">
+          <div className="border-t border-border px-3 py-2">
             {error ? (
-              <div className="rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                {error}
-              </div>
+              <p className="text-xs text-destructive">{error}</p>
             ) : (
-              <p className="text-xs text-muted-foreground">{status}</p>
+              <p className="text-xs text-muted-foreground">
+                {status} · Drag canvas · wheel zoom · drag nodes
+              </p>
             )}
           </div>
         )}
       </div>
 
-      <div className="absolute left-5 top-36 flex items-center gap-2 rounded-lg border border-border bg-card/80 px-3 py-2 shadow-2xl backdrop-blur">
-        <button
-          type="button"
-          onClick={resetViewport}
-          title="Reset graph view"
-          className="flex h-8 w-8 items-center justify-center rounded border border-border bg-background text-muted-foreground hover:text-foreground"
-        >
-          <Maximize2 size={14} />
-        </button>
-        <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-          Drag canvas - wheel zoom - drag nodes
-        </span>
-      </div>
-
-      <aside className="absolute bottom-5 right-5 top-5 flex w-[380px] flex-col overflow-hidden rounded-lg border border-border bg-card/95 shadow-2xl backdrop-blur">
+      <aside className="absolute bottom-5 right-5 top-5 flex w-[360px] flex-col overflow-hidden rounded border border-border bg-card/95 shadow-2xl backdrop-blur">
         <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="border-b border-border p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                Graph paper set
+                Graph setup
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-1 text-sm text-foreground">
                 {selectedArticleIds.length
                   ? `${selectedArticleIds.length} selected paper${selectedArticleIds.length === 1 ? "" : "s"}`
                   : "All papers in the current scope"}
@@ -650,7 +820,17 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
           </div>
         </div>
 
-        <div className="border-b border-border p-4">
+        <button
+          type="button"
+          onClick={() => setShowPaperSet((value) => !value)}
+          className="flex w-full items-center justify-between border-b border-border px-4 py-3 text-left text-sm font-medium text-foreground hover:bg-secondary"
+        >
+          Choose papers
+          <ChevronDown size={14} className={`transition-transform ${showPaperSet ? "rotate-180" : ""}`} />
+        </button>
+
+        {showPaperSet && (
+          <div className="border-b border-border p-4">
           <div className="relative">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -682,12 +862,20 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
               Clear
             </button>
           </div>
-        </div>
+          </div>
+        )}
 
-        <div className="border-b border-border p-4">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            Search graph
-          </p>
+        <button
+          type="button"
+          onClick={() => setShowGraphSearch((value) => !value)}
+          className="flex w-full items-center justify-between border-b border-border px-4 py-3 text-left text-sm font-medium text-foreground hover:bg-secondary"
+        >
+          Search graph
+          <ChevronDown size={14} className={`transition-transform ${showGraphSearch ? "rotate-180" : ""}`} />
+        </button>
+
+        {showGraphSearch && (
+          <div className="border-b border-border p-4">
           <div className="relative mt-3">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -722,9 +910,11 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
               )}
             </div>
           )}
-        </div>
+          </div>
+        )}
 
-        <div className="max-h-64 overflow-y-auto border-b border-border">
+        {showPaperSet && (
+          <div className="max-h-64 overflow-y-auto border-b border-border">
           {isLoadingArticles ? (
             <div className="flex h-24 items-center justify-center text-xs text-muted-foreground">
               Loading papers...
@@ -764,12 +954,20 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
               No papers match this search.
             </div>
           )}
-        </div>
+          </div>
+        )}
 
-        <div className="border-b border-border p-4">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            Selection
-          </p>
+        <button
+          type="button"
+          onClick={() => setShowSelectionDetails((value) => !value)}
+          className="flex w-full items-center justify-between border-b border-border px-4 py-3 text-left text-sm font-medium text-foreground hover:bg-secondary"
+        >
+          Selection
+          <ChevronDown size={14} className={`transition-transform ${showSelectionDetails ? "rotate-180" : ""}`} />
+        </button>
+
+        {showSelectionDetails && (
+          <div className="border-b border-border p-4">
           {selectedNode ? (
             <div className="mt-3 space-y-2">
               <div className="flex items-center gap-2">
@@ -884,7 +1082,8 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
               Click two nodes to prepare a path explanation, or inspect one node at a time.
             </p>
           )}
-        </div>
+          </div>
+        )}
 
         <div className="p-4">
           <div className="mb-4 rounded border border-border bg-background p-3">

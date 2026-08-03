@@ -152,7 +152,7 @@ export function ResearchPanel({
                     <button
                       type="button"
                       onClick={() => onContextModeChange("retrieval")}
-                      className={`h-8 rounded border text-xs ${
+                      className={`h-9 rounded border text-xs ${
                         contextMode === "retrieval"
                           ? "border-primary/35 bg-primary/10 text-primary"
                           : "border-border text-foreground hover:bg-secondary"
@@ -163,7 +163,7 @@ export function ResearchPanel({
                     <button
                       type="button"
                       onClick={() => onContextModeChange("whole_document")}
-                      className={`h-8 rounded border text-xs ${
+                      className={`h-9 rounded border text-xs ${
                         contextMode === "whole_document"
                           ? "border-primary/35 bg-primary/10 text-primary"
                           : "border-border text-foreground hover:bg-secondary"
@@ -207,7 +207,7 @@ export function ResearchPanel({
               </>
             ) : (
               <div className="h-full flex items-center justify-center text-center px-8">
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm text-muted-foreground leading-relaxed">
                   Select an article to inspect its metadata and open the full PDF.
                 </p>
               </div>
@@ -218,7 +218,7 @@ export function ResearchPanel({
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
           {sources.length === 0 ? (
             <div className="h-full flex items-center justify-center text-center px-8">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-muted-foreground leading-relaxed">
                 Sources retrieved for the conversation will appear here.
               </p>
             </div>

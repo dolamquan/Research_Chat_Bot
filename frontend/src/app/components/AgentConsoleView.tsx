@@ -1,17 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
-  Bot,
-  BrainCircuit,
   CheckCircle2,
-  FilePlus2,
-  HelpCircle,
   Loader2,
-  RefreshCw,
-  Send,
-  Search,
-  Terminal,
-  User,
 } from "lucide-react";
 
 import { callMcpTool, getAgentSession, getAgentSessions, getMcpTools } from "../api";
@@ -334,6 +325,42 @@ function contentWithoutMermaidFence(content: string): string {
   return content.replace(/```mermaid\s*[\s\S]*?```/gi, "[Rendered Mermaid diagram]").trim();
 }
 
+function TerminalLogo() {
+  const lines = ["  ______", " / ____/", "/ /__  ", "\\___ \\ ", "____/ /", "/_____/ "];
+
+  return (
+    <pre className="select-none text-[9px] leading-[0.82rem] text-[#d1d5db] md:text-[10px]">
+      {lines.join("\n")}
+    </pre>
+  );
+}
+
+function TerminalBootHeader({ isRunning }: { isRunning: boolean }) {
+  return (
+    <div className="mb-8 flex items-start gap-6">
+      <TerminalLogo />
+      <div className="min-w-0 font-mono">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <span className="text-lg font-semibold text-foreground">
+            ResearchMind Agent
+          </span>
+          <span className="text-muted-foreground">v0.1.0</span>
+        </div>
+        <p className="mt-1 text-sm text-muted-foreground">
+          local research tools - MCP bridge - paper automation
+        </p>
+        <p className="mt-1 truncate text-sm text-muted-foreground">
+          ~\OneDrive\Documents\AI Engineer\Research-chatbot
+        </p>
+        <p className="mt-6 text-sm text-primary">
+          {isRunning ? "* agent command running" : "* agent ready"}
+          <span className="text-muted-foreground"> - type /help or /tools</span>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function MermaidDiagram({ definition }: { definition: string }) {
   const [svg, setSvg] = useState("");
   const [error, setError] = useState("");
@@ -446,6 +473,7 @@ export function AgentConsoleView({
     options?: { sessionId?: string; chatHistory?: ChatHistoryItem[] },
   ) => Promise<ChatResponse>;
 }) {
+  const logRef = useRef<HTMLDivElement | null>(null);
   const [command, setCommand] = useState("");
   const [mcpTools, setMcpTools] = useState<McpTool[]>([]);
   const [, setAgentSessions] = useState<AgentSession[]>([]);
@@ -507,6 +535,12 @@ export function AgentConsoleView({
         item.name.toLowerCase().startsWith(command.trim().toLowerCase()),
       )
     : [];
+
+  useEffect(() => {
+    const container = logRef.current;
+    if (!container) return;
+    container.scrollTop = container.scrollHeight;
+  }, [entries, isRunning]);
 
   function applySlashCommand(item: SlashCommand) {
     if (item.name === "/clear") {
@@ -769,146 +803,108 @@ export function AgentConsoleView({
   }
 
   return (
-    <section className="h-full min-h-0 flex flex-col bg-background">
-      <div className="shrink-0 border-b border-border bg-card px-5 md:px-8 py-5">
-        <div className="flex items-start gap-3">
-          <div className="w-9 h-9 rounded bg-primary/10 border border-primary/25 flex items-center justify-center text-primary">
-            <BrainCircuit size={16} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              research agent
-            </p>
-            <h2
-              className="mt-1 text-2xl font-semibold tracking-tight text-foreground"
-              style={{ fontFamily: "'Epilogue', sans-serif" }}
-            >
-              Agent console
-            </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-              Type `/` for commands, or run natural language tool requests.
-            </p>
-          </div>
-        </div>
-      </div>
+    <section className="h-full min-h-0 flex flex-col bg-[#141617] text-[13px]">
+      <div
+        ref={logRef}
+        className="flex-1 min-h-0 overflow-y-auto px-6 py-7 font-mono md:px-10"
+      >
+        <TerminalBootHeader isRunning={isRunning} />
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 md:px-8 py-5">
-        <div className="min-h-full rounded border border-border bg-[#08090a] p-4 font-mono text-xs">
-          <div className="mb-4 flex items-center gap-2 border-b border-border pb-3 text-muted-foreground">
-            <Terminal size={14} className="text-primary" />
-            <span>ResearchMind internal tools</span>
-            {isRunning && (
-              <span className="ml-auto flex items-center gap-2 text-primary">
-                <Loader2 size={13} className="animate-spin" />
-                running
-              </span>
-            )}
-          </div>
-
-          <div className="space-y-5">
-            {entries.map((entry) => (
-              <div key={entry.id} className="flex gap-3">
-                <div
-                  className={`mt-0.5 w-7 h-7 shrink-0 rounded border flex items-center justify-center ${
-                    entry.kind === "user"
-                      ? "border-primary/30 bg-primary/10 text-primary"
-                      : entry.kind === "error"
-                        ? "border-destructive/30 bg-destructive/10 text-destructive"
-                        : "border-border bg-card text-primary"
-                  }`}
-                >
-                  {entry.kind === "user" ? (
-                    <User size={13} />
-                  ) : entry.kind === "error" ? (
-                    <Terminal size={13} />
-                  ) : (
-                    <Bot size={13} />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-primary">
-                      {entry.kind === "user" ? "$" : "agent"}
-                    </span>
-                    {entry.kind === "agent" && entry.intent && (
-                      <span className="rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
-                        {entry.intent}
-                      </span>
-                    )}
-                    <span className="text-[10px] text-muted-foreground">
-                      {entry.timestamp.toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                  <AgentContent content={entry.content} kind={entry.kind} />
-                  {entry.kind === "agent" &&
-                    entry.response.tool_trace &&
-                    entry.response.tool_trace.length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-1.5">
-                        {entry.response.tool_trace.map((step) => (
-                          <span
-                            key={`${entry.id}-${step.tool}-${step.timestamp}`}
-                            title={step.message}
-                            className="inline-flex items-center gap-1 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
-                          >
-                            <CheckCircle2 size={10} />
-                            {step.tool}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                </div>
+        <div className="space-y-7">
+          {entries.map((entry) => (
+            <div key={entry.id} className="min-w-0">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                {entry.kind === "user" ? (
+                  <>
+                    <span className="text-primary">&gt;</span>
+                    <span className="text-primary">$</span>
+                  </>
+                ) : entry.kind === "error" ? (
+                  <>
+                    <span className="text-destructive">|</span>
+                    <span className="text-destructive">error</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-primary">|</span>
+                    <span className="text-primary">agent</span>
+                  </>
+                )}
+                {entry.kind === "agent" && entry.intent && (
+                  <span className="rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary">
+                    {entry.intent}
+                  </span>
+                )}
+                <span className="text-[10px] text-muted-foreground">
+                  {entry.timestamp.toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
               </div>
-            ))}
-          </div>
+
+              {entry.kind === "user" ? (
+                <pre className="ml-6 whitespace-pre-wrap break-words leading-relaxed text-foreground">
+                  {entry.content}
+                </pre>
+              ) : (
+                <div className="ml-6 border-l-4 border-[#d1d5db] pl-4">
+                  <AgentContent content={entry.content} kind={entry.kind} />
+                </div>
+              )}
+
+              {entry.kind === "agent" &&
+                entry.response.tool_trace &&
+                entry.response.tool_trace.length > 0 && (
+                  <div className="ml-6 mt-3 flex flex-wrap gap-1.5">
+                    {entry.response.tool_trace.map((step) => (
+                      <span
+                        key={`${entry.id}-${step.tool}-${step.timestamp}`}
+                        title={step.message}
+                        className="inline-flex items-center gap-1 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
+                      >
+                        <CheckCircle2 size={10} />
+                        {step.tool}
+                      </span>
+                    ))}
+                  </div>
+                )}
+            </div>
+          ))}
+
+          {isRunning && (
+            <div className="flex items-center gap-2 text-primary">
+              <span>|</span>
+              <Loader2 size={13} className="animate-spin" />
+              <span>running command...</span>
+            </div>
+          )}
         </div>
       </div>
 
       <form
         onSubmit={(event) => void submitCommand(event)}
-        className="shrink-0 border-t border-border bg-card px-5 md:px-8 py-4"
+        className="shrink-0 border-t border-[#707070] bg-[#141617] px-6 py-3 md:px-10"
       >
-        <div className="relative mx-auto max-w-5xl">
+        <div className="relative">
           {matchingCommands.length > 0 && (
-            <div className="absolute bottom-full left-0 right-0 mb-2 rounded border border-border bg-card shadow-xl overflow-hidden">
-              <div className="border-b border-border px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                Commands
+            <div className="absolute bottom-full left-0 right-0 mb-3 overflow-hidden border border-[#707070] bg-[#101214] shadow-2xl">
+              <div className="border-b border-[#303235] px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                Slash commands
               </div>
-              <div className="max-h-64 overflow-y-auto p-1">
+              <div className="max-h-72 overflow-y-auto p-1">
                 {matchingCommands.map((item) => (
                   <button
                     key={item.name}
                     type="button"
                     onClick={() => applySlashCommand(item)}
-                    className="w-full rounded px-3 py-2 text-left hover:bg-secondary"
+                    className="w-full rounded-sm px-3 py-2 text-left font-mono hover:bg-[#1c1f23]"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="w-7 h-7 rounded border border-primary/25 bg-primary/10 text-primary flex items-center justify-center">
-                        {item.name === "/help" ? (
-                          <HelpCircle size={13} />
-                        ) : item.name === "/tools" ? (
-                          <Terminal size={13} />
-                        ) : item.name === "/add-paper" ? (
-                          <FilePlus2 size={13} />
-                        ) : item.name === "/rebuild-topology" ? (
-                          <RefreshCw size={13} />
-                        ) : (
-                          <Search size={13} />
-                        )}
+                    <div className="grid gap-1 md:grid-cols-[13rem_1fr] md:items-baseline">
+                      <span className="text-primary">{item.name}</span>
+                      <span className="text-muted-foreground">
+                        {item.description}
                       </span>
-                      <div className="min-w-0">
-                        <p className="font-mono text-xs text-foreground">
-                          {item.name}
-                          <span className="ml-2 font-sans text-xs text-muted-foreground">
-                            {item.label}
-                          </span>
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {item.description}
-                        </p>
-                      </div>
                     </div>
                   </button>
                 ))}
@@ -916,11 +912,11 @@ export function AgentConsoleView({
             </div>
           )}
 
-          <div className="flex items-end gap-2 rounded border border-primary/35 bg-background p-2">
-            <div className="px-2 py-2 font-mono text-sm text-primary">$</div>
+          <div className="flex items-center gap-3 border-y border-[#707070] py-2">
+            <span className="font-mono text-xl text-foreground">&gt;</span>
             <textarea
               value={command}
-              rows={2}
+              rows={1}
               onChange={(event) => setCommand(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Tab" && matchingCommands[0]) {
@@ -932,15 +928,15 @@ export function AgentConsoleView({
                   void submitCommand(event);
                 }
               }}
-              placeholder="Type / for commands..."
-              className="min-h-12 flex-1 resize-none bg-transparent px-1 py-2 font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              placeholder='Try "/help", "search arXiv for graph RAG", or "add this paper: <url>"'
+              className="min-h-8 flex-1 resize-none bg-transparent py-1 font-mono text-base text-foreground outline-none placeholder:text-muted-foreground"
             />
             <button
               type="submit"
               disabled={!command.trim() || isRunning}
-              className="w-10 h-10 rounded bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-45"
+              className="h-8 rounded-sm border border-primary/30 px-3 font-mono text-xs text-primary disabled:opacity-35 hover:bg-primary/10"
             >
-              {isRunning ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+              {isRunning ? "running" : "run"}
             </button>
           </div>
         </div>

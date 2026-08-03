@@ -3,19 +3,23 @@ import { ChevronRight, Maximize2, Network, RotateCcw } from "lucide-react";
 import type { Cluster, ClusterDocument, ClusterGraph } from "../types";
 
 const CLUSTER_COLORS = [
-  "#d4a843",
-  "#55a89b",
-  "#a76ab6",
-  "#c45a73",
-  "#7191d0",
-  "#8ca54f",
-  "#d18d36",
-  "#5fa3a9",
-  "#b678a9",
-  "#d06e55",
-  "#7f7ac7",
-  "#a9a34e",
+  "#67e8f9",
+  "#93c5fd",
+  "#a78bfa",
+  "#f0abfc",
+  "#fb7185",
+  "#fdba74",
+  "#86efac",
+  "#5eead4",
+  "#c4b5fd",
+  "#f9a8d4",
+  "#bef264",
+  "#7dd3fc",
 ];
+
+function clusterColor(clusterId: number): string {
+  return CLUSTER_COLORS[Math.abs(clusterId) % CLUSTER_COLORS.length];
+}
 
 function graphPosition(value: number, size: number, padding: number): number {
   const normalized = (Math.max(-1, Math.min(1, value)) + 1) / 2;
@@ -75,8 +79,7 @@ export function TopologyPanel({
           >
             {graph.documents.map((document: ClusterDocument) => {
               const active = selectedCluster?.cluster_id === document.cluster_id;
-              const color =
-                CLUSTER_COLORS[document.cluster_id % CLUSTER_COLORS.length];
+              const color = clusterColor(document.cluster_id);
 
               return (
                 <circle
@@ -85,9 +88,10 @@ export function TopologyPanel({
                   cy={graphPosition(-document.y, size, padding)}
                   r={active ? 5 : 3.5}
                   fill={color}
-                  fillOpacity={selectedCluster && !active ? 0.25 : 0.82}
-                  stroke={active ? "#ffffff" : "transparent"}
-                  strokeWidth={active ? 1.5 : 0}
+                  fillOpacity={selectedCluster && !active ? 0.18 : 0.9}
+                  stroke={active ? "#ffffff" : color}
+                  strokeOpacity={active ? 0.95 : 0.35}
+                  strokeWidth={active ? 1.5 : 0.8}
                   className="cursor-pointer transition-opacity"
                   onClick={() => {
                     const cluster = graph.clusters.find(
@@ -109,8 +113,9 @@ export function TopologyPanel({
       </div>
 
       <div className="mt-3 px-3 pb-3 space-y-1 overflow-y-auto">
-        {graph.clusters.map((cluster, index) => {
+        {graph.clusters.map((cluster) => {
           const active = selectedCluster?.cluster_id === cluster.cluster_id;
+          const color = clusterColor(cluster.cluster_id);
 
           return (
             <button
@@ -125,7 +130,10 @@ export function TopologyPanel({
             >
               <span
                 className="w-2 h-2 rounded-full shrink-0"
-                style={{ backgroundColor: CLUSTER_COLORS[index % CLUSTER_COLORS.length] }}
+                style={{
+                  backgroundColor: color,
+                  boxShadow: active ? `0 0 0 3px ${color}22` : undefined,
+                }}
               />
               <span
                 className={`text-xs truncate ${active ? "text-primary" : "text-foreground"}`}

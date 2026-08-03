@@ -3,19 +3,23 @@ import { RotateCcw, Search, X } from "lucide-react";
 import type { Cluster, ClusterDocument, ClusterGraph } from "../types";
 
 const CLUSTER_COLORS = [
-  "#d4a843",
-  "#55a89b",
-  "#a76ab6",
-  "#c45a73",
-  "#7191d0",
-  "#8ca54f",
-  "#d18d36",
-  "#5fa3a9",
-  "#b678a9",
-  "#d06e55",
-  "#7f7ac7",
-  "#a9a34e",
+  "#67e8f9",
+  "#93c5fd",
+  "#a78bfa",
+  "#f0abfc",
+  "#fb7185",
+  "#fdba74",
+  "#86efac",
+  "#5eead4",
+  "#c4b5fd",
+  "#f9a8d4",
+  "#bef264",
+  "#7dd3fc",
 ];
+
+function clusterColor(clusterId: number): string {
+  return CLUSTER_COLORS[Math.abs(clusterId) % CLUSTER_COLORS.length];
+}
 
 function graphPosition(value: number, size: number, padding: number): number {
   const normalized = (Math.max(-1, Math.min(1, value)) + 1) / 2;
@@ -91,8 +95,7 @@ export function TopologyExplorer({
               {graph.documents.map((document: ClusterDocument) => {
                 const active =
                   selectedCluster?.cluster_id === document.cluster_id;
-                const color =
-                  CLUSTER_COLORS[document.cluster_id % CLUSTER_COLORS.length];
+                const color = clusterColor(document.cluster_id);
 
                 return (
                   <circle
@@ -101,9 +104,11 @@ export function TopologyExplorer({
                     cy={graphPosition(-document.y, height, padding)}
                     r={active ? 9 : 6}
                     fill={color}
-                    fillOpacity={selectedCluster && !active ? 0.18 : 0.78}
-                    stroke={active ? "#f8f2dd" : "transparent"}
-                    strokeWidth={active ? 2 : 0}
+                    fillOpacity={selectedCluster && !active ? 0.16 : 0.86}
+                    stroke={active ? "#ffffff" : color}
+                    strokeOpacity={active ? 0.95 : 0.35}
+                    strokeWidth={active ? 2.2 : 1}
+                    filter={active ? "url(#activeClusterGlow)" : undefined}
                     className="cursor-pointer transition-opacity"
                     onClick={() => {
                       const cluster = graph.clusters.find(
@@ -116,6 +121,15 @@ export function TopologyExplorer({
                   </circle>
                 );
               })}
+              <defs>
+                <filter id="activeClusterGlow" x="-80%" y="-80%" width="260%" height="260%">
+                  <feGaussianBlur stdDeviation="5" result="blur" />
+                  <feMerge>
+                    <feMergeNode in="blur" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
             </svg>
           ) : (
             <div className="h-full flex items-center justify-center text-center px-8">
@@ -133,8 +147,9 @@ export function TopologyExplorer({
             </p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2 space-y-1">
-            {graph.clusters.map((cluster, index) => {
+            {graph.clusters.map((cluster) => {
               const active = selectedCluster?.cluster_id === cluster.cluster_id;
+              const color = clusterColor(cluster.cluster_id);
 
               return (
                 <button
@@ -151,8 +166,8 @@ export function TopologyExplorer({
                     <span
                       className="w-2 h-2 rounded-full shrink-0"
                       style={{
-                        backgroundColor:
-                          CLUSTER_COLORS[index % CLUSTER_COLORS.length],
+                        backgroundColor: color,
+                        boxShadow: active ? `0 0 0 3px ${color}22` : undefined,
                       }}
                     />
                     <span

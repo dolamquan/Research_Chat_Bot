@@ -54,7 +54,6 @@ import { PaperLibraryView } from "./components/PaperLibraryView";
 import { RedditView } from "./components/RedditView";
 import { ResearchPanel } from "./components/ResearchPanel";
 import { TopologyExplorer } from "./components/TopologyExplorer";
-import { TopologyPanel } from "./components/TopologyPanel";
 import type {
   Cluster,
   ClusterDocument,
@@ -114,7 +113,7 @@ class AppErrorBoundary extends Component<
           }}
         >
           <h1 style={{ margin: 0, fontSize: 24 }}>ResearchMind crashed while rendering</h1>
-          <p style={{ color: "#cbd5e1", lineHeight: 1.6 }}>
+          <p style={{ color: "#a09c92", lineHeight: 1.6 }}>
             The app is loaded, but a frontend runtime error stopped React from drawing the UI.
             This message is here so we can see the real issue instead of a black screen.
           </p>
@@ -137,9 +136,9 @@ class AppErrorBoundary extends Component<
             onClick={() => window.location.reload()}
             style={{
               marginTop: 12,
-              border: "1px solid #d6a937",
-              background: "#d6a937",
-              color: "#111827",
+              border: "1px solid #d7d3c7",
+              background: "#d7d3c7",
+              color: "#181916",
               borderRadius: 8,
               padding: "10px 14px",
               fontWeight: 700,
@@ -161,6 +160,16 @@ function initialMessage(cluster?: Cluster): Message {
     content: cluster
       ? `You are now exploring **${cluster.cluster_label}**. I will retrieve answers only from this cluster. Select an article on the right to read it, or ask a question across the cluster.`
       : "Welcome to **ResearchMind**. Explore the paper topology to focus on a research cluster, or ask a question across all indexed papers. Every response is grounded in retrieved passages from your collection.",
+    timestamp: new Date(),
+  };
+}
+
+function articleInitialMessage(article: Article): Message {
+  const title = articleTitle(article);
+  return {
+    id: `welcome-article-${article.article_id}-${Date.now()}`,
+    role: "assistant",
+    content: `You are now chatting with **${title}**. The PDF is open on the side, and questions will retrieve from this paper first.`,
     timestamp: new Date(),
   };
 }
@@ -419,16 +428,16 @@ function MessageBubble({
       className={`w-full min-w-0 flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}
     >
       <div
-        className={`w-8 h-8 shrink-0 rounded flex items-center justify-center ${
+        className={`w-8 h-8 shrink-0 rounded border flex items-center justify-center ${
           isUser
-            ? "bg-primary text-primary-foreground"
-            : "bg-secondary border border-border text-primary"
+            ? "border-border bg-secondary text-foreground"
+            : "bg-background border-border text-muted-foreground"
         }`}
       >
         {isUser ? <User size={14} /> : <Bot size={14} />}
       </div>
       <div
-        className={`min-w-0 max-w-[calc(100vw_-_5.5rem)] md:max-w-[78%] flex flex-col gap-1.5 ${
+        className={`min-w-0 max-w-[calc(100vw_-_5.5rem)] md:max-w-[78%] flex flex-col gap-2 ${
           isUser ? "items-end" : "items-start"
         }`}
       >
@@ -444,10 +453,10 @@ function MessageBubble({
           </div>
         )}
         <div
-          className={`rounded-lg px-4 py-3 text-sm ${
+          className={`rounded px-4 py-3 text-sm ${
             isUser
-              ? "bg-primary text-primary-foreground"
-              : "bg-card border border-border text-secondary-foreground"
+              ? "rm-message-user text-foreground"
+              : "rm-message-assistant border text-secondary-foreground"
           }`}
         >
           <div className="break-words overflow-hidden">
@@ -469,7 +478,7 @@ function MessageBubble({
                 type="button"
                 title={citationTitle(source)}
                 onClick={() => onOpenSource(source)}
-                className="h-5 rounded border border-primary/25 bg-primary/10 px-1.5 font-mono text-[10px] text-primary hover:bg-primary/20"
+                className="h-5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground hover:bg-secondary hover:text-foreground"
               >
                 {sourceCitationLabel(source, index)}
               </button>
@@ -485,7 +494,7 @@ function MessageBubble({
               <span
                 key={`${step.tool}:${step.timestamp}`}
                 title={step.message}
-                className="rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] text-primary"
+                className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
               >
                 {step.tool}
               </span>
@@ -1246,14 +1255,16 @@ function AppContent() {
     const document = documentFromArticle(article);
     setSelectedCluster(undefined);
     setSelectedDocument(document);
-    setReaderDocument(undefined);
+    setReaderDocument(document);
+    setReaderInitialPage(undefined);
     setDocumentDetail(undefined);
     setContextMode("retrieval");
-    setMessages([initialMessage()]);
+    setMessages([articleInitialMessage(article)]);
     setActiveSessionId(undefined);
     setSources([]);
     setPinnedSources([]);
     setActiveView("chat");
+    setSidebarOpen(false);
   }
 
   const scopeLabel = selectedDocument
@@ -1289,7 +1300,7 @@ function AppContent() {
       : activeView === "evaluation"
         ? "RAG quality and latency tracking"
       : activeView === "library"
-        ? "Indexed papers and ingestion status"
+        ? "Search and read indexed papers"
         : activeView === "notes"
           ? "Search saved highlights"
           : selectedDocument
@@ -1304,22 +1315,19 @@ function AppContent() {
 
   return (
     <div
-      className="h-screen w-screen bg-background text-foreground flex overflow-hidden"
+      className="rm-app-shell h-screen w-screen bg-background text-foreground flex overflow-hidden"
       style={{ fontFamily: "'Inter', sans-serif" }}
     >
       <aside
-        className="fixed md:relative inset-y-0 left-0 z-40 shrink-0 bg-card border-r border-border flex flex-col overflow-hidden transition-[width] duration-200"
+        className="rm-sidebar fixed md:relative inset-y-0 left-0 z-40 shrink-0 border-r border-border flex flex-col overflow-hidden transition-[width] duration-200"
         style={{ width: sidebarOpen ? sidebarWidth : 0 }}
       >
-        <div className="h-16 px-4 border-b border-border flex items-center gap-3 shrink-0">
-          <div className="w-8 h-8 bg-primary rounded flex items-center justify-center">
-            <Search size={15} className="text-primary-foreground" />
+        <div className="h-20 px-5 border-b border-border/80 flex items-center gap-3 shrink-0">
+          <div className="w-10 h-10 rounded border border-border bg-background flex items-center justify-center text-muted-foreground">
+            <Search size={15} />
           </div>
           <div className="min-w-0">
-            <h1
-              className="text-sm font-semibold tracking-tight"
-              style={{ fontFamily: "'Epilogue', sans-serif" }}
-            >
+            <h1 className="text-base font-semibold tracking-tight">
               ResearchMind
             </h1>
             <p className="text-xs text-muted-foreground">
@@ -1328,7 +1336,7 @@ function AppContent() {
           </div>
         </div>
 
-        <div className="p-3 shrink-0 border-b border-border">
+        <div className="p-4 shrink-0 border-b border-border/80">
           <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground px-1 mb-2">
             Workspace
           </p>
@@ -1336,10 +1344,10 @@ function AppContent() {
             <button
               type="button"
               onClick={() => setActiveView("chat")}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+              className={`rm-nav-button w-full flex items-center gap-2.5 px-2.5 py-2 border text-left ${
                 activeView === "chat"
-                  ? "border-primary/25 bg-primary/10 text-primary"
-                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+                  ? "rm-active-surface text-foreground"
+                  : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground"
               }`}
             >
               <MessageSquare size={14} />
@@ -1348,10 +1356,10 @@ function AppContent() {
             <button
               type="button"
               onClick={() => setActiveView("agent")}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+              className={`rm-nav-button w-full flex items-center gap-2.5 px-2.5 py-2 border text-left ${
                 activeView === "agent"
-                  ? "border-primary/25 bg-primary/10 text-primary"
-                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+                  ? "rm-active-surface text-foreground"
+                  : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground"
               }`}
             >
               <BrainCircuit size={14} />
@@ -1360,10 +1368,10 @@ function AppContent() {
             <button
               type="button"
               onClick={() => setActiveView("graph")}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+              className={`rm-nav-button w-full flex items-center gap-2.5 px-2.5 py-2 border text-left ${
                 activeView === "graph"
-                  ? "border-primary/25 bg-primary/10 text-primary"
-                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+                  ? "rm-active-surface text-foreground"
+                  : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground"
               }`}
             >
               <Network size={14} />
@@ -1372,10 +1380,10 @@ function AppContent() {
             <button
               type="button"
               onClick={() => setActiveView("library")}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+              className={`rm-nav-button w-full flex items-center gap-2.5 px-2.5 py-2 border text-left ${
                 activeView === "library"
-                  ? "border-primary/25 bg-primary/10 text-primary"
-                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+                  ? "rm-active-surface text-foreground"
+                  : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground"
               }`}
             >
               <FileText size={14} />
@@ -1384,10 +1392,10 @@ function AppContent() {
             <button
               type="button"
               onClick={() => setActiveView("notes")}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+              className={`rm-nav-button w-full flex items-center gap-2.5 px-2.5 py-2 border text-left ${
                 activeView === "notes"
-                  ? "border-primary/25 bg-primary/10 text-primary"
-                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+                  ? "rm-active-surface text-foreground"
+                  : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground"
               }`}
             >
               <NotebookPen size={14} />
@@ -1396,10 +1404,10 @@ function AppContent() {
             <button
               type="button"
               onClick={() => setActiveView("crawler")}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+              className={`rm-nav-button w-full flex items-center gap-2.5 px-2.5 py-2 border text-left ${
                 activeView === "crawler"
-                  ? "border-primary/25 bg-primary/10 text-primary"
-                  : "border-transparent text-foreground hover:border-border hover:bg-secondary"
+                  ? "rm-active-surface text-foreground"
+                  : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground"
               }`}
             >
               <Search size={14} />
@@ -1409,7 +1417,7 @@ function AppContent() {
         </div>
 
         {activeView === "chat" && (
-          <div className="px-3 pb-3 shrink-0 border-b border-border">
+          <div className="px-4 pb-4 shrink-0 border-b border-border/80">
             <div className="h-8 px-1 flex items-center gap-2">
               <button
                 type="button"
@@ -1447,9 +1455,9 @@ function AppContent() {
                     return (
                       <div
                         key={session.id}
-                        className={`group flex items-center gap-1 rounded border ${
+                        className={`group flex items-center gap-1 rounded-lg border ${
                           active
-                            ? "border-primary/35 bg-primary/10"
+                            ? "rm-active-surface"
                             : "border-transparent hover:border-border hover:bg-secondary"
                         }`}
                       >
@@ -1488,16 +1496,16 @@ function AppContent() {
         )}
 
         {activeView === "chat" && (
-        <div className="p-3 shrink-0">
+        <div className="p-4 shrink-0">
           <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground px-1 mb-2">
             Scope
           </p>
           <button
             type="button"
             onClick={clearCluster}
-            className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded border text-left ${
+            className={`rm-nav-button w-full flex items-center gap-2.5 px-2.5 py-2 border text-left ${
               !selectedCluster
-                ? "border-primary/25 bg-primary/10"
+                ? "rm-active-surface"
                 : "border-transparent hover:border-border hover:bg-secondary"
             }`}
           >
@@ -1516,7 +1524,7 @@ function AppContent() {
             </div>
           </button>
 
-          <div className="mt-3 rounded border border-border bg-background p-2 space-y-2">
+          <div className="rm-panel-soft mt-3 rounded-lg bg-background p-2 space-y-2">
             <div className="flex items-center gap-2">
               <button
                 type="button"
@@ -1555,7 +1563,7 @@ function AppContent() {
                     setSelectedDomain(event.target.value);
                     setSelectedCategory("");
                   }}
-                  className="w-full h-8 rounded border border-border bg-card px-2 text-xs text-foreground outline-none focus:border-primary/60"
+                  className="w-full h-8 rounded-md border border-border bg-card px-2 text-xs text-foreground outline-none focus:border-primary/60"
                 >
                   <option value="">All domains</option>
                   {domainOptions.map((domain) => (
@@ -1567,7 +1575,7 @@ function AppContent() {
                 <select
                   value={selectedCategory}
                   onChange={(event) => setSelectedCategory(event.target.value)}
-                  className="w-full h-8 rounded border border-border bg-card px-2 text-xs text-foreground outline-none focus:border-primary/60"
+                  className="w-full h-8 rounded-md border border-border bg-card px-2 text-xs text-foreground outline-none focus:border-primary/60"
                 >
                   <option value="">All categories</option>
                   {categoryOptions.map((category) => (
@@ -1580,7 +1588,7 @@ function AppContent() {
                   type="button"
                   onClick={() => void rebuildCurrentTopology()}
                   disabled={isBuildingTopology}
-                  className="w-full h-8 rounded border border-primary/30 bg-primary/10 text-primary text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                  className="w-full h-8 rounded-md border border-primary/30 bg-primary/10 text-primary text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-primary/15"
                 >
                   <RefreshCw
                     size={12}
@@ -1598,7 +1606,7 @@ function AppContent() {
           </div>
 
           {recentArticles.length > 0 && (
-            <div className="mt-3 rounded border border-primary/25 bg-primary/5 p-2 space-y-2">
+            <div className="mt-3 rounded-lg border border-primary/25 bg-primary/5 p-2 space-y-2">
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -1633,7 +1641,7 @@ function AppContent() {
                       return (
                         <div
                           key={article.article_id}
-                          className="rounded border border-border bg-background px-2 py-2"
+                          className="rounded-lg border border-border bg-background px-2 py-2"
                         >
                           <p className="text-xs font-medium text-foreground truncate">
                             {articleTitle(article)}
@@ -1680,9 +1688,9 @@ function AppContent() {
         </div>
         )}
 
-        {activeView === "library" && (
+        {false && activeView === "library" && (
         <form
-          className="px-3 pb-3 shrink-0 border-b border-border space-y-2"
+          className="px-3 pb-3 shrink-0 border-b border-border/80 space-y-2"
           onSubmit={(event) => {
             event.preventDefault();
             void submitPaperUrl();
@@ -1708,38 +1716,38 @@ function AppContent() {
                 value={paperUrl}
                 onChange={(event) => setPaperUrl(event.target.value)}
                 placeholder="arXiv or PDF URL"
-                className="w-full h-9 rounded border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                className="w-full h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
               />
               <input
                 value={paperTitle}
                 onChange={(event) => setPaperTitle(event.target.value)}
                 placeholder="Title override"
-                className="w-full h-9 rounded border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                className="w-full h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
               />
               <div className="grid grid-cols-2 gap-2">
                 <input
                   value={paperDomain}
                   onChange={(event) => setPaperDomain(event.target.value)}
                   placeholder="Domain"
-                  className="h-9 min-w-0 rounded border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                  className="h-9 min-w-0 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
                 />
                 <input
                   value={paperCategory}
                   onChange={(event) => setPaperCategory(event.target.value)}
                   placeholder="Category"
-                  className="h-9 min-w-0 rounded border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                  className="h-9 min-w-0 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
                 />
               </div>
               <input
                 value={paperTags}
                 onChange={(event) => setPaperTags(event.target.value)}
                 placeholder="tags, comma-separated"
-                className="w-full h-9 rounded border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                className="w-full h-9 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
               />
               <button
                 type="submit"
                 disabled={!paperUrl.trim() || isIngestingPaper}
-                className="w-full h-9 rounded bg-primary text-primary-foreground text-xs font-medium disabled:opacity-40"
+                className="w-full h-9 rounded-md bg-primary text-primary-foreground text-xs font-medium disabled:opacity-40 hover:bg-primary/90"
               >
                 {isIngestingPaper ? "Indexing..." : "Add to database"}
               </button>
@@ -1748,7 +1756,7 @@ function AppContent() {
             <button
               type="button"
               onClick={() => setAddPaperOpen(true)}
-              className="w-full h-9 rounded border border-border bg-background px-2 text-left text-xs text-muted-foreground hover:bg-secondary"
+              className="w-full h-9 rounded-md border border-border bg-background px-2 text-left text-xs text-muted-foreground hover:bg-secondary"
             >
               Capture arXiv or PDF URL
             </button>
@@ -1768,8 +1776,8 @@ function AppContent() {
         </form>
         )}
 
-        {(activeView === "library" || activeView === "crawler") && (
-        <div className="px-3 pb-3 shrink-0 border-b border-border">
+        {activeView === "crawler" && (
+        <div className="px-3 pb-3 shrink-0 border-b border-border/80">
           <div className="h-8 px-1 flex items-center gap-2">
             <button
               type="button"
@@ -1809,7 +1817,7 @@ function AppContent() {
                   return (
                     <div
                       key={job.job_id}
-                      className="rounded border border-border bg-background px-2 py-2"
+                      className="rounded-lg border border-border bg-background px-2 py-2"
                     >
                       <div className="flex items-start gap-2">
                         <span
@@ -1923,16 +1931,6 @@ function AppContent() {
           )}
         </div>
 
-        {activeView === "chat" && (
-          <TopologyPanel
-            graph={graph}
-            selectedCluster={selectedCluster}
-            onSelectCluster={chooseCluster}
-            onClear={clearCluster}
-            onExpand={() => setTopologyExplorerOpen(true)}
-          />
-        )}
-
         <button
           type="button"
           title="Resize sidebar"
@@ -1952,17 +1950,17 @@ function AppContent() {
       )}
 
       <main className="w-full min-w-0 flex-1 flex flex-col overflow-x-hidden">
-        <header className="h-12 px-4 border-b border-border bg-card flex items-center gap-3 shrink-0 overflow-x-auto">
+        <header className="rm-topbar h-12 px-4 border-b border-border bg-card flex items-center gap-3 shrink-0 overflow-x-auto">
           <button
             type="button"
             title={sidebarOpen ? "Collapse topology" : "Open topology"}
             onClick={() => setSidebarOpen((value) => !value)}
-            className="w-8 h-8 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary"
+            className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary"
           >
             <Menu size={15} />
           </button>
           <div className="w-px h-4 bg-border" />
-          <Network size={14} className="text-primary" />
+          <Network size={14} className="text-muted-foreground" />
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground truncate">
               {headerTitle}
@@ -1975,9 +1973,9 @@ function AppContent() {
             <button
               type="button"
               onClick={() => setTopologyExplorerOpen((value) => !value)}
-              className={`h-8 px-3 rounded border text-xs flex items-center gap-2 ${
+              className={`h-8 px-3 rounded-md border text-xs flex items-center gap-2 ${
                 topologyExplorerOpen
-                  ? "border-primary/35 bg-primary/10 text-primary"
+                  ? "rm-active-surface text-foreground"
                   : "border-border text-muted-foreground hover:text-foreground hover:bg-secondary"
               }`}
             >
@@ -1998,7 +1996,7 @@ function AppContent() {
         </header>
 
         <div
-          className={`flex-1 min-h-0 px-5 md:px-8 py-6 ${
+          className={`flex-1 min-h-0 ${
             activeView === "library" ||
             activeView === "crawler" ||
             activeView === "reddit" ||
@@ -2008,8 +2006,8 @@ function AppContent() {
             activeView === "evaluation"
               ? "overflow-hidden p-0"
               : topologyExplorerOpen
-                ? "overflow-hidden"
-                : "overflow-y-auto space-y-6"
+                ? "overflow-hidden px-5 md:px-8 py-6"
+                : "overflow-y-auto space-y-6 px-5 md:px-8 py-6"
           }`}
         >
           {activeView === "library" ? (
@@ -2097,14 +2095,14 @@ function AppContent() {
                 ))}
                 {isTyping && (
                   <div className="flex gap-3">
-                    <div className="w-8 h-8 rounded bg-secondary border border-border flex items-center justify-center text-primary">
+                    <div className="w-8 h-8 rounded bg-background border border-border flex items-center justify-center text-muted-foreground">
                       <Bot size={14} />
                     </div>
-                    <div className="bg-card border border-border rounded-lg px-4 py-3 flex items-center gap-1.5">
+                    <div className="bg-card border border-border rounded px-4 py-3 flex items-center gap-1.5">
                       {[0, 150, 300].map((delay) => (
                         <span
                           key={delay}
-                          className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce"
+                          className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce"
                           style={{ animationDelay: `${delay}ms` }}
                         />
                       ))}
@@ -2118,7 +2116,7 @@ function AppContent() {
         </div>
 
         {activeView === "chat" && (
-        <div className="border-t border-border bg-card p-4 shrink-0">
+        <div className="border-t border-border bg-background p-4 shrink-0">
           <div className="w-full min-w-0 max-w-[calc(100vw_-_2rem)] md:max-w-3xl mx-auto">
             {pinnedSources.length > 0 && (
               <div className="mb-2 flex items-center gap-2 overflow-x-auto pb-1">
@@ -2131,7 +2129,7 @@ function AppContent() {
                     key={sourceKey(source)}
                     onClick={() => removePinnedSource(source)}
                     title="Remove selected context"
-                    className="h-7 max-w-52 px-2 rounded border border-primary/25 bg-primary/10 text-primary flex items-center gap-1.5 shrink-0"
+                    className="h-7 max-w-52 px-2 rounded border border-border bg-card text-muted-foreground hover:text-foreground flex items-center gap-1.5 shrink-0"
                   >
                     <span className="text-[10px] truncate">
                       {source.selection
@@ -2154,7 +2152,7 @@ function AppContent() {
                       onClick={() => setRetrievalStrategy(strategy)}
                       className={`h-7 rounded px-2.5 text-[11px] font-medium capitalize transition-colors ${
                         isActive
-                          ? "bg-primary text-primary-foreground"
+                          ? "bg-secondary text-foreground border border-border"
                           : "text-muted-foreground hover:bg-secondary hover:text-foreground"
                       }`}
                     >
@@ -2171,7 +2169,7 @@ function AppContent() {
                       : "Vector similarity retrieval"}
               </span>
             </div>
-            <div className="relative rounded-lg border border-border bg-background focus-within:border-primary/50">
+            <div className="rm-chat-input relative rounded border border-border bg-background focus-within:border-ring">
               <textarea
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
@@ -2195,14 +2193,14 @@ function AppContent() {
                   title="Send message"
                   disabled={!input.trim() || isTyping}
                   onClick={() => void submitQuestion()}
-                  className="w-8 h-8 rounded bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-35"
+                  className="w-8 h-8 rounded bg-secondary border border-border text-foreground flex items-center justify-center disabled:opacity-35 hover:bg-accent"
                 >
                   <Send size={14} />
                 </button>
               </div>
             </div>
             <div className="mt-2 px-1 flex items-center gap-2">
-              <CheckCircle2 size={11} className="text-primary" />
+              <CheckCircle2 size={11} className="text-muted-foreground" />
               <p className="font-mono text-[10px] text-muted-foreground truncate">
                 {selectedDocument ? "Grounded retrieval" : `${retrievalStrategy} retrieval`} - {scopeLabel}
               </p>
