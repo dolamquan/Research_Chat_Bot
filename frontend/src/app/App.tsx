@@ -54,6 +54,7 @@ import { PaperLibraryView } from "./components/PaperLibraryView";
 import { RedditView } from "./components/RedditView";
 import { ResearchPanel } from "./components/ResearchPanel";
 import { TopologyExplorer } from "./components/TopologyExplorer";
+import { WorkspaceNotesPane } from "./components/WorkspaceNotesPane";
 import type {
   Cluster,
   ClusterDocument,
@@ -551,6 +552,10 @@ function AppContent() {
     () => window.innerWidth >= 768,
   );
   const [sidebarWidth, setSidebarWidth] = useState(380);
+  const [workspaceNotesOpen, setWorkspaceNotesOpen] = useState(
+    () => window.innerWidth >= 1100,
+  );
+  const [workspaceNotesWidth, setWorkspaceNotesWidth] = useState(320);
   const [loadError, setLoadError] = useState("");
   const [paperUrl, setPaperUrl] = useState("");
   const [paperTitle, setPaperTitle] = useState("");
@@ -563,7 +568,6 @@ function AppContent() {
   const [ingestionJobsOpen, setIngestionJobsOpen] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [topologyScopeOpen, setTopologyScopeOpen] = useState(false);
-  const [recentlyAddedOpen, setRecentlyAddedOpen] = useState(false);
   const [topologyExplorerOpen, setTopologyExplorerOpen] = useState(false);
   const [articleDomains, setArticleDomains] = useState<ArticleDomain[]>([]);
   const [recentArticles, setRecentArticles] = useState<Article[]>([]);
@@ -627,19 +631,6 @@ function AppContent() {
       )
       .sort((a, b) => a.source.localeCompare(b.source));
   }, [graph.documents, selectedCluster]);
-
-  const graphSources = useMemo(
-    () => new Set(graph.documents.map((document) => document.source)),
-    [graph.documents],
-  );
-
-  const recentUnmappedArticles = useMemo(
-    () =>
-      recentArticles.filter(
-        (article) => article.status === "indexed" && !graphSources.has(article.source),
-      ),
-    [graphSources, recentArticles],
-  );
 
   useEffect(() => {
     let active = true;
@@ -1195,6 +1186,31 @@ function AppContent() {
     window.addEventListener("pointerup", stopResize);
   }
 
+  function startWorkspaceNotesResize(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (window.innerWidth < 768) return;
+
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = workspaceNotesWidth;
+
+    const resize = (moveEvent: PointerEvent) => {
+      const nextWidth = startWidth + moveEvent.clientX - startX;
+      setWorkspaceNotesWidth(clamp(nextWidth, 240, 460));
+    };
+
+    const stopResize = () => {
+      window.removeEventListener("pointermove", resize);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", resize);
+    window.addEventListener("pointerup", stopResize);
+  }
+
   function openLibraryArticle(article: Article) {
     const document = documentFromArticle(article);
     setSelectedCluster(undefined);
@@ -1312,6 +1328,18 @@ function AppContent() {
               : scopeIsFiltered
                 ? `${activeScopeLabel} retrieval`
                 : "Full collection retrieval";
+  const workspaceNoteScopeId =
+    selectedDocument?.source ||
+    activeSessionId ||
+    selectedCluster?.cluster_label ||
+    activeScopeLabel ||
+    "all-papers";
+  const workspaceNoteScopeTitle =
+    selectedDocument?.title ||
+    (selectedDocument ? titleFromSource(selectedDocument.source) : "") ||
+    selectedCluster?.cluster_label ||
+    activeScopeLabel ||
+    "All indexed papers";
 
   return (
     <div
@@ -1605,86 +1633,6 @@ function AppContent() {
             </p>
           </div>
 
-          {recentArticles.length > 0 && (
-            <div className="mt-3 rounded-lg border border-primary/25 bg-primary/5 p-2 space-y-2">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRecentlyAddedOpen((value) => !value)}
-                  className="min-w-0 flex-1 flex items-center gap-2 text-left"
-                >
-                  <CheckCircle2 size={12} className="text-primary" />
-                  <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-                    Recently added
-                  </span>
-                  <span className="ml-auto text-muted-foreground">
-                    {recentlyAddedOpen ? (
-                      <ChevronDown size={13} />
-                    ) : (
-                      <ChevronRight size={13} />
-                    )}
-                  </span>
-                </button>
-                {recentUnmappedArticles.length > 0 && (
-                  <span className="rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">
-                    New
-                  </span>
-                )}
-              </div>
-
-              {recentlyAddedOpen && (
-                <>
-                  <div className="space-y-1">
-                    {recentArticles.slice(0, 3).map((article) => {
-                      const mapped = graphSources.has(article.source);
-
-                      return (
-                        <div
-                          key={article.article_id}
-                          className="rounded-lg border border-border bg-background px-2 py-2"
-                        >
-                          <p className="text-xs font-medium text-foreground truncate">
-                            {articleTitle(article)}
-                          </p>
-                          <div className="mt-1 flex items-center gap-2">
-                            <span
-                              className={`w-1.5 h-1.5 rounded-full ${
-                                article.status === "indexed"
-                                  ? "bg-green-500"
-                                  : "bg-destructive"
-                              }`}
-                            />
-                            <p className="font-mono text-[10px] text-muted-foreground truncate">
-                              {article.status === "indexed"
-                                ? mapped
-                                  ? "In database and topology"
-                                  : "In database - rebuild topology"
-                                : "Index failed"}
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {recentUnmappedArticles.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => void rebuildCurrentTopology()}
-                      disabled={isBuildingTopology}
-                      className="w-full h-8 rounded bg-primary text-primary-foreground text-xs font-medium flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      <RefreshCw
-                        size={12}
-                        className={isBuildingTopology ? "animate-spin" : ""}
-                      />
-                      {isBuildingTopology ? "Rebuilding..." : "Update topology map"}
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          )}
         </div>
         )}
 
@@ -1949,7 +1897,19 @@ function AppContent() {
         />
       )}
 
-      <main className="w-full min-w-0 flex-1 flex flex-col overflow-x-hidden">
+      {activeView === "chat" && (
+        <WorkspaceNotesPane
+          open={workspaceNotesOpen}
+          width={workspaceNotesWidth}
+          scopeId={workspaceNoteScopeId}
+          scopeTitle={workspaceNoteScopeTitle}
+          onToggle={() => setWorkspaceNotesOpen((value) => !value)}
+          onResizeStart={startWorkspaceNotesResize}
+          onPinNote={pinSource}
+        />
+      )}
+
+      <main className="w-full min-w-0 min-h-0 flex-1 flex flex-col overflow-x-hidden">
         <header className="rm-topbar h-12 px-4 border-b border-border bg-card flex items-center gap-3 shrink-0 overflow-x-auto">
           <button
             type="button"
@@ -2004,7 +1964,7 @@ function AppContent() {
             activeView === "agent" ||
             activeView === "graph" ||
             activeView === "evaluation"
-              ? "overflow-hidden p-0"
+              ? "overflow-hidden p-0 flex flex-col"
               : topologyExplorerOpen
                 ? "overflow-hidden px-5 md:px-8 py-6"
                 : "overflow-y-auto space-y-6 px-5 md:px-8 py-6"

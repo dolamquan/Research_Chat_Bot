@@ -127,13 +127,6 @@ export type GraphRagPathResponse = GraphRagQueryResponse & {
   shared_concepts: GraphRagNode[];
 };
 
-export type ResearchBriefResponse = {
-  topic: string;
-  brief: string;
-  papers: GraphRagNode[];
-  sources: Source[];
-};
-
 export type EvaluationMetrics = Record<string, number | null | undefined>;
 
 export type EvaluationCase = {

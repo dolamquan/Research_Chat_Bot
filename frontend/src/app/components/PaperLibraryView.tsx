@@ -111,7 +111,7 @@ export function PaperLibraryView({
   );
 
   return (
-    <section className="h-full min-h-0 flex flex-col bg-background">
+    <section className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <div className="shrink-0 border-b border-border bg-background px-5 md:px-10 py-7">
         <div className="mx-auto flex max-w-5xl flex-col gap-4 lg:flex-row lg:items-start">
           <div className="min-w-0 flex-1">
@@ -203,9 +203,10 @@ export function PaperLibraryView({
             </select>
           </div>
         )}
+
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-5 md:px-10 py-8">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-6 md:px-10">
         {showImageUpload && (
           <form
           className="mx-auto mb-6 max-w-5xl rounded border border-border bg-card p-4"
@@ -305,7 +306,7 @@ export function PaperLibraryView({
           </details>
         )}
 
-        <div className="mx-auto grid max-w-6xl gap-4 xl:grid-cols-2">
+        <div className="mx-auto grid max-w-6xl gap-4 pb-10 xl:grid-cols-2">
           {filteredArticles.length === 0 ? (
             <div className="rounded border border-border bg-card px-4 py-12 text-center">
               <p className="text-sm text-muted-foreground">
@@ -320,44 +321,41 @@ export function PaperLibraryView({
                 return (
                   <article
                     key={article.article_id}
-                    className="flex min-h-[210px] flex-col rounded border border-border bg-card px-5 py-5 transition-colors hover:border-border/80 hover:bg-secondary/40"
+                    className="rounded border border-border bg-card p-4"
                   >
-                    <div className="flex flex-1 flex-col">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-start gap-3">
-                          {failed ? (
-                            <XCircle size={15} className="mt-1 shrink-0 text-destructive" />
-                          ) : (
-                            <CheckCircle2 size={15} className="mt-1 shrink-0 text-muted-foreground" />
-                          )}
-                          <div className="min-w-0">
-                            <h3 className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
-                              {articleTitle(article)}
-                            </h3>
-                            <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-                              {(article.domain || "research")} / {(article.category || "uncategorized")}
-                            </p>
-                          </div>
-                        </div>
-                      {article.abstract && (
-                        <p className="mt-4 text-sm leading-6 text-muted-foreground line-clamp-2">
-                          {article.abstract}
-                        </p>
+                    <div className="flex items-start gap-3">
+                      {failed ? (
+                        <XCircle size={15} className="mt-1 shrink-0 text-destructive" />
+                      ) : (
+                        <CheckCircle2 size={15} className="mt-1 shrink-0 text-muted-foreground" />
                       )}
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {dateLabel(article.updated_at) && (
-                          <span className="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground">
-                            {dateLabel(article.updated_at)}
-                          </span>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
+                          {articleTitle(article)}
+                        </h3>
+                        <p className="mt-2 font-mono text-[11px] text-muted-foreground">
+                          {(article.domain || "research")} / {(article.category || "uncategorized")}
+                        </p>
+                        {article.abstract && (
+                          <p className="mt-4 line-clamp-2 text-sm leading-6 text-muted-foreground">
+                            {article.abstract}
+                          </p>
                         )}
-                        {(article.tags || []).slice(0, 3).map((tag) => (
-                          <span
-                            key={tag}
-                            className="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground"
-                          >
-                            {tag}
-                          </span>
-                        ))}
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {dateLabel(article.updated_at) && (
+                            <span className="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground">
+                              {dateLabel(article.updated_at)}
+                            </span>
+                          )}
+                          {(article.tags || []).slice(0, 3).map((tag) => (
+                            <span
+                              key={tag}
+                              className="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground"
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
@@ -366,7 +364,7 @@ export function PaperLibraryView({
                         type="button"
                         disabled={failed}
                         onClick={() => onChatWithArticle(article)}
-                        className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40 inline-flex items-center gap-2"
+                        className="inline-flex h-9 items-center gap-2 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
                         title="Chat with paper"
                       >
                         <MessageSquarePlus size={13} />
@@ -376,7 +374,7 @@ export function PaperLibraryView({
                         type="button"
                         disabled={failed}
                         onClick={() => onOpenArticle(article)}
-                        className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40 inline-flex items-center gap-2"
+                        className="inline-flex h-9 items-center gap-2 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
                         title="Read PDF"
                       >
                         <FileText size={13} />
@@ -386,13 +384,12 @@ export function PaperLibraryView({
                         href={getPdfUrl(article.source)}
                         target="_blank"
                         rel="noreferrer"
-                        className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground inline-flex items-center gap-2"
+                        className="inline-flex h-9 items-center gap-2 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
                         title="Open PDF in new tab"
                       >
                         <ExternalLink size={13} />
                         Open
                       </a>
-                    </div>
                     </div>
                   </article>
                 );

@@ -5,7 +5,6 @@ import { ChevronDown, GitBranch, Loader2, Maximize2, Network, RefreshCw, Search 
 import {
   buildGraphRag,
   explainGraphRagPath,
-  generateResearchBrief,
   getArticles,
   getGraphRag,
   getGraphRagNeighbors,
@@ -18,7 +17,6 @@ import type {
   GraphRagNode,
   GraphRagPathResponse,
   GraphRagQueryResponse,
-  ResearchBriefResponse,
 } from "../types";
 
 const EMPTY_GRAPH: GraphRagGraph = {
@@ -138,12 +136,9 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
   const [pathStart, setPathStart] = useState<GraphRagNode | null>(null);
   const [pathEnd, setPathEnd] = useState<GraphRagNode | null>(null);
   const [pathResult, setPathResult] = useState<GraphRagPathResponse | null>(null);
-  const [briefTopic, setBriefTopic] = useState("");
-  const [briefResult, setBriefResult] = useState<ResearchBriefResponse | null>(null);
   const [isLoadingArticles, setIsLoadingArticles] = useState(false);
   const [isLoadingNeighbors, setIsLoadingNeighbors] = useState(false);
   const [isExplainingPath, setIsExplainingPath] = useState(false);
-  const [isGeneratingBrief, setIsGeneratingBrief] = useState(false);
   const [showPaperSet, setShowPaperSet] = useState(false);
   const [showGraphSearch, setShowGraphSearch] = useState(false);
   const [showSelectionDetails, setShowSelectionDetails] = useState(false);
@@ -234,7 +229,6 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
       setQueryResult(null);
       setNeighbors(null);
       setPathResult(null);
-      setBriefResult(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not build Graph RAG.");
     } finally {
@@ -251,7 +245,6 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
       const result = await queryGraphRag({ query: trimmed, ...graphScope });
       setQueryResult(result);
       setPathResult(null);
-      setBriefResult(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not query Graph RAG.");
     } finally {
@@ -286,7 +279,6 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
     setPathStart(null);
     setPathEnd(null);
     setPathResult(null);
-    setBriefResult(null);
   }, [domain, category]);
 
   useEffect(() => {
@@ -406,7 +398,6 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
     );
     setQueryResult(null);
     setSelectedNode(null);
-    setBriefResult(null);
   }
 
   function selectVisibleArticles() {
@@ -419,7 +410,6 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
     });
     setQueryResult(null);
     setSelectedNode(null);
-    setBriefResult(null);
   }
 
   function handleNodeClick(node: GraphRagNode) {
@@ -448,30 +438,10 @@ export function GraphRagView({ domain, category }: GraphRagViewProps) {
       });
       setPathResult(result);
       setQueryResult(null);
-      setBriefResult(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not explain graph path.");
     } finally {
       setIsExplainingPath(false);
-    }
-  }
-
-  async function runBrief() {
-    setIsGeneratingBrief(true);
-    setError("");
-    try {
-      const result = await generateResearchBrief({
-        topic: briefTopic.trim(),
-        ...graphScope,
-        limit: 8,
-      });
-      setBriefResult(result);
-      setQueryResult(null);
-      setPathResult(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not generate research brief.");
-    } finally {
-      setIsGeneratingBrief(false);
     }
   }
 

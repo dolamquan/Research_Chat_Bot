@@ -1,0 +1,431 @@
+{
+  "nodes": [
+    {
+      "id": "paper:arxiv:2504.01346v4",
+      "type": "paper",
+      "label": "RAG over Tables: Hierarchical Memory Index, Multi-Stage Retrieval, and Benchmarking",
+      "article_id": "arxiv:2504.01346v4",
+      "source": "2504.01346v4_rag_over_tables_hierarchical_memory_index_multi_stage_retrieval_and_benchmarking.pdf",
+      "url": "https://arxiv.org/abs/2504.01346v4",
+      "domain": "research",
+      "category": "cs.cl",
+      "tags": [
+        "cs.cl",
+        "cs.ir",
+        "cs.lg"
+      ],
+      "abstract": "Retrieval-Augmented Generation (RAG) enhances Large Language Models (LLMs) by integrating them with an external knowledge base to improve the answer relevance and accuracy. In real-world scenarios, beyond pure text, a substantial amount of knowledge is stored in tables, and user questions often require retrieving answers that are distributed across multiple tables. Retrieving knowledge from a table corpora (i.e., various individual tables) for a question remains nascent, at least, for (i) how to understand intra- and inter-table knowledge effectively, (ii) how to filter unnecessary tables and how to retrieve the most relevant tables efficiently, (iii) how to prompt LLMs to infer over the retrieval, (iv) how to evaluate the corresponding performance in a realistic setting. Facing the above challenges, in this paper, we first propose a table-corpora-aware RAG framework, named T-RAG, which consists of the hierarchical memory index, multi-stage retrieval, and graph-aware prompting for effective and efficient table knowledge retrieval and inference. Further, we first develop a multi-table question answering benchmark named MultiTableQA, which spans 3 different task types, 57,193 tables, and 23,758 questions in total, and the sources are all from real-world scenarios. Based on MultiTableQA, we did the holistic comparison over table retrieval methods, RAG methods, and table-to-graph representation learning methods, where T-RAG shows the leading accuracy, recall, and running time performance. Also, under T-RAG, we evaluate the inference ability upgrade of different LLMs. Code and Data are available at https://github.com/jiaruzouu/T-RAG",
+      "weight": 1,
+      "x": 0.7206,
+      "y": 0.2985
+    },
+    {
+      "id": "domain:research",
+      "type": "domain",
+      "label": "research",
+      "weight": 2,
+      "x": 0.0,
+      "y": -0.0
+    },
+    {
+      "id": "category:cs-cl",
+      "type": "category",
+      "label": "cs.cl",
+      "weight": 1,
+      "x": 0.1061,
+      "y": -0.1061
+    },
+    {
+      "id": "concept:tables",
+      "type": "concept",
+      "label": "Tables",
+      "weight": 1,
+      "x": 0.42,
+      "y": 0.0
+    },
+    {
+      "id": "concept:knowledge",
+      "type": "concept",
+      "label": "Knowledge",
+      "weight": 1,
+      "x": 0.4491,
+      "y": 0.1385
+    },
+    {
+      "id": "concept:t-rag",
+      "type": "concept",
+      "label": "T Rag",
+      "weight": 1,
+      "x": 0.4296,
+      "y": 0.2929
+    },
+    {
+      "id": "concept:over",
+      "type": "concept",
+      "label": "Over",
+      "weight": 1,
+      "x": 0.3554,
+      "y": 0.4456
+    },
+    {
+      "id": "concept:table",
+      "type": "concept",
+      "label": "Table",
+      "weight": 1,
+      "x": 0.2265,
+      "y": 0.5771
+    },
+    {
+      "id": "concept:for",
+      "type": "concept",
+      "label": "For",
+      "weight": 2,
+      "x": 0.0314,
+      "y": 0.4188
+    },
+    {
+      "id": "concept:methods",
+      "type": "concept",
+      "label": "Methods",
+      "weight": 1,
+      "x": -0.1046,
+      "y": 0.4582
+    },
+    {
+      "id": "concept:hierarchical",
+      "type": "concept",
+      "label": "Hierarchical",
+      "weight": 1,
+      "x": -0.26,
+      "y": 0.4503
+    },
+    {
+      "id": "concept:memory",
+      "type": "concept",
+      "label": "Memory",
+      "weight": 1,
+      "x": -0.4178,
+      "y": 0.3877
+    },
+    {
+      "id": "concept:index",
+      "type": "concept",
+      "label": "Index",
+      "weight": 1,
+      "x": -0.5586,
+      "y": 0.269
+    },
+    {
+      "id": "concept:multi-stage",
+      "type": "concept",
+      "label": "Multi Stage",
+      "weight": 1,
+      "x": -0.4153,
+      "y": 0.0626
+    },
+    {
+      "id": "concept:accuracy",
+      "type": "concept",
+      "label": "Accuracy",
+      "weight": 1,
+      "x": -0.4648,
+      "y": -0.07
+    },
+    {
+      "id": "paper:arxiv:2026.06",
+      "type": "paper",
+      "label": "X chromosome inactivation as a novel mechanism for chondrogenesis",
+      "article_id": "arxiv:2026.06",
+      "source": "2026.06.23.733966v1.full.pdf",
+      "url": "https://www.biorxiv.org/content/10.64898/2026.06.23.733966v1.full.pdf",
+      "domain": "research",
+      "category": "developmental biology",
+      "tags": [
+        "developmental biology",
+        "biorxiv"
+      ],
+      "abstract": "",
+      "weight": 1,
+      "x": -0.7668,
+      "y": -0.3176
+    },
+    {
+      "id": "category:developmental-biology",
+      "type": "category",
+      "label": "developmental biology",
+      "weight": 1,
+      "x": -0.1414,
+      "y": 0.1414
+    },
+    {
+      "id": "concept:developmental",
+      "type": "concept",
+      "label": "Developmental",
+      "weight": 1,
+      "x": -0.4685,
+      "y": -0.2256
+    },
+    {
+      "id": "concept:biology",
+      "type": "concept",
+      "label": "Biology",
+      "weight": 1,
+      "x": -0.4178,
+      "y": -0.3877
+    },
+    {
+      "id": "concept:biorxiv",
+      "type": "concept",
+      "label": "Biorxiv",
+      "weight": 1,
+      "x": -0.31,
+      "y": -0.5369
+    },
+    {
+      "id": "concept:chromosome",
+      "type": "concept",
+      "label": "Chromosome",
+      "weight": 1,
+      "x": -0.0935,
+      "y": -0.4095
+    },
+    {
+      "id": "concept:inactivation",
+      "type": "concept",
+      "label": "Inactivation",
+      "weight": 1,
+      "x": 0.0351,
+      "y": -0.4687
+    },
+    {
+      "id": "concept:novel",
+      "type": "concept",
+      "label": "Novel",
+      "weight": 1,
+      "x": 0.19,
+      "y": -0.4841
+    },
+    {
+      "id": "concept:mechanism",
+      "type": "concept",
+      "label": "Mechanism",
+      "weight": 1,
+      "x": 0.3554,
+      "y": -0.4456
+    },
+    {
+      "id": "concept:chondrogenesis",
+      "type": "concept",
+      "label": "Chondrogenesis",
+      "weight": 1,
+      "x": 0.5123,
+      "y": -0.3493
+    },
+    {
+      "id": "concept:research",
+      "type": "concept",
+      "label": "Research",
+      "weight": 1,
+      "x": 0.4013,
+      "y": -0.1238
+    }
+  ],
+  "edges": [
+    {
+      "id": "IN_DOMAIN:paper:arxiv:2504.01346v4->domain:research",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "domain:research",
+      "relation": "IN_DOMAIN",
+      "weight": 1
+    },
+    {
+      "id": "IN_CATEGORY:paper:arxiv:2504.01346v4->category:cs-cl",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "category:cs-cl",
+      "relation": "IN_CATEGORY",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:tables",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:tables",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:knowledge",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:knowledge",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:t-rag",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:t-rag",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:over",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:over",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:table",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:table",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:for",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:for",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:methods",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:methods",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:hierarchical",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:hierarchical",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:memory",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:memory",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:index",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:index",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:multi-stage",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:multi-stage",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:accuracy",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:accuracy",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "IN_DOMAIN:paper:arxiv:2026.06->domain:research",
+      "source": "paper:arxiv:2026.06",
+      "target": "domain:research",
+      "relation": "IN_DOMAIN",
+      "weight": 1
+    },
+    {
+      "id": "IN_CATEGORY:paper:arxiv:2026.06->category:developmental-biology",
+      "source": "paper:arxiv:2026.06",
+      "target": "category:developmental-biology",
+      "relation": "IN_CATEGORY",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:developmental",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:developmental",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:biology",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:biology",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:biorxiv",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:biorxiv",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:chromosome",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:chromosome",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:inactivation",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:inactivation",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:novel",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:novel",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:mechanism",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:mechanism",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:for",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:for",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:chondrogenesis",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:chondrogenesis",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:research",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:research",
+      "relation": "MENTIONS",
+      "weight": 1
+    }
+  ],
+  "scope": {
+    "domain": null,
+    "category": null,
+    "article_ids": [
+      "arxiv:2026.06",
+      "arxiv:2504.01346v4"
+    ]
+  },
+  "stats": {
+    "paper_count": 2,
+    "concept_count": 21,
+    "edge_count": 26
+  },
+  "stale": false
+}

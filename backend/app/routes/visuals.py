@@ -3,15 +3,30 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from app.rag.vector_store import index_visual_assets
-from app.rag.visual_analyzer import UPLOAD_IMAGE_DIR, VISUAL_ASSET_DIR, extract_pdf_visuals
+from app.rag.visual_analyzer import (
+    UPLOAD_IMAGE_DIR,
+    VISUAL_ASSET_DIR,
+    extract_pdf_visuals,
+    save_captured_pdf_visual,
+)
 from app.storage.visual_assets import list_visual_assets
 
 
 router = APIRouter(prefix="/visuals", tags=["visuals"])
 
 UPLOAD_FOLDER = Path(__file__).resolve().parents[1] / "data" / "uploaded_docs"
+
+
+class CaptureVisualRequest(BaseModel):
+    source: str
+    image_data: str
+    article_id: str | None = None
+    title: str | None = None
+    page: int | None = None
+    caption: str | None = None
 
 
 def _safe_pdf_source(source: str) -> str:
@@ -63,6 +78,42 @@ def extract_document_visuals(source: str, max_images: int = 20) -> Dict[str, Any
     return {
         "status": "extracted",
         "visuals": assets,
+    }
+
+
+@router.post("/capture")
+def capture_document_visual(request: CaptureVisualRequest) -> Dict[str, Any]:
+    safe_source = _safe_pdf_source(request.source)
+    pdf_path = UPLOAD_FOLDER / safe_source
+
+    if not pdf_path.exists():
+        raise HTTPException(status_code=404, detail=f"PDF not found: {safe_source}")
+
+    metadata = {
+        "article_id": request.article_id or "",
+        "title": request.title or Path(safe_source).stem.replace("_", " "),
+        "tags": ["pdf-region", "visual", "figure", "graph"],
+    }
+
+    try:
+        asset = save_captured_pdf_visual(
+            source=safe_source,
+            article_id=metadata["article_id"],
+            title=metadata["title"],
+            page=request.page,
+            image_data=request.image_data,
+            caption=request.caption or "",
+        )
+        index_visual_assets([asset], article_metadata=metadata)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save captured visual: {exc}",
+        ) from exc
+
+    return {
+        "status": "captured",
+        "visual": asset,
     }
 
 

@@ -23,6 +23,7 @@ from app.agents.tools import (
     small_talk_tool,
     summarize_paper_tool,
 )
+from app.agents.workflow import is_workflow_request, workflow_agent_tool
 from app.rag.generator import get_llm
 from app.rag.prompt_cache import cached_llm_text
 
@@ -43,6 +44,7 @@ INTENTS: set[str] = {
     "summarize_paper",
     "generate_visualization",
     "export_visualization_notion",
+    "workflow_agent",
 }
 
 
@@ -91,6 +93,9 @@ def _heuristic_intent(question: str) -> AgentIntent | None:
 
     if _looks_like_small_talk(question):
         return "small_talk"
+
+    if is_workflow_request(question):
+        return "workflow_agent"
 
     if _looks_like_paper_url(question) and any(
         phrase in lowered
@@ -290,6 +295,7 @@ Allowed intents:
 - summarize_paper: summarize the selected/indexed paper or research context
 - generate_visualization: generate a Mermaid diagram or visualization from a paper/topic
 - export_visualization_notion: generate a visualization and save it to Notion
+- workflow_agent: plan and run a multi-step research workflow that may combine local library search, Graph RAG, external paper search, ranking, ingestion, topology rebuilds, and summary reporting
 
 Return only one intent string.
 
@@ -361,6 +367,9 @@ def route_intent(state: AgentState) -> str:
     if intent == "export_visualization_notion":
         return "export_visualization_notion"
 
+    if intent == "workflow_agent":
+        return "workflow_agent"
+
     return "rag_question"
 
 
@@ -383,6 +392,7 @@ def build_agent_graph():
     graph.add_node("summarize_paper", summarize_paper_tool)
     graph.add_node("generate_visualization", generate_visualization_tool)
     graph.add_node("export_visualization_notion", export_visualization_notion_tool)
+    graph.add_node("workflow_agent", workflow_agent_tool)
 
     graph.set_entry_point("classify_intent")
     graph.add_conditional_edges(
@@ -404,6 +414,7 @@ def build_agent_graph():
             "summarize_paper": "summarize_paper",
             "generate_visualization": "generate_visualization",
             "export_visualization_notion": "export_visualization_notion",
+            "workflow_agent": "workflow_agent",
         },
     )
     graph.add_edge("small_talk", END)
@@ -421,6 +432,7 @@ def build_agent_graph():
     graph.add_edge("summarize_paper", END)
     graph.add_edge("generate_visualization", END)
     graph.add_edge("export_visualization_notion", END)
+    graph.add_edge("workflow_agent", END)
 
     return graph.compile()
 

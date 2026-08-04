@@ -1,5 +1,6 @@
 import base64
 import mimetypes
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -82,6 +83,16 @@ def _safe_stem(value: str) -> str:
     return "".join(char if char.isalnum() or char in "-_" else "_" for char in value)[:90]
 
 
+def _decode_image_data(image_data: str) -> bytes:
+    if "," in image_data and image_data.lower().startswith("data:"):
+        image_data = image_data.split(",", 1)[1]
+
+    try:
+        return base64.b64decode(image_data, validate=True)
+    except Exception as exc:
+        raise ValueError("Invalid image data.") from exc
+
+
 def save_uploaded_image(
     *,
     filename: str,
@@ -120,6 +131,52 @@ def save_uploaded_image(
         "domain": domain,
         "category": category,
     }
+
+
+def save_captured_pdf_visual(
+    *,
+    source: str,
+    image_data: str,
+    article_id: str = "",
+    title: str = "",
+    page: int | None = None,
+    caption: str = "",
+) -> Dict[str, Any]:
+    """
+    Save a user-cropped PDF region as a visual asset.
+
+    This is for manually capturing figures/graphs from the rendered PDF canvas,
+    instead of extracting every embedded image in the document.
+    """
+    image_bytes = _decode_image_data(image_data)
+    if not image_bytes:
+        raise ValueError("Empty image data.")
+
+    VISUAL_ASSET_DIR.mkdir(parents=True, exist_ok=True)
+    page_label = f"p{page}" if page else "page"
+    output_name = (
+        f"{_safe_stem(Path(source).stem)}_{page_label}_capture_{uuid.uuid4().hex[:10]}.png"
+    )
+    output_path = VISUAL_ASSET_DIR / output_name
+    output_path.write_bytes(image_bytes)
+
+    context = title or Path(source).stem.replace("_", " ")
+    generated_caption = caption_image(
+        output_path,
+        context=caption or context,
+        page=page,
+    )
+
+    return create_visual_asset(
+        source=source,
+        article_id=article_id,
+        title=title or context,
+        page=page,
+        image_path=str(output_path),
+        image_url=f"/visuals/{output_name}/image",
+        caption=generated_caption,
+        asset_type="pdf_region",
+    )
 
 
 def extract_pdf_visuals(

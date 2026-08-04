@@ -1,0 +1,634 @@
+{
+  "nodes": [
+    {
+      "id": "paper:arxiv:2026.06",
+      "type": "paper",
+      "label": "X chromosome inactivation as a novel mechanism for chondrogenesis",
+      "article_id": "arxiv:2026.06",
+      "source": "2026.06.23.733966v1.full.pdf",
+      "url": "https://www.biorxiv.org/content/10.64898/2026.06.23.733966v1.full.pdf",
+      "domain": "research",
+      "category": "developmental biology",
+      "tags": [
+        "developmental biology",
+        "biorxiv"
+      ],
+      "abstract": "",
+      "weight": 1,
+      "x": 0.7206,
+      "y": 0.2985
+    },
+    {
+      "id": "domain:research",
+      "type": "domain",
+      "label": "research",
+      "weight": 3,
+      "x": 0.0,
+      "y": -0.0
+    },
+    {
+      "id": "category:developmental-biology",
+      "type": "category",
+      "label": "developmental biology",
+      "weight": 1,
+      "x": 0.1061,
+      "y": -0.1061
+    },
+    {
+      "id": "concept:developmental",
+      "type": "concept",
+      "label": "Developmental",
+      "weight": 1,
+      "x": 0.42,
+      "y": 0.0
+    },
+    {
+      "id": "concept:biology",
+      "type": "concept",
+      "label": "Biology",
+      "weight": 1,
+      "x": 0.4604,
+      "y": 0.0946
+    },
+    {
+      "id": "concept:biorxiv",
+      "type": "concept",
+      "label": "Biorxiv",
+      "weight": 1,
+      "x": 0.4779,
+      "y": 0.2051
+    },
+    {
+      "id": "concept:chromosome",
+      "type": "concept",
+      "label": "Chromosome",
+      "weight": 1,
+      "x": 0.4678,
+      "y": 0.3256
+    },
+    {
+      "id": "concept:inactivation",
+      "type": "concept",
+      "label": "Inactivation",
+      "weight": 1,
+      "x": 0.4272,
+      "y": 0.4494
+    },
+    {
+      "id": "concept:novel",
+      "type": "concept",
+      "label": "Novel",
+      "weight": 1,
+      "x": 0.2222,
+      "y": 0.3564
+    },
+    {
+      "id": "concept:mechanism",
+      "type": "concept",
+      "label": "Mechanism",
+      "weight": 1,
+      "x": 0.1632,
+      "y": 0.4407
+    },
+    {
+      "id": "concept:for",
+      "type": "concept",
+      "label": "For",
+      "weight": 3,
+      "x": 0.0787,
+      "y": 0.514
+    },
+    {
+      "id": "concept:chondrogenesis",
+      "type": "concept",
+      "label": "Chondrogenesis",
+      "weight": 1,
+      "x": -0.0289,
+      "y": 0.5693
+    },
+    {
+      "id": "concept:research",
+      "type": "concept",
+      "label": "Research",
+      "weight": 1,
+      "x": -0.1554,
+      "y": 0.6002
+    },
+    {
+      "id": "paper:arxiv:2502.07223v1",
+      "type": "paper",
+      "label": "Graph RAG-Tool Fusion",
+      "article_id": "arxiv:2502.07223v1",
+      "source": "2502.07223v1_graph_rag_tool_fusion.pdf",
+      "url": "https://arxiv.org/abs/2502.07223v1",
+      "domain": "research",
+      "category": "cs.cl",
+      "tags": [
+        "cs.cl"
+      ],
+      "abstract": "Recent developments in retrieval-augmented generation (RAG) for selecting relevant tools from a tool knowledge base enable LLM agents to scale their complex tool calling capabilities to hundreds or thousands of external tools, APIs, or agents-as-tools. However, traditional RAG-based tool retrieval fails to capture structured dependencies between tools, limiting the retrieval accuracy of a retrieved tool's dependencies. For example, among a vector database of tools, a \"get stock price\" API requires a \"stock ticker\" parameter from a \"get stock ticker\" API, and both depend on OS-level internet connectivity tools. In this paper, we address this limitation by introducing Graph RAG-Tool Fusion, a novel plug-and-play approach that combines the strengths of vector-based retrieval with efficient graph traversal to capture all relevant tools (nodes) along with any nested dependencies (edges) within the predefined tool knowledge graph. We also present ToolLinkOS, a new tool selection benchmark of 573 fictional tools, spanning over 15 industries, each with an average of 6.3 tool dependencies. We demonstrate that Graph RAG-Tool Fusion achieves absolute improvements of 71.7% and 22.1% over na\u00efve RAG on ToolLinkOS and ToolSandbox benchmarks, respectively (mAP@10). ToolLinkOS dataset is available at https://github.com/EliasLumer/Graph-RAG-Tool-Fusion-ToolLinkOS",
+      "weight": 1,
+      "x": -0.6585,
+      "y": 0.5053
+    },
+    {
+      "id": "category:cs-cl",
+      "type": "category",
+      "label": "cs.cl",
+      "weight": 2,
+      "x": -0.1414,
+      "y": 0.1414
+    },
+    {
+      "id": "concept:tools",
+      "type": "concept",
+      "label": "Tools",
+      "weight": 1,
+      "x": -0.185,
+      "y": 0.3771
+    },
+    {
+      "id": "concept:tool",
+      "type": "concept",
+      "label": "Tool",
+      "weight": 1,
+      "x": -0.2877,
+      "y": 0.3717
+    },
+    {
+      "id": "concept:dependencies",
+      "type": "concept",
+      "label": "Dependencies",
+      "weight": 1,
+      "x": -0.3946,
+      "y": 0.3387
+    },
+    {
+      "id": "concept:rag-tool",
+      "type": "concept",
+      "label": "Rag Tool",
+      "weight": 1,
+      "x": -0.4984,
+      "y": 0.2766
+    },
+    {
+      "id": "concept:fusion",
+      "type": "concept",
+      "label": "Fusion",
+      "weight": 1,
+      "x": -0.5916,
+      "y": 0.1856
+    },
+    {
+      "id": "concept:stock",
+      "type": "concept",
+      "label": "Stock",
+      "weight": 1,
+      "x": -0.4178,
+      "y": 0.0425
+    },
+    {
+      "id": "concept:toollinkos",
+      "type": "concept",
+      "label": "Toollinkos",
+      "weight": 1,
+      "x": -0.4676,
+      "y": -0.0475
+    },
+    {
+      "id": "concept:relevant",
+      "type": "concept",
+      "label": "Relevant",
+      "weight": 1,
+      "x": -0.4962,
+      "y": -0.1557
+    },
+    {
+      "id": "concept:knowledge",
+      "type": "concept",
+      "label": "Knowledge",
+      "weight": 2,
+      "x": -0.4984,
+      "y": -0.2766
+    },
+    {
+      "id": "concept:capture",
+      "type": "concept",
+      "label": "Capture",
+      "weight": 1,
+      "x": -0.4704,
+      "y": -0.4039
+    },
+    {
+      "id": "concept:get",
+      "type": "concept",
+      "label": "Get",
+      "weight": 1,
+      "x": -0.2571,
+      "y": -0.3321
+    },
+    {
+      "id": "paper:arxiv:2504.01346v4",
+      "type": "paper",
+      "label": "RAG over Tables: Hierarchical Memory Index, Multi-Stage Retrieval, and Benchmarking",
+      "article_id": "arxiv:2504.01346v4",
+      "source": "2504.01346v4_rag_over_tables_hierarchical_memory_index_multi_stage_retrieval_and_benchmarking.pdf",
+      "url": "https://arxiv.org/abs/2504.01346v4",
+      "domain": "research",
+      "category": "cs.cl",
+      "tags": [
+        "cs.cl",
+        "cs.ir",
+        "cs.lg"
+      ],
+      "abstract": "Retrieval-Augmented Generation (RAG) enhances Large Language Models (LLMs) by integrating them with an external knowledge base to improve the answer relevance and accuracy. In real-world scenarios, beyond pure text, a substantial amount of knowledge is stored in tables, and user questions often require retrieving answers that are distributed across multiple tables. Retrieving knowledge from a table corpora (i.e., various individual tables) for a question remains nascent, at least, for (i) how to understand intra- and inter-table knowledge effectively, (ii) how to filter unnecessary tables and how to retrieve the most relevant tables efficiently, (iii) how to prompt LLMs to infer over the retrieval, (iv) how to evaluate the corresponding performance in a realistic setting. Facing the above challenges, in this paper, we first propose a table-corpora-aware RAG framework, named T-RAG, which consists of the hierarchical memory index, multi-stage retrieval, and graph-aware prompting for effective and efficient table knowledge retrieval and inference. Further, we first develop a multi-table question answering benchmark named MultiTableQA, which spans 3 different task types, 57,193 tables, and 23,758 questions in total, and the sources are all from real-world scenarios. Based on MultiTableQA, we did the holistic comparison over table retrieval methods, RAG methods, and table-to-graph representation learning methods, where T-RAG shows the leading accuracy, recall, and running time performance. Also, under T-RAG, we evaluate the inference ability upgrade of different LLMs. Code and Data are available at https://github.com/jiaruzouu/T-RAG",
+      "weight": 1,
+      "x": -0.1149,
+      "y": -0.8725
+    },
+    {
+      "id": "concept:tables",
+      "type": "concept",
+      "label": "Tables",
+      "weight": 1,
+      "x": -0.207,
+      "y": -0.422
+    },
+    {
+      "id": "concept:t-rag",
+      "type": "concept",
+      "label": "T Rag",
+      "weight": 1,
+      "x": -0.1303,
+      "y": -0.5034
+    },
+    {
+      "id": "concept:over",
+      "type": "concept",
+      "label": "Over",
+      "weight": 1,
+      "x": -0.0289,
+      "y": -0.5693
+    },
+    {
+      "id": "concept:table",
+      "type": "concept",
+      "label": "Table",
+      "weight": 1,
+      "x": 0.0939,
+      "y": -0.6129
+    },
+    {
+      "id": "concept:methods",
+      "type": "concept",
+      "label": "Methods",
+      "weight": 1,
+      "x": 0.1459,
+      "y": -0.3939
+    },
+    {
+      "id": "concept:hierarchical",
+      "type": "concept",
+      "label": "Hierarchical",
+      "weight": 1,
+      "x": 0.2486,
+      "y": -0.3989
+    },
+    {
+      "id": "concept:memory",
+      "type": "concept",
+      "label": "Memory",
+      "weight": 1,
+      "x": 0.3583,
+      "y": -0.3769
+    },
+    {
+      "id": "concept:index",
+      "type": "concept",
+      "label": "Index",
+      "weight": 1,
+      "x": 0.4678,
+      "y": -0.3256
+    },
+    {
+      "id": "concept:multi-stage",
+      "type": "concept",
+      "label": "Multi Stage",
+      "weight": 1,
+      "x": 0.5698,
+      "y": -0.2445
+    },
+    {
+      "id": "concept:accuracy",
+      "type": "concept",
+      "label": "Accuracy",
+      "weight": 1,
+      "x": 0.4114,
+      "y": -0.0845
+    }
+  ],
+  "edges": [
+    {
+      "id": "IN_DOMAIN:paper:arxiv:2026.06->domain:research",
+      "source": "paper:arxiv:2026.06",
+      "target": "domain:research",
+      "relation": "IN_DOMAIN",
+      "weight": 1
+    },
+    {
+      "id": "IN_CATEGORY:paper:arxiv:2026.06->category:developmental-biology",
+      "source": "paper:arxiv:2026.06",
+      "target": "category:developmental-biology",
+      "relation": "IN_CATEGORY",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:developmental",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:developmental",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:biology",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:biology",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:biorxiv",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:biorxiv",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:chromosome",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:chromosome",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:inactivation",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:inactivation",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:novel",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:novel",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:mechanism",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:mechanism",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:for",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:for",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:chondrogenesis",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:chondrogenesis",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2026.06->concept:research",
+      "source": "paper:arxiv:2026.06",
+      "target": "concept:research",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "IN_DOMAIN:paper:arxiv:2502.07223v1->domain:research",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "domain:research",
+      "relation": "IN_DOMAIN",
+      "weight": 1
+    },
+    {
+      "id": "IN_CATEGORY:paper:arxiv:2502.07223v1->category:cs-cl",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "category:cs-cl",
+      "relation": "IN_CATEGORY",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:tools",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:tools",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:tool",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:tool",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:dependencies",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:dependencies",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:rag-tool",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:rag-tool",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:fusion",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:fusion",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:stock",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:stock",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:toollinkos",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:toollinkos",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:for",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:for",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:relevant",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:relevant",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:knowledge",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:knowledge",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:capture",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:capture",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2502.07223v1->concept:get",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "concept:get",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "IN_DOMAIN:paper:arxiv:2504.01346v4->domain:research",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "domain:research",
+      "relation": "IN_DOMAIN",
+      "weight": 1
+    },
+    {
+      "id": "IN_CATEGORY:paper:arxiv:2504.01346v4->category:cs-cl",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "category:cs-cl",
+      "relation": "IN_CATEGORY",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:tables",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:tables",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:knowledge",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:knowledge",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:t-rag",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:t-rag",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:over",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:over",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:table",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:table",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:for",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:for",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:methods",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:methods",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:hierarchical",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:hierarchical",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:memory",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:memory",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:index",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:index",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:multi-stage",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:multi-stage",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "MENTIONS:paper:arxiv:2504.01346v4->concept:accuracy",
+      "source": "paper:arxiv:2504.01346v4",
+      "target": "concept:accuracy",
+      "relation": "MENTIONS",
+      "weight": 1
+    },
+    {
+      "id": "SIMILAR_TO:paper:arxiv:2502.07223v1->paper:arxiv:2504.01346v4",
+      "source": "paper:arxiv:2502.07223v1",
+      "target": "paper:arxiv:2504.01346v4",
+      "relation": "SIMILAR_TO",
+      "weight": 2
+    }
+  ],
+  "scope": {
+    "domain": null,
+    "category": null,
+    "article_ids": [
+      "arxiv:2026.06",
+      "arxiv:2502.07223v1",
+      "arxiv:2504.01346v4"
+    ]
+  },
+  "stats": {
+    "paper_count": 3,
+    "concept_count": 31,
+    "edge_count": 41
+  },
+  "stale": false
+}

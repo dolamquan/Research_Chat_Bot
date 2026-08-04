@@ -6,7 +6,6 @@ from app.routes import (
     agent_chat,
     annotations,
     articles,
-    brief,
     chat,
     clusters,
     crawler,
@@ -40,7 +39,6 @@ app.include_router(chat.router)
 app.include_router(agent_chat.router)
 app.include_router(annotations.router)
 app.include_router(articles.router)
-app.include_router(brief.router)
 app.include_router(clusters.router)
 app.include_router(crawler.router)
 app.include_router(documents.router)

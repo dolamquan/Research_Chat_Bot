@@ -151,6 +151,28 @@
     color: var(--foreground);
   }
 
+  .react-pdf__Page__textContent ::selection,
+  .react-pdf__Page__textContent span::selection,
+  .react-pdf__Page .textLayer ::selection,
+  .react-pdf__Page .textLayer span::selection,
+  .textLayer ::selection,
+  .textLayer span::selection {
+    background: rgba(250, 204, 21, 0.38) !important;
+    color: transparent !important;
+    text-shadow: none !important;
+  }
+
+  .react-pdf__Page__textContent ::-moz-selection,
+  .react-pdf__Page__textContent span::-moz-selection,
+  .react-pdf__Page .textLayer ::-moz-selection,
+  .react-pdf__Page .textLayer span::-moz-selection,
+  .textLayer ::-moz-selection,
+  .textLayer span::-moz-selection {
+    background: rgba(250, 204, 21, 0.38) !important;
+    color: transparent !important;
+    text-shadow: none !important;
+  }
+
   * {
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, 0.42) rgba(255, 255, 255, 0.05);

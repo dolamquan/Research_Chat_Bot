@@ -27,7 +27,6 @@ import type {
   McpCallResponse,
   McpToolsResponse,
   RetrievalStrategy,
-  ResearchBriefResponse,
   Source,
   VisualAsset,
 } from "./types";
@@ -191,26 +190,6 @@ export function explainGraphRagPath(payload: {
   });
 }
 
-export function generateResearchBrief(payload: {
-  topic?: string;
-  domain?: string;
-  category?: string;
-  articleIds?: string[];
-  limit?: number;
-}): Promise<ResearchBriefResponse> {
-  return requestJson("/brief/research", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      topic: payload.topic || "",
-      domain: payload.domain || null,
-      category: payload.category || null,
-      article_ids: payload.articleIds || [],
-      limit: payload.limit ?? 8,
-    }),
-  });
-}
-
 export function getEvaluationRuns(): Promise<EvaluationRunsResponse> {
   return requestJson("/evaluate/runs");
 }
@@ -289,6 +268,35 @@ export function extractDocumentVisuals(
     `/visuals/extract?source=${encodeURIComponent(source)}&max_images=${maxImages}`,
     { method: "POST" },
   );
+}
+
+export function captureDocumentVisual({
+  source,
+  imageData,
+  articleId,
+  title,
+  page,
+  caption,
+}: {
+  source: string;
+  imageData: string;
+  articleId?: string;
+  title?: string;
+  page?: number;
+  caption?: string;
+}): Promise<{ status: string; visual: VisualAsset }> {
+  return requestJson("/visuals/capture", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      source,
+      image_data: imageData,
+      article_id: articleId,
+      title,
+      page,
+      caption,
+    }),
+  });
 }
 
 export function uploadImageAsset({

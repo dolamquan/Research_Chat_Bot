@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ChevronUp,
   FileText,
+  ImagePlus,
   NotebookPen,
   MessageSquarePlus,
   Minus,
@@ -17,6 +18,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
 import {
+  captureDocumentVisual,
   createAnnotation,
   deleteAnnotation,
   extractDocumentVisuals,
@@ -36,6 +38,13 @@ type TextNodeSlice = {
 
 type HighlightRect = {
   id: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type CaptureRect = {
   left: number;
   top: number;
   width: number;
@@ -116,6 +125,11 @@ export function DocumentReader({
   const [visualStatus, setVisualStatus] = useState("");
   const [isSavingAnnotation, setIsSavingAnnotation] = useState(false);
   const [isExtractingVisuals, setIsExtractingVisuals] = useState(false);
+  const [captureMode, setCaptureMode] = useState(false);
+  const [captureStart, setCaptureStart] = useState<{ x: number; y: number } | null>(null);
+  const [captureRect, setCaptureRect] = useState<CaptureRect | null>(null);
+  const [captureToolbar, setCaptureToolbar] = useState<{ x: number; y: number } | null>(null);
+  const [isSavingCapture, setIsSavingCapture] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(true);
   const [detailsHeight, setDetailsHeight] = useState(360);
   const [loadError, setLoadError] = useState("");
@@ -162,6 +176,10 @@ export function DocumentReader({
     setNoteEditorOpen(false);
     setAnnotationStatus("");
     setVisualStatus("");
+    setCaptureMode(false);
+    setCaptureStart(null);
+    setCaptureRect(null);
+    setCaptureToolbar(null);
 
     return () => {
       active = false;
@@ -243,7 +261,7 @@ export function DocumentReader({
         readerRect.width - 320,
         Math.max(16, selectionRect.left - readerRect.left + selectionRect.width / 2 - 80),
       ),
-      y: Math.max(62, selectionRect.top - readerRect.top - 46),
+      y: Math.max(62, selectionRect.top - readerRect.top - 76),
     });
   }
 
@@ -368,6 +386,175 @@ export function DocumentReader({
       cluster_id: document.cluster_id,
       cluster_label: document.cluster_label,
     });
+  }
+
+  function beginFigureCapture() {
+    setCaptureMode(true);
+    setCaptureStart(null);
+    setCaptureRect(null);
+    setCaptureToolbar(null);
+    setSelectedText("");
+    setSelectionToolbar(null);
+    setNoteEditorOpen(false);
+    setVisualStatus("Drag across a figure or graph on the PDF page.");
+    window.getSelection()?.removeAllRanges();
+  }
+
+  function cancelFigureCapture() {
+    setCaptureMode(false);
+    setCaptureStart(null);
+    setCaptureRect(null);
+    setCaptureToolbar(null);
+  }
+
+  function getCapturePoint(event: ReactPointerEvent<HTMLDivElement>) {
+    const shellRect = pageShellRef.current?.getBoundingClientRect();
+    if (!shellRect) return null;
+
+    return {
+      x: Math.max(0, Math.min(shellRect.width, event.clientX - shellRect.left)),
+      y: Math.max(0, Math.min(shellRect.height, event.clientY - shellRect.top)),
+    };
+  }
+
+  function normalizeCaptureRect(
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+  ): CaptureRect {
+    const left = Math.min(start.x, end.x);
+    const top = Math.min(start.y, end.y);
+    return {
+      left,
+      top,
+      width: Math.abs(end.x - start.x),
+      height: Math.abs(end.y - start.y),
+    };
+  }
+
+  function handleCapturePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!captureMode) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const point = getCapturePoint(event);
+    if (!point) return;
+
+    setCaptureStart(point);
+    setCaptureRect({ left: point.x, top: point.y, width: 0, height: 0 });
+    setCaptureToolbar(null);
+  }
+
+  function handleCapturePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!captureMode || !captureStart) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const point = getCapturePoint(event);
+    if (!point) return;
+
+    setCaptureRect(normalizeCaptureRect(captureStart, point));
+  }
+
+  function handleCapturePointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!captureMode || !captureStart) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const point = getCapturePoint(event);
+    if (!point) return;
+
+    const nextRect = normalizeCaptureRect(captureStart, point);
+    setCaptureStart(null);
+
+    if (nextRect.width < 24 || nextRect.height < 24) {
+      setCaptureRect(null);
+      setCaptureToolbar(null);
+      return;
+    }
+
+    setCaptureRect(nextRect);
+    setCaptureToolbar({
+      x: Math.max(12, nextRect.left + nextRect.width / 2 - 112),
+      y: Math.max(12, nextRect.top - 54),
+    });
+  }
+
+  function cropCurrentPage(rect: CaptureRect): string | null {
+    const shell = pageShellRef.current;
+    const canvas = shell?.querySelector("canvas");
+    if (!shell || !canvas) return null;
+
+    const shellBounds = shell.getBoundingClientRect();
+    const canvasBounds = canvas.getBoundingClientRect();
+    const canvasOffsetX = canvasBounds.left - shellBounds.left;
+    const canvasOffsetY = canvasBounds.top - shellBounds.top;
+    const scaleX = canvas.width / canvasBounds.width;
+    const scaleY = canvas.height / canvasBounds.height;
+
+    const sx = Math.max(0, (rect.left - canvasOffsetX) * scaleX);
+    const sy = Math.max(0, (rect.top - canvasOffsetY) * scaleY);
+    const sw = Math.min(canvas.width - sx, rect.width * scaleX);
+    const sh = Math.min(canvas.height - sy, rect.height * scaleY);
+
+    if (sw < 8 || sh < 8) return null;
+
+    const output = window.document.createElement("canvas");
+    output.width = Math.round(sw);
+    output.height = Math.round(sh);
+
+    const context = output.getContext("2d");
+    if (!context) return null;
+
+    context.drawImage(canvas, sx, sy, sw, sh, 0, 0, output.width, output.height);
+    return output.toDataURL("image/png");
+  }
+
+  async function saveCapturedFigure(pinAfterSave = false) {
+    if (!captureRect || isSavingCapture) return;
+
+    const imageData = cropCurrentPage(captureRect);
+    if (!imageData) {
+      setVisualStatus("Could not capture that region. Try a slightly larger selection.");
+      return;
+    }
+
+    setIsSavingCapture(true);
+    setVisualStatus(pinAfterSave ? "Saving figure and adding it to chat..." : "Saving figure...");
+
+    try {
+      const result = await captureDocumentVisual({
+        source: document.source,
+        articleId: document.article_id,
+        title: document.title,
+        page: pageNumber,
+        imageData,
+        caption: `Selected figure from ${document.title || document.source}, page ${pageNumber}.`,
+      });
+
+      setVisuals((current) => [result.visual, ...current]);
+      setVisualStatus("Saved selected figure.");
+
+      if (pinAfterSave) {
+        addVisualToChat(result.visual);
+      }
+
+      cancelFigureCapture();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      setVisualStatus(
+        message === "Not Found"
+          ? "Could not save selected figure: capture endpoint was not found. Restart the backend so it loads the new /visuals/capture route."
+          : message
+          ? `Could not save selected figure: ${message}`
+          : "Could not save selected figure.",
+      );
+    } finally {
+      setIsSavingCapture(false);
+    }
   }
 
   function clampDetailsHeight(value: number): number {
@@ -538,6 +725,18 @@ export function DocumentReader({
           <div className="w-px h-5 bg-border mx-1" />
           <button
             type="button"
+            title={captureMode ? "Cancel figure capture" : "Capture figure from page"}
+            onClick={captureMode ? cancelFigureCapture : beginFigureCapture}
+            className={`h-8 px-2 rounded border border-border text-xs flex items-center gap-1.5 hover:bg-secondary ${
+              captureMode ? "bg-secondary text-foreground" : "text-muted-foreground"
+            }`}
+          >
+            <ImagePlus size={13} />
+            Capture
+          </button>
+          <div className="w-px h-5 bg-border mx-1" />
+          <button
+            type="button"
             title={detailsOpen ? "Collapse details" : "Show details"}
             onClick={() => setDetailsOpen((value) => !value)}
             className="h-8 px-2 rounded border border-border text-xs text-muted-foreground flex items-center gap-1.5 hover:text-primary hover:bg-secondary"
@@ -554,7 +753,7 @@ export function DocumentReader({
       <div
         ref={pageContainerRef}
         className="flex-1 min-h-0 overflow-auto bg-[#090a0c] py-5 px-4"
-        onMouseUp={captureSelection}
+        onMouseUp={captureMode ? undefined : captureSelection}
       >
         <Document
           file={getPdfUrl(document.source)}
@@ -585,7 +784,10 @@ export function DocumentReader({
           }
           className="flex justify-center"
         >
-          <div ref={pageShellRef} className="relative">
+          <div
+            ref={pageShellRef}
+            className={`relative ${captureMode ? "select-none" : ""}`}
+          >
             <Page
               pageNumber={pageNumber}
               width={pageWidth}
@@ -598,7 +800,7 @@ export function DocumentReader({
               {savedHighlightRects.map((rect) => (
                 <span
                   key={rect.id}
-                  className="absolute rounded-[2px] border border-primary/70 bg-primary/30 shadow-[0_0_0_1px_rgba(215,211,199,0.18)]"
+                  className="absolute rounded-[2px] border-b-2 border-yellow-500/90 bg-yellow-300/35 shadow-[inset_0_-1px_0_rgba(234,179,8,0.85)] mix-blend-multiply"
                   style={{
                     left: rect.left,
                     top: rect.top,
@@ -608,6 +810,71 @@ export function DocumentReader({
                 />
               ))}
             </div>
+            {captureMode && (
+              <div
+                className="absolute inset-0 z-40 cursor-crosshair"
+                onPointerDown={handleCapturePointerDown}
+                onPointerMove={handleCapturePointerMove}
+                onPointerUp={handleCapturePointerUp}
+                onPointerCancel={cancelFigureCapture}
+              >
+                <div className="absolute left-3 top-3 rounded border border-yellow-500/70 bg-yellow-300/90 px-3 py-2 font-mono text-[10px] font-semibold uppercase tracking-widest text-black shadow-xl backdrop-blur">
+                  Drag around a figure
+                </div>
+                {captureRect && (
+                  <div
+                    className="absolute rounded border-2 border-dashed border-yellow-500 bg-yellow-300/25 shadow-[0_0_0_9999px_rgba(0,0,0,0.18),0_0_0_1px_rgba(234,179,8,0.55)]"
+                    style={{
+                      left: captureRect.left,
+                      top: captureRect.top,
+                      width: captureRect.width,
+                      height: captureRect.height,
+                    }}
+                  />
+                )}
+                {captureRect && captureToolbar && (
+                  <div
+                    className="absolute flex items-center gap-1 rounded-lg border border-yellow-500/50 bg-[#151515]/95 p-1 shadow-2xl backdrop-blur"
+                    style={{
+                      left: captureToolbar.x,
+                      top: captureToolbar.y,
+                    }}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onPointerUp={(event) => event.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      title="Save figure"
+                      disabled={isSavingCapture}
+                      onClick={() => void saveCapturedFigure(false)}
+                      className="flex h-8 items-center gap-1.5 rounded border border-yellow-500/45 px-2 text-[11px] text-yellow-100 hover:bg-yellow-300/15 disabled:opacity-50"
+                    >
+                      <ImagePlus size={14} />
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      title="Use figure in chat"
+                      disabled={isSavingCapture}
+                      onClick={() => void saveCapturedFigure(true)}
+                      className="flex h-8 items-center gap-1.5 rounded bg-yellow-300 px-2 text-[11px] font-medium text-black hover:bg-yellow-200 disabled:opacity-50"
+                    >
+                      <MessageSquarePlus size={14} />
+                      Chat
+                    </button>
+                    <button
+                      type="button"
+                      title="Cancel capture"
+                      disabled={isSavingCapture}
+                      onClick={cancelFigureCapture}
+                      className="flex h-8 w-8 items-center justify-center rounded border border-border text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </Document>
       </div>
@@ -727,11 +994,20 @@ export function DocumentReader({
             </p>
             <button
               type="button"
+              onClick={captureMode ? cancelFigureCapture : beginFigureCapture}
+              className={`ml-auto h-6 px-2 rounded border border-border text-[10px] hover:bg-secondary ${
+                captureMode ? "bg-secondary text-foreground" : "text-foreground"
+              }`}
+            >
+              {captureMode ? "Cancel capture" : "Capture from page"}
+            </button>
+            <button
+              type="button"
               disabled={isExtractingVisuals}
               onClick={() => void extractVisuals()}
-              className="ml-auto h-6 px-2 rounded border border-border text-[10px] text-primary hover:bg-secondary disabled:opacity-40"
+              className="h-6 px-2 rounded border border-border text-[10px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
             >
-              {isExtractingVisuals ? "Extracting" : "Extract"}
+              {isExtractingVisuals ? "Extracting" : "Auto extract"}
             </button>
           </div>
           {visualStatus && (
@@ -748,7 +1024,7 @@ export function DocumentReader({
           <div className="max-h-56 overflow-y-auto">
             {visuals.length === 0 ? (
               <p className="px-3 py-3 text-xs text-muted-foreground">
-                Extract figures to make graphs and images available as chat context.
+                Capture a figure from the visible page, or auto-extract embedded images when needed.
               </p>
             ) : (
               visuals.slice(0, 8).map((visual) => (

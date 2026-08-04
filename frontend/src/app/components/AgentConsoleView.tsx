@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   CheckCircle2,
+  CircleDot,
   Loader2,
+  MinusCircle,
+  XCircle,
 } from "lucide-react";
 
 import { callMcpTool, getAgentSession, getAgentSessions, getMcpTools } from "../api";
@@ -123,6 +126,12 @@ const SLASH_COMMANDS: SlashCommand[] = [
     template: "/resume ",
   },
   {
+    name: "/workflow",
+    label: "Run workflow",
+    description: "Plan and run a multi-step research workflow.",
+    template: "run a research workflow to search papers about ",
+  },
+  {
     name: "/search-papers",
     label: "Search papers",
     description: "Find new external papers across academic sources.",
@@ -198,6 +207,9 @@ const SLASH_COMMANDS: SlashCommand[] = [
 
 const TOOL_HELP = [
   ["retrieve_papers", "Answer research questions using Qdrant retrieval."],
+  ["plan_workflow", "Plan a multi-step research workflow."],
+  ["rank_results", "Rank local, graph, and external candidates against the research goal."],
+  ["query_graph_rag", "Use the local concept graph for relationship-aware context."],
   ["search_papers", "Search for new papers across arXiv, PubMed, bioRxiv, medRxiv, and Semantic Scholar."],
   ["search_arxiv", "Search for new papers from arXiv only."],
   ["search_library", "Find indexed papers in your local library."],
@@ -237,6 +249,7 @@ function helpText(): string {
     ),
     "",
     "Examples:",
+    "  /workflow graph RAG tool routing, rank the top 3, add them, then rebuild topology",
     "  /search-papers graph RAG",
     "  /search-arxiv graph RAG",
     "  /search-library retrieval augmented generation",
@@ -323,6 +336,18 @@ function extractMermaid(content: string): string | null {
 
 function contentWithoutMermaidFence(content: string): string {
   return content.replace(/```mermaid\s*[\s\S]*?```/gi, "[Rendered Mermaid diagram]").trim();
+}
+
+function normalizeAgentCommand(command: string): string {
+  const workflowMatch = command.match(/^\/workflow\b\s*(.*)$/i);
+  if (!workflowMatch) {
+    return command;
+  }
+
+  const workflowTask = workflowMatch[1]?.trim();
+  return workflowTask
+    ? `run a research workflow to ${workflowTask}`
+    : "run a research workflow";
 }
 
 function TerminalLogo() {
@@ -462,6 +487,57 @@ function AgentContent({ content, kind }: { content: string; kind: ConsoleEntry["
         </pre>
       )}
     </>
+  );
+}
+
+function ToolStatusIcon({ status }: { status?: string }) {
+  if (status === "error") {
+    return <XCircle size={12} className="text-destructive" />;
+  }
+
+  if (status === "skipped") {
+    return <MinusCircle size={12} className="text-muted-foreground" />;
+  }
+
+  if (status === "planned") {
+    return <CircleDot size={12} className="text-primary" />;
+  }
+
+  return <CheckCircle2 size={12} className="text-primary" />;
+}
+
+function ToolTimeline({ trace }: { trace: ChatResponse["tool_trace"] }) {
+  if (!trace || trace.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="ml-6 mt-3 border-l border-primary/20 pl-3">
+      <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+        Tool timeline
+      </div>
+      <div className="space-y-1.5">
+        {trace.map((step, index) => (
+          <div
+            key={`${step.tool}-${step.timestamp}-${index}`}
+            className="grid grid-cols-[0.9rem_minmax(8rem,12rem)_1fr] items-start gap-2 text-[11px]"
+          >
+            <ToolStatusIcon status={step.status} />
+            <span className="break-words text-primary">{step.tool}</span>
+            <span
+              title={step.message}
+              className={
+                step.status === "error"
+                  ? "break-words text-destructive"
+                  : "break-words text-muted-foreground"
+              }
+            >
+              {step.message}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -767,7 +843,7 @@ export function AgentConsoleView({
     setIsRunning(true);
 
     try {
-      const response = await onRun(trimmed, {
+      const response = await onRun(normalizeAgentCommand(trimmed), {
         sessionId: activeAgentSessionId,
         chatHistory: agentChatHistory(),
       });
@@ -853,22 +929,9 @@ export function AgentConsoleView({
                 </div>
               )}
 
-              {entry.kind === "agent" &&
-                entry.response.tool_trace &&
-                entry.response.tool_trace.length > 0 && (
-                  <div className="ml-6 mt-3 flex flex-wrap gap-1.5">
-                    {entry.response.tool_trace.map((step) => (
-                      <span
-                        key={`${entry.id}-${step.tool}-${step.timestamp}`}
-                        title={step.message}
-                        className="inline-flex items-center gap-1 rounded border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] text-primary"
-                      >
-                        <CheckCircle2 size={10} />
-                        {step.tool}
-                      </span>
-                    ))}
-                  </div>
-                )}
+              {entry.kind === "agent" && (
+                <ToolTimeline trace={entry.response.tool_trace} />
+              )}
             </div>
           ))}
 
