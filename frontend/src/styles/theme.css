@@ -344,6 +344,22 @@
     box-shadow: none;
   }
 
+  .rm-message-assistant .katex-display,
+  .rm-message-user .katex-display {
+    margin: 0.75rem 0;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.15rem 0;
+    text-align: left;
+  }
+
+  .rm-message-assistant .katex,
+  .rm-message-user .katex {
+    color: inherit;
+    font-size: 1em;
+  }
+
   .rm-kbd {
     border: 1px solid rgba(255, 255, 255, 0.16);
     background: rgba(255, 255, 255, 0.04);

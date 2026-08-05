@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
@@ -6,12 +7,14 @@ from langchain_openai import ChatOpenAI
 from langsmith import traceable
 
 from app.rag.prompt import build_no_context_response, build_rag_prompt
+from app.rag.formula_extractor import extract_document_formula_report
 from app.rag.graph_rag import query_graph_rag
 from app.rag.prompt_cache import cached_llm_text
 from app.rag.query_decomposer import decompose_query_for_retrieval
 from app.rag.query_rewriter import rewrite_query_for_retrieval
 from app.rag.reranker import rerank_chunks, rerank_chunks_parallel
 from app.rag.retriever import retrieve, retrieve_document_chunks
+from app.rag.visual_analyzer import transcribe_formula_image
 
 
 DEFAULT_MODEL = "gpt-4o-mini"
@@ -29,6 +32,11 @@ GREETING_PATTERN = re.compile(
 
 PAPER_REQUEST_PATTERN = re.compile(
     r"\b(paper|papers|article|articles|study|studies|research)\b.*\b(about|on|related|relevant|similar|recommend|show|give|find|list)\b|\b(give|show|find|list|recommend)\b.*\b(paper|papers|article|articles|studies)\b",
+    re.IGNORECASE,
+)
+
+FORMULA_REQUEST_PATTERN = re.compile(
+    r"\b(formula|formulas|equation|equations|math|mathematical|notation|derive|derivation)\b",
     re.IGNORECASE,
 )
 
@@ -207,6 +215,67 @@ def _is_paper_request(query: str) -> bool:
     return bool(PAPER_REQUEST_PATTERN.search(query))
 
 
+def _is_formula_request(query: str) -> bool:
+    return bool(FORMULA_REQUEST_PATTERN.search(query))
+
+
+def _is_visual_source(source: Dict[str, Any]) -> bool:
+    return bool(
+        source.get("image_path")
+        or source.get("image_url")
+        or source.get("document_type") == "visual_asset"
+    )
+
+
+def _pinned_formula_visuals(sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [source for source in sources if _is_visual_source(source)]
+
+
+def _render_formula_visual_answer(
+    query: str,
+    visual_sources: List[Dict[str, Any]],
+    llm: Any,
+) -> str | None:
+    for source in visual_sources:
+        image_path = source.get("image_path")
+        if not image_path:
+            continue
+
+        answer = transcribe_formula_image(
+            image_path=Path(str(image_path)),
+            context=str(source.get("text") or source.get("title") or query),
+            page=source.get("page") if isinstance(source.get("page"), int) else None,
+        )
+        if answer and "could not transcribe" not in answer.lower():
+            return answer
+
+    visual_text = "\n\n".join(
+        str(source.get("text") or source.get("summary") or "")
+        for source in visual_sources
+        if str(source.get("text") or source.get("summary") or "").strip()
+    ).strip()
+
+    if not visual_text:
+        return None
+
+    prompt = f"""
+You are helping render a selected mathematical formula from a research-paper figure.
+
+Use only the selected visual context below. If the exact equation is present or can be directly transcribed from the context, return it as Markdown with a single display LaTeX block delimited by $$ ... $$.
+If the context only describes the formula and does not contain enough exact notation, say that a tighter image crop or OCR transcription is needed.
+Do not invent variables or terms not present in the selected context.
+
+User request:
+{query}
+
+Selected visual context:
+{visual_text}
+
+Answer:
+""".strip()
+    return call_answer_llm(llm=llm, prompt=prompt)
+
+
 def _title_from_source(source: str) -> str:
     title = re.sub(r"\.pdf$", "", source, flags=re.IGNORECASE)
     title = re.sub(r"^\d{4}\.\d+(?:v\d+)?_", "", title)
@@ -293,6 +362,32 @@ def generate_answer(
     retrieval_query = query
     strategy = retrieval_strategy if retrieval_strategy in {"vector", "graph", "hybrid"} else "vector"
 
+    if _is_formula_request(query):
+        formula_visuals = _pinned_formula_visuals(selected_sources)
+        if formula_visuals:
+            visual_answer = _render_formula_visual_answer(
+                query=query,
+                visual_sources=formula_visuals,
+                llm=llm,
+            )
+            if visual_answer:
+                return {
+                    "answer": visual_answer,
+                    "sources": formula_visuals,
+                    "retrieval_strategy": "formula_visual",
+                }
+
+    if document_source and _is_formula_request(query):
+        formula_report = extract_document_formula_report(
+            str(document_source),
+            llm=llm,
+        )
+        return {
+            "answer": formula_report["answer"],
+            "sources": formula_report["sources"],
+            "retrieval_strategy": "formula_extraction",
+        }
+
     if use_whole_document:
         retrieved_chunks = retrieve_document_chunks(
             document_source=str(document_source),
@@ -331,7 +426,9 @@ def generate_answer(
                     )
                 )
 
-        if strategy in {"graph", "hybrid"}:
+        # A selected document should behave like article-only retrieval. Graph-guided
+        # retrieval intentionally searches across the collection, so skip it here.
+        if strategy in {"graph", "hybrid"} and not document_source:
             for current_query in retrieval_queries:
                 retrieved_chunks.extend(
                     _retrieve_graph_guided_chunks(
@@ -374,7 +471,7 @@ def generate_answer(
         retrieved_sources=retrieved_context,
     )
 
-    if _is_paper_request(query) and final_sources:
+    if _is_paper_request(query) and final_sources and not document_source:
         return {
             "answer": _paper_list_answer(final_sources),
             "sources": final_sources,

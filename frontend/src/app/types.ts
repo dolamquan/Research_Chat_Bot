@@ -311,7 +311,7 @@ export type ChatResponse = {
   intent?: string;
   topology?: ClusterGraph | null;
   tool_trace?: AgentToolTrace[];
-  retrieval_strategy?: RetrievalStrategy | "whole_document";
+  retrieval_strategy?: RetrievalStrategy | "whole_document" | "formula_extraction" | "formula_visual";
 };
 
 export type AgentToolTrace = {

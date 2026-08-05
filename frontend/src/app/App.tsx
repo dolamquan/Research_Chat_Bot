@@ -5,6 +5,9 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
+import ReactMarkdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
+import remarkMath from "remark-math";
 import {
   Bot,
   BrainCircuit,
@@ -74,6 +77,7 @@ import type {
 } from "./types";
 
 const EMPTY_GRAPH: ClusterGraph = { clusters: [], documents: [] };
+const KATEX_OPTIONS = { throwOnError: false, strict: false };
 
 class AppErrorBoundary extends Component<
   { children: ReactNode },
@@ -236,28 +240,132 @@ function documentFromArticle(article: Article): ClusterDocument {
   };
 }
 
+function repairMathText(content: string): string {
+  const replacements: Array<[RegExp, string]> = [
+    [/â†|â/g, "←"],
+    [/â†’|â/g, "→"],
+    [/âˆˆ|â/g, "∈"],
+    [/âˆ‰|â/g, "∉"],
+    [/â‰¤|â¤/g, "≤"],
+    [/â‰¥|â¥/g, "≥"],
+    [/â‰ˆ|â/g, "≈"],
+    [/â‰ |â /g, "≠"],
+    [/âˆ’|â/g, "−"],
+    [/âˆ‘|â/g, "∑"],
+    [/âˆ|â/g, "∏"],
+    [/âˆž|â/g, "∞"],
+    [/âˆ¥|â¥/g, "∥"],
+    [/âˆ—|â/g, "∗"],
+    [/Î±/g, "α"],
+    [/Î²/g, "β"],
+    [/Î³/g, "γ"],
+    [/Î´/g, "δ"],
+    [/Îµ/g, "ε"],
+    [/Î»/g, "λ"],
+    [/Î¼/g, "μ"],
+    [/Ïƒ/g, "σ"],
+    [/Ï„/g, "τ"],
+    [/Ï†/g, "φ"],
+  ];
+
+  return replacements.reduce(
+    (text, [pattern, replacement]) => text.replace(pattern, replacement),
+    content,
+  );
+}
+
+function latexEscape(text: string): string {
+  return text
+    .replace(/\\/g, "\\backslash ")
+    .replace(/([{}&#%])/g, "\\$1")
+    .replace(/_/g, "\\_")
+    .replace(/\^/g, "\\^{}");
+}
+
+function mathTextToLatex(text: string): string {
+  return repairMathText(text)
+    .split("\n")
+    .map((line) => latexEscape(line.trim()))
+    .filter(Boolean)
+    .join(" \\\\ ");
+}
+
+function hasPdfFormulaExtractionArtifact(text: string): boolean {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 12) return false;
+
+  const tinyLines = lines.filter((line) => line.length <= 2).length;
+  return tinyLines / lines.length > 0.5;
+}
+
+function shouldRenderTextBlockAsMath(text: string): boolean {
+  if (!text || text.length > 500 || hasPdfFormulaExtractionArtifact(text)) return false;
+
+  const mathSignalCount =
+    text.match(/[=←→∈∉≤≥≈≠∑∏∞∥∗α-ωΑ-Ω]|\\frac|\\sum|\\prod|\\min|\\max|\\operatorname/g)?.length ??
+    0;
+  const proseWordCount =
+    text.match(/\b(the|this|that|context|figure|table|paper|formula|component|retrieval|graph)\b/gi)
+      ?.length ?? 0;
+
+  if (mathSignalCount === 0 && !/\b(arg|max|min|top-k|k\s*=|d\s*=)\b/i.test(text)) {
+    return false;
+  }
+
+  return proseWordCount <= 8 || mathSignalCount >= 4;
+}
+
+function normalizeMathMarkdown(content: string): string {
+  const repaired = repairMathText(content);
+
+  return repaired.replace(
+    /```text\n([\s\S]*?)```/g,
+    (_match, body: string) => {
+      const cleaned = body.trim();
+
+      if (!shouldRenderTextBlockAsMath(cleaned)) {
+        return `\`\`\`text\n${cleaned}\n\`\`\``;
+      }
+
+      return `$$\n\\begin{aligned}\n${mathTextToLatex(cleaned)}\n\\end{aligned}\n$$`;
+    },
+  );
+}
+
 function FormattedText({ content }: { content: string }) {
   return (
-    <div className="space-y-2">
-      {content.split("\n").map((line, index) => {
-        if (!line.trim()) return <div key={index} className="h-1" />;
-
-        const parts = line.split(/(\*\*.*?\*\*)/g);
-        return (
-          <p key={index} className="leading-relaxed">
-            {parts.map((part, partIndex) =>
-              part.startsWith("**") && part.endsWith("**") ? (
-                <strong key={partIndex} className="font-semibold text-foreground">
-                  {part.slice(2, -2)}
-                </strong>
-              ) : (
-                <span key={partIndex}>{part}</span>
-              ),
-            )}
-          </p>
-        );
-      })}
-    </div>
+    <ReactMarkdown
+      remarkPlugins={[remarkMath]}
+      rehypePlugins={[[rehypeKatex, KATEX_OPTIONS]]}
+      components={{
+        p: ({ children }) => <p className="mb-2 leading-relaxed last:mb-0">{children}</p>,
+        strong: ({ children }) => (
+          <strong className="font-semibold text-foreground">{children}</strong>
+        ),
+        ul: ({ children }) => <ul className="mb-2 list-disc space-y-1 pl-5">{children}</ul>,
+        ol: ({ children }) => <ol className="mb-2 list-decimal space-y-1 pl-5">{children}</ol>,
+        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+        code: ({ className, children }) => {
+          const block = typeof className === "string" && className.startsWith("language-");
+          return block ? (
+            <code className="block overflow-x-auto whitespace-pre rounded border border-border bg-background px-3 py-2 font-mono text-xs text-foreground">
+              {children}
+            </code>
+          ) : (
+            <code className="rounded border border-border bg-background px-1 py-0.5 font-mono text-[0.85em]">
+              {children}
+            </code>
+          );
+        },
+        pre: ({ children }) => <pre className="mb-2 overflow-x-auto">{children}</pre>,
+      }}
+    >
+      {normalizeMathMarkdown(content)}
+    </ReactMarkdown>
   );
 }
 
@@ -529,6 +637,7 @@ function AppContent() {
   const [retrievalStrategy, setRetrievalStrategy] = useState<RetrievalStrategy>("hybrid");
   const [input, setInput] = useState("");
   const [activeView, setActiveView] = useState<"chat" | "library" | "crawler" | "reddit" | "notes" | "agent" | "graph" | "evaluation">("chat");
+  const visibleActiveView = activeView === "graph" ? "chat" : activeView;
   const [librarySearch, setLibrarySearch] = useState("");
   const [crawlerDescription, setCrawlerDescription] = useState("");
   const [crawlerCategory, setCrawlerCategory] = useState("");
@@ -577,6 +686,12 @@ function AppContent() {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [isBuildingTopology, setIsBuildingTopology] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (activeView === "graph") {
+      setActiveView("chat");
+    }
+  }, [activeView]);
 
   const activeScope = useMemo(
     () => ({
@@ -1289,35 +1404,31 @@ function AppContent() {
   const activeScopeLabel = scopeLabelFor(selectedDomain, selectedCategory);
   const scopeIsFiltered = Boolean(selectedDomain || selectedCategory);
   const headerTitle =
-    activeView === "crawler"
+    visibleActiveView === "crawler"
       ? "Crawler"
-      : activeView === "reddit"
+      : visibleActiveView === "reddit"
         ? "Reddit"
-      : activeView === "agent"
+      : visibleActiveView === "agent"
         ? "Agent Console"
-      : activeView === "graph"
-        ? "Graph RAG"
-      : activeView === "evaluation"
+      : visibleActiveView === "evaluation"
         ? "Evaluation"
-      : activeView === "library"
+      : visibleActiveView === "library"
         ? "Paper Library"
-        : activeView === "notes"
+        : visibleActiveView === "notes"
           ? "Research Notes"
           : scopeLabel;
   const headerSubtitle =
-    activeView === "crawler"
+    visibleActiveView === "crawler"
       ? "arXiv paper discovery"
-      : activeView === "reddit"
+      : visibleActiveView === "reddit"
         ? "Community research signals"
-      : activeView === "agent"
+      : visibleActiveView === "agent"
         ? "Internal research tool calling"
-      : activeView === "graph"
-        ? "Concept and relationship retrieval"
-      : activeView === "evaluation"
+      : visibleActiveView === "evaluation"
         ? "RAG quality and latency tracking"
-      : activeView === "library"
+      : visibleActiveView === "library"
         ? "Search and read indexed papers"
-        : activeView === "notes"
+        : visibleActiveView === "notes"
           ? "Search saved highlights"
           : selectedDocument
             ? contextMode === "whole_document"
@@ -1392,18 +1503,6 @@ function AppContent() {
             >
               <BrainCircuit size={14} />
               <span className="text-xs font-medium">Agent</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveView("graph")}
-              className={`rm-nav-button w-full flex items-center gap-2.5 px-2.5 py-2 border text-left ${
-                activeView === "graph"
-                  ? "rm-active-surface text-foreground"
-                  : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground"
-              }`}
-            >
-              <Network size={14} />
-              <span className="text-xs font-medium">Graph RAG</span>
             </button>
             <button
               type="button"

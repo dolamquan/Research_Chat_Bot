@@ -26,6 +26,10 @@ import type {
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 
 import type { Source } from "../types";
+import {
+  DEFAULT_FOLDER_ID,
+  saveWorkspaceNote,
+} from "../workspaceNoteStore";
 
 type NoteMode = "notes" | "sketch";
 
@@ -182,6 +186,7 @@ export function WorkspaceNotesPane({
   const [sketch, setSketch] = useState<ExcalidrawScene>(emptyScene);
   const [sketchElementCount, setSketchElementCount] = useState(0);
   const [savedAt, setSavedAt] = useState("");
+  const [librarySavedAt, setLibrarySavedAt] = useState("");
   const [sketchStatus, setSketchStatus] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
@@ -211,6 +216,7 @@ export function WorkspaceNotesPane({
     setSketch(storedSketch);
     setSketchElementCount(storedSketch.elements.length);
     setSavedAt("");
+    setLibrarySavedAt("");
     setSketchStatus("");
   }, [noteKey]);
 
@@ -250,6 +256,30 @@ export function WorkspaceNotesPane({
       selection: true,
       document_type: "workspace_note",
     });
+  }
+
+  function saveCurrentNoteToLibrary() {
+    if (!note.trim() && attachments.length === 0 && sketchRef.current.elements.length === 0) {
+      return;
+    }
+
+    const saved = saveWorkspaceNote({
+      id: `workspace-note:${scopeId || "global"}`,
+      title: scopeTitle || "Workspace note",
+      body: note,
+      attachments,
+      folderId: DEFAULT_FOLDER_ID,
+      scopeId,
+      scopeTitle,
+      sketch: sketchRef.current,
+    });
+
+    setLibrarySavedAt(
+      new Date(saved.updatedAt).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    );
   }
 
   function addAttachment(attachment: Omit<NoteAttachment, "id" | "createdAt">) {
@@ -500,17 +530,19 @@ export function WorkspaceNotesPane({
               </button>
               <button
                 type="button"
-                title="Notion export"
-                disabled
-                className="ml-auto h-8 rounded border border-border px-2 text-xs text-muted-foreground opacity-45 inline-flex items-center gap-1.5"
+                title="Save to Notes tab"
+                disabled={!note.trim() && attachments.length === 0 && sketchElementCount === 0}
+                onClick={saveCurrentNoteToLibrary}
+                className="ml-auto h-8 rounded border border-border px-2 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35 inline-flex items-center gap-1.5"
               >
                 <Save size={13} />
-                Notion
+                Save
               </button>
             </div>
             <p className="font-mono text-[10px] text-muted-foreground">
               {savedAt ? `Saved locally ${savedAt}` : "Autosaved locally"} -{" "}
               {attachments.length} image{attachments.length === 1 ? "" : "s"}
+              {librarySavedAt ? ` - Notes tab ${librarySavedAt}` : ""}
             </p>
           </div>
           {attachments.length > 0 && (

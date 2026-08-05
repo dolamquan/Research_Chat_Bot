@@ -79,6 +79,64 @@ def caption_image(
     )
 
 
+def transcribe_formula_image(
+    image_path: Path,
+    *,
+    context: str = "",
+    page: int | None = None,
+    llm: Any = None,
+) -> str:
+    """
+    Convert a selected equation image into Markdown with display LaTeX.
+    """
+    load_dotenv()
+
+    try:
+        from langchain_core.messages import HumanMessage
+
+        if llm is None:
+            from langchain_openai import ChatOpenAI
+
+            llm = ChatOpenAI(model=VISION_MODEL, temperature=0)
+
+        message = HumanMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": (
+                        "Transcribe the mathematical equation in this research-paper image. "
+                        "Return the answer as Markdown. Put the equation in a single display "
+                        "LaTeX block delimited with $$ ... $$. After the equation, add at most "
+                        "three concise bullet points explaining the symbols only if they are "
+                        "visible or strongly implied by the image/context. Do not invent "
+                        "unsupported definitions. "
+                        f"Document context: {context or 'unknown'}. "
+                        f"Page: {page or 'unknown'}."
+                    ),
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": _image_data_url(image_path),
+                        "detail": "high",
+                    },
+                },
+            ]
+        )
+        response = llm.invoke([message])
+
+        content = getattr(response, "content", str(response)).strip()
+        if content:
+            return content
+    except Exception:
+        pass
+
+    return (
+        "I could not transcribe this equation image automatically. "
+        "Try capturing a tighter crop around just the formula."
+    )
+
+
 def _safe_stem(value: str) -> str:
     return "".join(char if char.isalnum() or char in "-_" else "_" for char in value)[:90]
 
