@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 
-from app.storage.visual_assets import create_visual_asset
+from app.storage.visual_assets import create_visual_asset, get_visual_asset_blob_by_ref
 
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
@@ -16,8 +16,17 @@ VISION_MODEL = "gpt-4o-mini"
 
 
 def _image_data_url(image_path: Path) -> str:
-    mime_type = mimetypes.guess_type(image_path.name)[0] or "image/png"
-    encoded = base64.b64encode(image_path.read_bytes()).decode("utf-8")
+    if image_path.exists():
+        mime_type = mimetypes.guess_type(image_path.name)[0] or "image/png"
+        content = image_path.read_bytes()
+    else:
+        blob = get_visual_asset_blob_by_ref(str(image_path))
+        if blob is None:
+            raise FileNotFoundError(f"Image not found: {image_path}")
+        mime_type = str(blob["mime_type"])
+        content = bytes(blob["content"])
+
+    encoded = base64.b64encode(content).decode("utf-8")
     return f"data:{mime_type};base64,{encoded}"
 
 
@@ -173,22 +182,28 @@ def save_uploaded_image(
         counter += 1
 
     image_path.write_bytes(content)
-    caption = caption_image(
-        image_path,
-        context=title or safe_name,
-    )
+    try:
+        caption = caption_image(
+            image_path,
+            context=title or safe_name,
+        )
 
-    return create_visual_asset(
-        source=safe_name,
-        title=title or Path(filename).stem,
-        image_path=str(image_path),
-        image_url=f"/visuals/{image_path.name}/image",
-        caption=caption,
-        asset_type="uploaded_image",
-    ) | {
-        "domain": domain,
-        "category": category,
-    }
+        return create_visual_asset(
+            source=safe_name,
+            title=title or Path(filename).stem,
+            image_path=str(image_path),
+            image_url=f"/visuals/{image_path.name}/image",
+            caption=caption,
+            image_bytes=content,
+            mime_type=mimetypes.guess_type(image_path.name)[0] or "image/png",
+            asset_type="uploaded_image",
+        ) | {
+            "domain": domain,
+            "category": category,
+        }
+    finally:
+        if image_path.exists():
+            image_path.unlink()
 
 
 def save_captured_pdf_visual(
@@ -217,24 +232,29 @@ def save_captured_pdf_visual(
     )
     output_path = VISUAL_ASSET_DIR / output_name
     output_path.write_bytes(image_bytes)
+    try:
+        context = title or Path(source).stem.replace("_", " ")
+        generated_caption = caption_image(
+            output_path,
+            context=caption or context,
+            page=page,
+        )
 
-    context = title or Path(source).stem.replace("_", " ")
-    generated_caption = caption_image(
-        output_path,
-        context=caption or context,
-        page=page,
-    )
-
-    return create_visual_asset(
-        source=source,
-        article_id=article_id,
-        title=title or context,
-        page=page,
-        image_path=str(output_path),
-        image_url=f"/visuals/{output_name}/image",
-        caption=generated_caption,
-        asset_type="pdf_region",
-    )
+        return create_visual_asset(
+            source=source,
+            article_id=article_id,
+            title=title or context,
+            page=page,
+            image_path=str(output_path),
+            image_url=f"/visuals/{output_name}/image",
+            caption=generated_caption,
+            image_bytes=image_bytes,
+            mime_type="image/png",
+            asset_type="pdf_region",
+        )
+    finally:
+        if output_path.exists():
+            output_path.unlink()
 
 
 def extract_pdf_visuals(
@@ -282,22 +302,27 @@ def extract_pdf_visuals(
                 )
                 output_path = VISUAL_ASSET_DIR / output_name
                 output_path.write_bytes(image_bytes)
-
-                caption = caption_image(
-                    output_path,
-                    context=metadata.get("title") or source_name,
-                    page=page_index + 1,
-                )
-                asset = create_visual_asset(
-                    source=source_name,
-                    article_id=str(metadata.get("article_id", "")),
-                    title=str(metadata.get("title", "")),
-                    page=page_index + 1,
-                    image_path=str(output_path),
-                    image_url=f"/visuals/{output_name}/image",
-                    caption=caption,
-                    asset_type="pdf_image",
-                )
+                try:
+                    caption = caption_image(
+                        output_path,
+                        context=metadata.get("title") or source_name,
+                        page=page_index + 1,
+                    )
+                    asset = create_visual_asset(
+                        source=source_name,
+                        article_id=str(metadata.get("article_id", "")),
+                        title=str(metadata.get("title", "")),
+                        page=page_index + 1,
+                        image_path=str(output_path),
+                        image_url=f"/visuals/{output_name}/image",
+                        caption=caption,
+                        image_bytes=image_bytes,
+                        mime_type=mimetypes.guess_type(output_name)[0] or "image/png",
+                        asset_type="pdf_image",
+                    )
+                finally:
+                    if output_path.exists():
+                        output_path.unlink()
                 saved_assets.append(asset)
     finally:
         doc.close()

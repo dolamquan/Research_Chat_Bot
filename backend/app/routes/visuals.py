@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 from app.rag.vector_store import index_visual_assets
@@ -12,7 +12,7 @@ from app.rag.visual_analyzer import (
     extract_pdf_visuals,
     save_captured_pdf_visual,
 )
-from app.storage.visual_assets import list_visual_assets
+from app.storage.visual_assets import get_visual_asset_blob, list_visual_assets
 
 
 router = APIRouter(prefix="/visuals", tags=["visuals"])
@@ -118,10 +118,21 @@ def capture_document_visual(request: CaptureVisualRequest) -> Dict[str, Any]:
 
 
 @router.get("/{filename}/image")
-def get_visual_image(filename: str) -> FileResponse:
+def get_visual_image(filename: str):
     safe_name = Path(filename).name
     if safe_name != filename:
         raise HTTPException(status_code=400, detail="Invalid image filename.")
+
+    blob = get_visual_asset_blob(safe_name)
+    if blob is not None:
+        return Response(
+            content=bytes(blob["content"]),
+            media_type=str(blob["mime_type"]),
+            headers={
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "X-Visual-Asset-Storage": "sqlite",
+            },
+        )
 
     for folder in [VISUAL_ASSET_DIR, UPLOAD_IMAGE_DIR]:
         image_path = folder / safe_name

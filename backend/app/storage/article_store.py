@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "researchmind.sqlite3"
+ARXIV_MANIFEST_PATH = DATA_DIR / "uploaded_docs" / "arxiv_manifest.json"
 
 
 def _now() -> str:
@@ -82,6 +83,69 @@ def _row_to_article(row: sqlite3.Row) -> Dict[str, Any]:
         article["authors"] = []
 
     return article
+
+
+def _manifest_articles() -> List[Dict[str, Any]]:
+    if not ARXIV_MANIFEST_PATH.exists():
+        return []
+
+    try:
+        manifest = json.loads(ARXIV_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+    articles: List[Dict[str, Any]] = []
+    for arxiv_id, item in manifest.items():
+        if not isinstance(item, dict):
+            continue
+
+        filename = str(item.get("filename") or "").strip()
+        if not filename:
+            continue
+
+        title = str(item.get("title") or "").strip() or filename.replace("_", " ")
+        pdf_url = str(item.get("pdf_url") or "").strip()
+        articles.append(
+            {
+                "article_id": f"manifest:{arxiv_id}",
+                "title": title,
+                "source": filename,
+                "url": f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else pdf_url,
+                "pdf_url": pdf_url,
+                "domain": "research",
+                "category": "uncategorized",
+                "tags": ["manifest", "arxiv"],
+                "status": "indexed",
+                "error": None,
+                "abstract": "",
+                "authors": [],
+                "published_at": "",
+                "updated_at_source": "",
+                "created_at": "",
+                "updated_at": "",
+            }
+        )
+
+    return articles
+
+
+def _article_matches_filters(
+    article: Dict[str, Any],
+    *,
+    domain: str | None = None,
+    category: str | None = None,
+) -> bool:
+    if domain and article.get("domain") != domain:
+        return False
+    if category and article.get("category") != category:
+        return False
+    return True
+
+
+def _db_article_sources() -> set[str]:
+    with _connect() as conn:
+        rows = conn.execute("SELECT source FROM articles").fetchall()
+    return {str(row["source"] or "") for row in rows}
 
 
 def upsert_article(
@@ -202,7 +266,16 @@ def list_articles(
             params,
         ).fetchall()
 
-    return [_row_to_article(row) for row in rows]
+    db_articles = [_row_to_article(row) for row in rows]
+    seen_sources = {str(article.get("source") or "") for article in db_articles}
+    manifest_articles = [
+        article
+        for article in _manifest_articles()
+        if str(article.get("source") or "") not in seen_sources
+        and _article_matches_filters(article, domain=domain, category=category)
+    ]
+
+    return [*db_articles, *manifest_articles][:limit]
 
 
 def list_domains() -> List[Dict[str, Any]]:
@@ -216,4 +289,23 @@ def list_domains() -> List[Dict[str, Any]]:
             """
         ).fetchall()
 
-    return [dict(row) for row in rows]
+    counts: Dict[tuple[str, str], int] = {}
+    for row in rows:
+        key = (str(row["domain"]), str(row["category"]))
+        counts[key] = int(row["article_count"])
+
+    db_sources = _db_article_sources()
+    for article in _manifest_articles():
+        if str(article.get("source") or "") in db_sources:
+            continue
+        key = (str(article.get("domain") or "research"), str(article.get("category") or "uncategorized"))
+        counts[key] = counts.get(key, 0) + 1
+
+    return [
+        {
+            "domain": domain,
+            "category": category,
+            "article_count": count,
+        }
+        for (domain, category), count in sorted(counts.items())
+    ]
