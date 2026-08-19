@@ -25,6 +25,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Workflow,
   Send,
   User,
   X,
@@ -55,6 +56,7 @@ import { GraphRagView } from "./components/GraphRagView";
 import { NotesView } from "./components/NotesView";
 import { PaperLibraryView } from "./components/PaperLibraryView";
 import { RedditView } from "./components/RedditView";
+import { VisualizerView } from "./components/VisualizerView";
 import { ResearchPanel } from "./components/ResearchPanel";
 import { TopologyExplorer } from "./components/TopologyExplorer";
 import { WorkspaceNotesPane } from "./components/WorkspaceNotesPane";
@@ -636,7 +638,7 @@ function AppContent() {
   const [contextMode, setContextMode] = useState<ContextMode>("retrieval");
   const [retrievalStrategy, setRetrievalStrategy] = useState<RetrievalStrategy>("hybrid");
   const [input, setInput] = useState("");
-  const [activeView, setActiveView] = useState<"chat" | "library" | "crawler" | "reddit" | "notes" | "agent" | "graph" | "evaluation">("chat");
+  const [activeView, setActiveView] = useState<"chat" | "library" | "crawler" | "reddit" | "notes" | "agent" | "graph" | "evaluation" | "visualizer">("chat");
   const visibleActiveView = activeView === "graph" ? "chat" : activeView;
   const [librarySearch, setLibrarySearch] = useState("");
   const [crawlerDescription, setCrawlerDescription] = useState("");
@@ -1540,6 +1542,18 @@ function AppContent() {
               <Search size={14} />
               <span className="text-xs font-medium">Crawler</span>
             </button>
+            <button
+              type="button"
+              onClick={() => setActiveView("visualizer")}
+              className={`rm-nav-button w-full flex items-center gap-2.5 px-2.5 py-2 border text-left ${
+                activeView === "visualizer"
+                  ? "rm-active-surface text-foreground"
+                  : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground"
+              }`}
+            >
+              <Workflow size={14} />
+              <span className="text-xs font-medium">Visualizer</span>
+            </button>
           </div>
         </div>
 
@@ -2062,6 +2076,7 @@ function AppContent() {
             activeView === "notes" ||
             activeView === "agent" ||
             activeView === "graph" ||
+            activeView === "visualizer" ||
             activeView === "evaluation"
               ? "overflow-hidden p-0 flex flex-col"
               : topologyExplorerOpen
@@ -2096,6 +2111,8 @@ function AppContent() {
               domain={selectedDomain || undefined}
               category={selectedCategory || undefined}
             />
+          ) : activeView === "visualizer" ? (
+            <VisualizerView />
           ) : activeView === "evaluation" ? (
             <EvaluationDashboard />
           ) : activeView === "notes" ? (

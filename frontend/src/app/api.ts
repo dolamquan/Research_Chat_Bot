@@ -7,7 +7,9 @@ import type {
   AnnotationPayload,
   PaperSearchPayload,
   PaperSearchResponse,
+  PaperVisualization,
   ChatHistoryItem,
+  DiagramKind,
   ChatResponse,
   ChatSession,
   ChatSessionDetail,
@@ -26,6 +28,7 @@ import type {
   IngestionJob,
   McpCallResponse,
   McpToolsResponse,
+  NodeExpansion,
   RetrievalStrategy,
   Source,
   VisualAsset,
@@ -543,4 +546,60 @@ export function deleteChatSession(sessionId: string): Promise<{ status: string }
   return requestJson(`/chat/sessions/${encodeURIComponent(sessionId)}`, {
     method: "DELETE",
   });
+}
+
+export function generateVisualization({
+  articleId,
+  diagramKind = "auto",
+  force = false,
+}: {
+  articleId: string;
+  diagramKind?: "auto" | DiagramKind;
+  force?: boolean;
+}): Promise<{ visualization: PaperVisualization }> {
+  return requestJson("/visualizer/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      article_id: articleId,
+      diagram_kind: diagramKind,
+      force,
+    }),
+  });
+}
+
+export function getVisualizations(
+  articleId: string,
+): Promise<{ visualizations: PaperVisualization[] }> {
+  return requestJson(`/visualizer/${encodeURIComponent(articleId)}`);
+}
+
+export function deleteVisualization(vizId: string): Promise<{ status: string }> {
+  return requestJson(`/visualizer/item/${encodeURIComponent(vizId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function expandVisualizationNode({
+  vizId,
+  nodeId,
+  force = false,
+}: {
+  vizId: string;
+  nodeId: string;
+  force?: boolean;
+}): Promise<{ expansion: NodeExpansion }> {
+  return requestJson("/visualizer/expand-node", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ viz_id: vizId, node_id: nodeId, force }),
+  });
+}
+
+export function getPreparedStages(
+  vizId: string,
+): Promise<{ prepared: string[] }> {
+  return requestJson(
+    `/visualizer/item/${encodeURIComponent(vizId)}/expansions`,
+  );
 }

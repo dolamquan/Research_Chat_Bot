@@ -378,3 +378,131 @@ export type AgentSessionDetail = {
   session: AgentSession;
   messages: StoredAgentMessage[];
 };
+
+export type DiagramKind = "architecture" | "method_flow" | "pipeline";
+
+export type DiagramNodeKind =
+  | "input"
+  | "output"
+  | "operation"
+  | "component"
+  | "data"
+  | "decision"
+  | "loop"
+  | "state";
+
+export type DiagramEdgeKind =
+  | "flow"
+  | "data"
+  | "residual"
+  | "attention"
+  | "feedback"
+  | "reference";
+
+export type DiagramNode = {
+  id: string;
+  label: string;
+  kind: DiagramNodeKind | string;
+  detail: string;
+  group: string | null;
+  x: number;
+  y: number;
+  layer: number;
+};
+
+export type DiagramEdge = {
+  source: string;
+  target: string;
+  label: string;
+  kind: DiagramEdgeKind | string;
+  back: boolean;
+};
+
+export type DiagramGroup = {
+  id: string;
+  label: string;
+  repeat: string | null;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+export type PaperVisualization = {
+  viz_id: string;
+  article_id: string;
+  document_source: string;
+  diagram_kind: DiagramKind | string;
+  title: string;
+  algorithm_name: string;
+  diagram: {
+    nodes: DiagramNode[];
+    edges: DiagramEdge[];
+    groups: DiagramGroup[];
+  };
+  summary: string;
+  key_insight: string;
+  worked_example?: WorkedExample | null;
+  model: string;
+  source_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExpansionStep = {
+  label: string;
+  detail: string;
+};
+
+export type NodeExpansion = {
+  expansion_id: string;
+  viz_id: string;
+  node_id: string;
+  node_label: string;
+  content: {
+    overview: string;
+    mechanism: string;
+    role: string;
+    substeps: ExpansionStep[];
+    example: string;
+    process_steps?: ProcessStep[];
+  };
+  model: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProcessPrimitive =
+  | "token_stream"
+  | "vector_array"
+  | "matrix_transform"
+  | "attention_links"
+  | "split_parallel"
+  | "merge_parallel"
+  | "elementwise_combine"
+  | "nonlinearity"
+  | "normalize"
+  | "distribution"
+  | "filter_select"
+  | "compare"
+  | "loop_repeat"
+  | "note";
+
+export type ProcessStep = {
+  primitive: ProcessPrimitive | string;
+  caption: string;
+  items: string[];
+  values?: number[];
+  count: number;
+  label_in: string;
+  label_out: string;
+  detail: string;
+};
+
+export type WorkedExample = {
+  input_text: string;
+  tokens: string[];
+  dimension: string;
+  output_text: string;
+  note: string;
+};

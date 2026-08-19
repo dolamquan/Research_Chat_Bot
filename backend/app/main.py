@@ -15,6 +15,7 @@ from app.routes import (
     ingest,
     mcp_bridge,
     upload,
+    visualizer,
     visuals,
 )
 
@@ -47,6 +48,7 @@ app.include_router(graph_rag.router)
 app.include_router(ingest.router)
 app.include_router(mcp_bridge.router)
 app.include_router(upload.router)
+app.include_router(visualizer.router)
 app.include_router(visuals.router)
 
 

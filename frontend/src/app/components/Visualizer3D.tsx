@@ -1,0 +1,473 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import * as THREE from "three";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Grid, Html, OrbitControls, RoundedBox } from "@react-three/drei";
+
+import type { DiagramEdge, DiagramGroup, DiagramNode, ProcessStep } from "../types";
+import { edgeStroke, nodeStroke } from "./diagramPalette";
+import { ProcessTheater, type TheaterControl } from "./ProcessTheater";
+
+// 2D layout units (COLUMN_GAP=220, LAYER_GAP=130) -> world units.
+// Depth (flow axis) gets more room than width so layers read clearly in 3D.
+const SX = 1 / 55;
+const SZ = 1 / 36;
+const NODE_W = 3.1;
+const NODE_H = 1.15;
+const NODE_D = 1.15;
+const BASE_Y = 1.05; // node center height above the floor grid
+
+type Diagram = {
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+  groups: DiagramGroup[];
+};
+
+function nodePosition(node: DiagramNode): THREE.Vector3 {
+  // 2D flows top-down (+y); in 3D the flow runs into the scene (+z).
+  return new THREE.Vector3(node.x * SX, BASE_Y, node.y * SZ);
+}
+
+function buildCurve(
+  source: THREE.Vector3,
+  target: THREE.Vector3,
+  back: boolean,
+): THREE.QuadraticBezierCurve3 {
+  const mid = source.clone().add(target).multiplyScalar(0.5);
+  const dist = source.distanceTo(target);
+  if (back) {
+    mid.y += 2.4 + dist * 0.22;
+    mid.x += Math.sign(mid.x || 1) * (2.6 + dist * 0.12);
+  } else {
+    mid.y += 0.45 + dist * 0.1;
+  }
+  return new THREE.QuadraticBezierCurve3(source, mid, target);
+}
+
+function Node3D({
+  node,
+  degree,
+  selected,
+  dimmed,
+  hideLabel,
+  onClick,
+}: {
+  node: DiagramNode;
+  degree: number;
+  selected: boolean;
+  dimmed: boolean;
+  hideLabel?: boolean;
+  onClick: (node: DiagramNode) => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const color = nodeStroke(node.kind);
+  const position = useMemo(() => nodePosition(node), [node]);
+  // Well-connected components read as bigger.
+  const scale = 1 + Math.min(degree, 4) * 0.1;
+  const emissiveIntensity = dimmed ? 0.04 : selected ? 0.6 : hovered ? 0.34 : 0.14;
+
+  useEffect(() => {
+    document.body.style.cursor = hovered ? "pointer" : "auto";
+    return () => {
+      document.body.style.cursor = "auto";
+    };
+  }, [hovered]);
+
+  const material = (
+    <meshStandardMaterial
+      color={color}
+      roughness={0.38}
+      metalness={0.2}
+      emissive={color}
+      emissiveIntensity={emissiveIntensity}
+      transparent
+      opacity={dimmed ? 0.18 : 1}
+    />
+  );
+
+  const pill = node.kind === "input" || node.kind === "output";
+
+  return (
+    <group
+      position={position}
+      scale={scale}
+      onClick={(event) => {
+        event.stopPropagation();
+        onClick(node);
+      }}
+      onPointerOver={(event) => {
+        event.stopPropagation();
+        setHovered(true);
+      }}
+      onPointerOut={() => setHovered(false)}
+    >
+      {pill ? (
+        <mesh rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.62, 0.62, NODE_W, 28]} />
+          {material}
+        </mesh>
+      ) : node.kind === "decision" ? (
+        <mesh>
+          <octahedronGeometry args={[1.05]} />
+          {material}
+        </mesh>
+      ) : (
+        <RoundedBox args={[NODE_W, NODE_H, NODE_D]} radius={0.2} smoothness={4}>
+          {material}
+        </RoundedBox>
+      )}
+      {!dimmed && !hideLabel && (
+        <Html
+          center
+          position={[0, NODE_H + 0.55, 0]}
+          distanceFactor={13}
+          style={{ pointerEvents: "none" }}
+          zIndexRange={[10, 0]}
+        >
+          <div
+            className="whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-medium text-zinc-100"
+            style={{
+              backgroundColor: "rgba(24,24,27,0.88)",
+              borderColor: selected ? color : "rgba(63,63,70,0.9)",
+            }}
+          >
+            {node.label}
+          </div>
+        </Html>
+      )}
+    </group>
+  );
+}
+
+function FlowDot({
+  curve,
+  color,
+  offset,
+  reverse,
+}: {
+  curve: THREE.QuadraticBezierCurve3;
+  color: string;
+  offset: number;
+  reverse: boolean;
+}) {
+  const ref = useRef<THREE.Mesh>(null);
+  useFrame(({ clock }) => {
+    let t = (((clock.getElapsedTime() * 0.28 + offset) % 1) + 1) % 1;
+    if (reverse) t = 1 - t;
+    ref.current?.position.copy(curve.getPoint(t));
+  });
+  return (
+    <mesh ref={ref}>
+      <sphereGeometry args={[0.1, 10, 10]} />
+      <meshBasicMaterial color={color} />
+    </mesh>
+  );
+}
+
+function Edge3D({
+  edge,
+  curve,
+  dimmed,
+}: {
+  edge: DiagramEdge;
+  curve: THREE.QuadraticBezierCurve3;
+  dimmed: boolean;
+}) {
+  const color = edgeStroke(edge.kind);
+  const weak = edge.back || edge.kind === "reference";
+
+  const tube = useMemo(
+    () => new THREE.TubeGeometry(curve, 40, weak ? 0.028 : 0.042, 8, false),
+    [curve, weak],
+  );
+
+  // Arrow cone just before the target node's face.
+  const arrow = useMemo(() => {
+    const length = curve.getLength();
+    const t = Math.max(0.55, 1 - 1.5 / Math.max(length, 0.001));
+    const point = curve.getPoint(t);
+    const tangent = curve.getTangent(t).normalize();
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(
+      new THREE.Vector3(0, 1, 0),
+      tangent,
+    );
+    return { point, quaternion };
+  }, [curve]);
+
+  const midpoint = useMemo(() => curve.getPoint(0.5), [curve]);
+
+  return (
+    <group>
+      <mesh geometry={tube}>
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={dimmed ? 0.05 : 0.35}
+          transparent
+          opacity={dimmed ? 0.08 : weak ? 0.4 : 0.7}
+        />
+      </mesh>
+      <mesh position={arrow.point} quaternion={arrow.quaternion}>
+        <coneGeometry args={[0.16, 0.45, 12]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={dimmed ? 0.05 : 0.4}
+          transparent
+          opacity={dimmed ? 0.08 : 1}
+        />
+      </mesh>
+      {!dimmed && (
+        <FlowDot
+          curve={curve}
+          color={color}
+          offset={(midpoint.x * 7919 + midpoint.z * 104729) % 1}
+          reverse={false}
+        />
+      )}
+      {edge.label && !dimmed && (
+        <Html
+          center
+          position={midpoint}
+          distanceFactor={15}
+          style={{ pointerEvents: "none" }}
+          zIndexRange={[5, 0]}
+        >
+          <div className="whitespace-nowrap rounded bg-zinc-900/75 px-1.5 py-0.5 text-[10px] text-zinc-400">
+            {edge.label}
+          </div>
+        </Html>
+      )}
+    </group>
+  );
+}
+
+function Group3D({ group, nodes }: { group: DiagramGroup; nodes: DiagramNode[] }) {
+  const members = nodes.filter((node) => node.group === group.id);
+  if (members.length === 0) return null;
+
+  const xs = members.map((node) => node.x * SX);
+  const zs = members.map((node) => node.y * SZ);
+  const minX = Math.min(...xs) - NODE_W / 2 - 0.7;
+  const maxX = Math.max(...xs) + NODE_W / 2 + 0.7;
+  const minZ = Math.min(...zs) - NODE_D / 2 - 0.9;
+  const maxZ = Math.max(...zs) + NODE_D / 2 + 0.9;
+  const height = 3.0;
+
+  return (
+    <group>
+      <mesh position={[(minX + maxX) / 2, height / 2 + 0.02, (minZ + maxZ) / 2]}>
+        <boxGeometry args={[maxX - minX, height, maxZ - minZ]} />
+        <meshStandardMaterial
+          color="#6ee7d8"
+          transparent
+          opacity={0.06}
+          depthWrite={false}
+        />
+      </mesh>
+      <Html
+        position={[minX + 0.4, height + 0.35, minZ + 0.4]}
+        distanceFactor={15}
+        style={{ pointerEvents: "none" }}
+        zIndexRange={[5, 0]}
+      >
+        <div className="whitespace-nowrap rounded bg-zinc-900/80 px-1.5 py-0.5 text-[10px] font-semibold text-teal-200/90">
+          {group.label}
+          {group.repeat ? ` · ${group.repeat}` : ""}
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+function CameraFly({ focus }: { focus: THREE.Vector3 | null }) {
+  const { camera, controls } = useThree() as {
+    camera: THREE.Camera;
+    controls: { target: THREE.Vector3; update: () => void } | null;
+  };
+  const animRef = useRef<{
+    toPosition: THREE.Vector3;
+    toTarget: THREE.Vector3;
+    until: number;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!focus) {
+      animRef.current = null;
+      return;
+    }
+    animRef.current = {
+      toPosition: focus.clone().add(new THREE.Vector3(0, 6.2, 14.5)),
+      toTarget: focus.clone().add(new THREE.Vector3(0, 3.3, 0)),
+      until: performance.now() + 1500,
+    };
+  }, [focus]);
+
+  useFrame((_, delta) => {
+    const anim = animRef.current;
+    if (!anim || !controls) return;
+    const k = 1 - Math.pow(0.002, delta);
+    camera.position.lerp(anim.toPosition, k);
+    controls.target.lerp(anim.toTarget, k);
+    controls.update();
+    if (performance.now() > anim.until) animRef.current = null;
+  });
+  return null;
+}
+
+function CameraRig({ center, radius }: { center: THREE.Vector3; radius: number }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    // Diagonal three-quarter view so the flow axis reads as depth.
+    camera.position.set(
+      center.x + radius * 1.05,
+      center.y + radius * 0.72,
+      center.z + radius * 0.9,
+    );
+    camera.lookAt(center);
+    camera.updateProjectionMatrix();
+  }, [camera, center, radius]);
+  return null;
+}
+
+export function Visualizer3D({
+  diagram,
+  selectedNodeId,
+  focusNodeId,
+  processSteps,
+  loopPlayback,
+  theaterControl,
+  onNodeClick,
+  onCanvasReady,
+  onPointerMissed,
+  onStepChange,
+  onPlaybackComplete,
+}: {
+  diagram: Diagram;
+  selectedNodeId: string | null;
+  focusNodeId?: string | null;
+  processSteps?: ProcessStep[] | null;
+  loopPlayback?: boolean;
+  theaterControl?: { current: TheaterControl };
+  onNodeClick: (node: DiagramNode) => void;
+  onCanvasReady?: (canvas: HTMLCanvasElement) => void;
+  onPointerMissed?: () => void;
+  onStepChange?: (index: number) => void;
+  onPlaybackComplete?: () => void;
+}) {
+  const focusNode = focusNodeId
+    ? diagram.nodes.find((node) => node.id === focusNodeId) ?? null
+    : null;
+  const focusPosition = useMemo(
+    () => (focusNode ? nodePosition(focusNode) : null),
+    [focusNode],
+  );
+  const { center, radius, degrees, curves } = useMemo(() => {
+    const positions = new Map(
+      diagram.nodes.map((node) => [node.id, nodePosition(node)]),
+    );
+
+    const degreeMap = new Map<string, number>();
+    for (const edge of diagram.edges) {
+      degreeMap.set(edge.source, (degreeMap.get(edge.source) ?? 0) + 1);
+      degreeMap.set(edge.target, (degreeMap.get(edge.target) ?? 0) + 1);
+    }
+
+    const curveList = diagram.edges
+      .map((edge) => {
+        const source = positions.get(edge.source);
+        const target = positions.get(edge.target);
+        if (!source || !target) return null;
+        return { edge, curve: buildCurve(source, target, edge.back) };
+      })
+      .filter(Boolean) as { edge: DiagramEdge; curve: THREE.QuadraticBezierCurve3 }[];
+
+    const box = new THREE.Box3();
+    for (const position of positions.values()) box.expandByPoint(position);
+    const boxCenter = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const fitRadius = Math.max(size.x, size.z, 8) * 0.85 + 6;
+
+    return {
+      center: boxCenter,
+      radius: fitRadius,
+      degrees: degreeMap,
+      curves: curveList,
+    };
+  }, [diagram]);
+
+  return (
+    <Canvas
+      dpr={[1, 2]}
+      gl={{ antialias: true, preserveDrawingBuffer: true }}
+      camera={{ fov: 42, near: 0.1, far: 600 }}
+      onCreated={(state) => onCanvasReady?.(state.gl.domElement)}
+      onPointerMissed={() => onPointerMissed?.()}
+    >
+      <color attach="background" args={["#191919"]} />
+      <fog attach="fog" args={["#191919", radius * 2.2, radius * 5.5]} />
+
+      <ambientLight intensity={0.55} />
+      <directionalLight position={[10, 16, 8]} intensity={1.15} />
+      <pointLight position={[-12, 8, -6]} intensity={28} color="#6ee7d8" />
+
+      <CameraRig center={center} radius={radius} />
+      <CameraFly focus={focusPosition} />
+      <OrbitControls
+        makeDefault
+        target={[center.x, center.y, center.z]}
+        maxPolarAngle={Math.PI * 0.49}
+        minDistance={4}
+        maxDistance={radius * 4}
+        enableDamping
+      />
+
+      <Grid
+        position={[center.x, 0, center.z]}
+        args={[radius * 6, radius * 6]}
+        cellSize={1.5}
+        cellColor="#27272a"
+        sectionSize={7.5}
+        sectionColor="#3f3f46"
+        fadeDistance={radius * 3.2}
+        fadeStrength={1.5}
+      />
+
+      {diagram.groups.map((group) => (
+        <Group3D key={group.id} group={group} nodes={diagram.nodes} />
+      ))}
+
+      {curves.map(({ edge, curve }, index) => (
+        <Edge3D
+          key={`${edge.source}-${edge.target}-${index}`}
+          edge={edge}
+          curve={curve}
+          dimmed={focusNode !== null}
+        />
+      ))}
+
+      {diagram.nodes.map((node) => (
+        <Node3D
+          key={node.id}
+          node={node}
+          degree={degrees.get(node.id) ?? 0}
+          selected={selectedNodeId === node.id}
+          dimmed={focusNode !== null && focusNode.id !== node.id}
+          hideLabel={focusNode !== null && focusNode.id === node.id}
+          onClick={onNodeClick}
+        />
+      ))}
+
+      {focusNode && focusPosition && processSteps && processSteps.length > 0 && (
+        <ProcessTheater
+          key={focusNode.id}
+          position={focusPosition}
+          steps={processSteps}
+          loop={loopPlayback ?? true}
+          control={theaterControl}
+          onStepChange={onStepChange}
+          onComplete={onPlaybackComplete}
+        />
+      )}
+    </Canvas>
+  );
+}

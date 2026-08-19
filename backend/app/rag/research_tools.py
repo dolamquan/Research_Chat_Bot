@@ -3,9 +3,16 @@ from typing import Any, Dict, List
 
 from langsmith import traceable
 
-from app.rag.generator import call_answer_llm, get_llm
+from app.rag.generator import DEFAULT_MODEL, call_answer_llm, get_llm
+from app.rag.paper_visualizer import (
+    DIAGRAM_KINDS,
+    extract_diagram_ir,
+    ir_to_mermaid,
+    layout_ir,
+)
 from app.rag.retriever import retrieve, retrieve_document_chunks
 from app.storage.article_store import get_article, list_articles
+from app.storage.visualization_store import upsert_visualization
 
 
 MAX_TOOL_CHUNKS = 80
@@ -195,6 +202,49 @@ def generate_visualization(args: Dict[str, Any]) -> Dict[str, Any]:
         or document_source
         or "Research visualization"
     )
+
+    # Constrained IR pipeline for structural diagrams; legacy raw-mermaid path
+    # for the free-form kinds (concept_map, timeline, comparison).
+    if visualization_type not in ("concept_map", "timeline", "comparison"):
+        requested_kind = (
+            visualization_type if visualization_type in DIAGRAM_KINDS else "auto"
+        )
+        ir = extract_diagram_ir(article, chunks, diagram_kind=requested_kind)
+        diagram = layout_ir(ir)
+
+        article_id = _string((article or {}).get("article_id")).strip()
+        if article_id and document_source:
+            upsert_visualization(
+                article_id=article_id,
+                document_source=document_source,
+                diagram_kind=ir.diagram_kind,
+                title=ir.title or title,
+                algorithm_name=ir.algorithm_name,
+                diagram=diagram,
+                summary=ir.summary,
+                key_insight=ir.key_insight,
+                model=DEFAULT_MODEL,
+                source_count=len(chunks),
+            )
+
+        return {
+            "title": ir.title or title,
+            "document_source": document_source,
+            "visualization_type": ir.diagram_kind,
+            "diagram_format": "mermaid",
+            "mermaid": ir_to_mermaid(ir),
+            "explanation": f"{ir.summary}\n\nKey insight: {ir.key_insight}",
+            "ir": {
+                "algorithm_name": ir.algorithm_name,
+                "diagram_kind": ir.diagram_kind,
+                "summary": ir.summary,
+                "key_insight": ir.key_insight,
+                "diagram": diagram,
+            },
+            "source_count": len(chunks),
+            "sources": chunks[:8],
+        }
+
     context = _format_context(chunks)
     header = _article_header(article)
 
