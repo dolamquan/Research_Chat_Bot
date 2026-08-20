@@ -4,7 +4,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.rag.paper_visualizer import expand_node, generate_paper_visualization
+from app.storage.variant_store import delete_variants_for_visualization
 from app.storage.visualization_store import (
+    delete_node_expansions,
     delete_visualization,
     list_expanded_node_ids,
     list_node_expansions,
@@ -85,6 +87,11 @@ def get_article_visualizations(article_id: str) -> Dict[str, Any]:
 
 @router.delete("/item/{viz_id}")
 def delete_visualization_endpoint(viz_id: str) -> Dict[str, Any]:
+    # Variants descend from this diagram, so they go first. Done here rather
+    # than in the store to keep the two storage modules independent.
+    variant_ids = delete_variants_for_visualization(viz_id)
+    for variant_id in variant_ids:
+        delete_node_expansions(variant_id)
     if not delete_visualization(viz_id):
         raise HTTPException(status_code=404, detail="Visualization not found")
-    return {"status": "deleted"}
+    return {"status": "deleted", "variants_deleted": len(variant_ids)}

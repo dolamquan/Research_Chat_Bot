@@ -50,3 +50,40 @@ export function primitiveColor(primitive: string): string {
 export const PRIMITIVE_LEGEND = Object.entries(PRIMITIVE_COLORS).filter(
   ([primitive]) => primitive !== "note",
 );
+
+// ------------------------------------------------------------------- diff
+
+/** Diff tint, or null when the state carries no annotation. */
+export function diffTint(state?: string | null): string | null {
+  if (state === "added") return "#34d399";
+  if (state === "removed") return "#fb7185";
+  if (state === "changed") return "#fbbf24";
+  return null;
+}
+
+export const DIFF_LEGEND: [string, string][] = [
+  ["added", "#34d399"],
+  ["changed", "#fbbf24"],
+  ["removed", "#fb7185"],
+];
+
+/** Severity colour. Basis (checked vs judged) is carried by form, not hue. */
+export function severityTone(severity: string): string {
+  if (severity === "blocking") return "text-rose-300";
+  if (severity === "major") return "text-amber-300";
+  if (severity === "minor") return "text-teal-300";
+  return "text-zinc-400";
+}
+
+export function verdictTone(verdict: string): string {
+  if (verdict === "likely_broken") return "text-rose-300 border-rose-900/60 bg-rose-950/40";
+  if (verdict === "concerns") return "text-amber-300 border-amber-900/60 bg-amber-950/40";
+  return "text-emerald-300 border-emerald-900/60 bg-emerald-950/40";
+}
+
+export function verdictLabel(verdict: string): string {
+  if (verdict === "likely_broken") return "likely broken";
+  if (verdict === "concerns") return "concerns";
+  if (verdict === "structurally_sound") return "sound";
+  return verdict || "unverified";
+}

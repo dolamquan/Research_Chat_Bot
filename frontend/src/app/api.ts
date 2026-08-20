@@ -8,8 +8,10 @@ import type {
   PaperSearchPayload,
   PaperSearchResponse,
   PaperVisualization,
+  AlgorithmVariant,
   ChatHistoryItem,
   DiagramKind,
+  DiscussionMessage,
   ChatResponse,
   ChatSession,
   ChatSessionDetail,
@@ -28,9 +30,15 @@ import type {
   IngestionJob,
   McpCallResponse,
   McpToolsResponse,
+  ModificationPatch,
   NodeExpansion,
+  PatchResultData,
   RetrievalStrategy,
   Source,
+  VariantProposal,
+  VariantTreeRow,
+  VerificationReportData,
+  VerificationRun,
   VisualAsset,
 } from "./types";
 
@@ -602,4 +610,130 @@ export function getPreparedStages(
   return requestJson(
     `/visualizer/item/${encodeURIComponent(vizId)}/expansions`,
   );
+}
+
+export function proposeModification({
+  targetId,
+  intent,
+  maxOps = 8,
+  signal,
+}: {
+  targetId: string;
+  intent: string;
+  maxOps?: number;
+  signal?: AbortSignal;
+}): Promise<{ proposal: VariantProposal }> {
+  return requestJson("/variants/propose", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ target_id: targetId, intent, max_ops: maxOps }),
+    signal,
+  });
+}
+
+export function applyModification({
+  targetId,
+  intent,
+  patch,
+  dropOpIndices = [],
+}: {
+  targetId: string;
+  intent: string;
+  patch: ModificationPatch;
+  dropOpIndices?: number[];
+}): Promise<{
+  variant: AlgorithmVariant;
+  patch_result: PatchResultData;
+  run: VerificationRun;
+}> {
+  return requestJson("/variants/apply", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      target_id: targetId,
+      intent,
+      patch,
+      drop_op_indices: dropOpIndices,
+    }),
+  });
+}
+
+export function getVariantsForVisualization(vizId: string): Promise<{
+  variants: AlgorithmVariant[];
+  tree: VariantTreeRow[];
+}> {
+  return requestJson(`/variants/for-visualization/${encodeURIComponent(vizId)}`);
+}
+
+export function verifyTarget(
+  targetId: string,
+): Promise<{ run: VerificationRun; report: VerificationReportData }> {
+  return requestJson(`/variants/item/${encodeURIComponent(targetId)}/verify`, {
+    method: "POST",
+  });
+}
+
+export function deleteVariant(
+  variantId: string,
+): Promise<{ status: string; deleted: number }> {
+  return requestJson(`/variants/item/${encodeURIComponent(variantId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function discussChange({
+  targetId,
+  message,
+  signal,
+}: {
+  targetId: string;
+  message: string;
+  signal?: AbortSignal;
+}): Promise<{ message: DiscussionMessage; history: DiscussionMessage[] }> {
+  return requestJson(`/variants/item/${encodeURIComponent(targetId)}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+    signal,
+  });
+}
+
+export function getDiscussion(
+  targetId: string,
+): Promise<{ history: DiscussionMessage[] }> {
+  return requestJson(`/variants/item/${encodeURIComponent(targetId)}/chat`);
+}
+
+export function clearDiscussion(
+  targetId: string,
+): Promise<{ status: string; removed: number }> {
+  return requestJson(`/variants/item/${encodeURIComponent(targetId)}/chat`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * Routes the visualizer needs. A backend running older code answers 404 for
+ * these, which surfaces as a bare "Not Found" on every action — so we detect
+ * it up front and say what is actually wrong.
+ */
+export const REQUIRED_ROUTES = [
+  "/variants/propose",
+  "/variants/apply",
+  "/variants/item/{target_id}/verify",
+  "/variants/item/{target_id}/chat",
+  "/visualizer/generate",
+] as const;
+
+export async function getMissingBackendRoutes(): Promise<string[]> {
+  try {
+    const response = await fetch(`${API_URL}/openapi.json`);
+    if (!response.ok) return [];
+    const spec = (await response.json()) as { paths?: Record<string, unknown> };
+    const paths = new Set(Object.keys(spec.paths ?? {}));
+    return REQUIRED_ROUTES.filter((route) => !paths.has(route));
+  } catch {
+    // A network failure is a different problem; don't cry "stale" over it.
+    return [];
+  }
 }

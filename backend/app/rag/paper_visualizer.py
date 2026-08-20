@@ -755,6 +755,18 @@ def _expansion_is_current(cached: Dict[str, Any]) -> bool:
     return all(isinstance(step, dict) and "values" in step for step in steps)
 
 
+def _resolve_diagram_record(diagram_id: str) -> Dict[str, Any] | None:
+    """A storyboard target may be an original diagram or a modified variant."""
+    record = get_visualization_by_id(diagram_id)
+    if record is not None:
+        return record
+    # Imported lazily: variant_store is a sibling storage module and this keeps
+    # the dependency one-directional at import time.
+    from app.storage.variant_store import get_variant
+
+    return get_variant(diagram_id)
+
+
 @traceable(name="expand_diagram_node", run_type="chain")
 def expand_node(
     viz_id: str,
@@ -768,9 +780,9 @@ def expand_node(
         if cached and _expansion_is_current(cached):
             return cached
 
-    record = get_visualization_by_id(viz_id)
+    record = _resolve_diagram_record(viz_id)
     if record is None:
-        raise ValueError(f"Visualization not found: {viz_id}")
+        raise ValueError(f"Diagram not found: {viz_id}")
     node = next(
         (n for n in record.get("diagram", {}).get("nodes", []) if n.get("id") == node_id),
         None,

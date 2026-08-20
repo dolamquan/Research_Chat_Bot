@@ -428,6 +428,12 @@ export type DiagramGroup = {
   h: number;
 };
 
+export type Diagram = {
+  nodes: DiagramNode[];
+  edges: DiagramEdge[];
+  groups: DiagramGroup[];
+};
+
 export type PaperVisualization = {
   viz_id: string;
   article_id: string;
@@ -435,11 +441,7 @@ export type PaperVisualization = {
   diagram_kind: DiagramKind | string;
   title: string;
   algorithm_name: string;
-  diagram: {
-    nodes: DiagramNode[];
-    edges: DiagramEdge[];
-    groups: DiagramGroup[];
-  };
+  diagram: Diagram;
   summary: string;
   key_insight: string;
   worked_example?: WorkedExample | null;
@@ -505,4 +507,221 @@ export type WorkedExample = {
   dimension: string;
   output_text: string;
   note: string;
+};
+
+// ---------------------------------------------------------------- variants
+
+export type PatchOpKind =
+  | "add_node"
+  | "remove_node"
+  | "update_node"
+  | "add_edge"
+  | "remove_edge"
+  | "rewire_edge"
+  | "update_group"
+  | "update_meta";
+
+export type RawOp = {
+  op: PatchOpKind;
+  intent: string;
+  node_id: string;
+  label: string;
+  kind: string;
+  detail: string;
+  group: string;
+  source: string;
+  target: string;
+  edge_label: string;
+  edge_kind: string;
+  new_source: string;
+  new_target: string;
+  reconnect: string;
+  group_label: string;
+  repeat: string;
+  create_group: boolean;
+  title: string;
+  algorithm_name: string;
+  summary: string;
+  key_insight: string;
+};
+
+export type ModificationPatch = {
+  variant_title: string;
+  rationale: string;
+  expected_effect: string;
+  risks: string;
+  ops: RawOp[];
+};
+
+export type AppliedOp = {
+  index: number;
+  op: RawOp;
+  summary: string;
+  node_ids: string[];
+  edge_keys: string[];
+  derived_edges: string[];
+  reversible: boolean;
+  inverse_ops: RawOp[];
+};
+
+export type RejectedOp = {
+  index: number;
+  op: RawOp;
+  reason: string;
+  redundant: boolean;
+};
+
+export type FindingSeverity = "blocking" | "major" | "minor" | "speculative";
+export type FindingBasis =
+  | "deterministic"
+  | "model_judgment"
+  | "external_evidence";
+export type VerificationVerdict =
+  | "structurally_sound"
+  | "concerns"
+  | "likely_broken";
+
+export type VerificationFinding = {
+  finding_id: string;
+  layer: "L0" | "L1" | "L2" | "L3";
+  basis: FindingBasis;
+  category: string;
+  severity: FindingSeverity;
+  confidence: "low" | "medium" | "high";
+  title: string;
+  failure_scenario: string;
+  node_ids: string[];
+  edge_keys: string[];
+  invariant_id?: string | null;
+  critic?: string | null;
+  evidence?: string | null;
+  suggested_probe?: string | null;
+  /** The parent diagram already had this; the modification did not cause it. */
+  inherited: boolean;
+};
+
+export type StructuralDelta = {
+  nodes: { before: number; after: number };
+  edges: { before: number; after: number };
+  groups: { before: number; after: number };
+  depth: { before: number; after: number };
+  max_fan_in: { before: number; after: number };
+  max_fan_out: { before: number; after: number };
+  edge_kinds_removed: string[];
+  edge_kinds_added: string[];
+};
+
+export type VerificationReportData = {
+  target_id: string;
+  target_kind: "variant" | "visualization";
+  verdict: VerificationVerdict;
+  headline: string;
+  findings: VerificationFinding[];
+  structural_delta: StructuralDelta;
+  layers: {
+    layer: string;
+    status: string;
+    detail: string;
+    seconds: number;
+    llm_calls: number;
+  }[];
+  model: string;
+  total_seconds: number;
+};
+
+export type PatchResultData = {
+  applied: AppliedOp[];
+  rejected: RejectedOp[];
+  repairs: { code: string; message: string; node_ids: string[]; edge_keys: string[] }[];
+  changed_node_ids: string[];
+  removed_node_ids: string[];
+  structurally_touched_node_ids: string[];
+  storyboards_reused?: number;
+};
+
+export type AlgorithmVariant = {
+  variant_id: string;
+  root_viz_id: string;
+  parent_variant_id: string | null;
+  article_id: string;
+  document_source: string;
+  diagram_kind: string;
+  title: string;
+  algorithm_name: string;
+  variant_title: string;
+  diagram: Diagram;
+  summary: string;
+  key_insight: string;
+  worked_example?: WorkedExample | null;
+  intent: string;
+  patch: ModificationPatch;
+  patch_result: PatchResultData;
+  changed_node_ids: string[];
+  depth: number;
+  model: string;
+  created_at: string;
+  updated_at: string;
+  record_kind: "variant";
+};
+
+export type VariantProposal = {
+  base: {
+    id: string;
+    record_kind: string;
+    title: string;
+    algorithm_name: string;
+  };
+  intent: string;
+  patch: ModificationPatch;
+  applied: AppliedOp[];
+  rejected: RejectedOp[];
+  preview: {
+    diagram: Diagram;
+    changed_node_ids: string[];
+    removed_node_ids: string[];
+  };
+  report: VerificationReportData;
+};
+
+export type VariantTreeRow = {
+  variant_id: string;
+  parent_variant_id: string | null;
+  depth: number;
+  variant_title: string;
+  intent: string;
+  verdict: string;
+  blocking_count: number;
+  finding_count: number;
+  changed_node_ids: string[];
+  created_at: string;
+};
+
+export type VerificationRun = {
+  run_id: string;
+  target_id: string;
+  target_kind: string;
+  status: string;
+  stage: string;
+  message: string;
+  report: VerificationReportData | null;
+  verdict: string;
+  finding_count: number;
+  blocking_count: number;
+  model: string;
+  error?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DiffState = "added" | "removed" | "changed" | "unchanged";
+
+export type DiscussionMessage = {
+  message_id: string;
+  target_id: string;
+  role: "user" | "assistant";
+  content: string;
+  node_ids: string[];
+  suggestions: string[];
+  model: string;
+  created_at: string;
 };

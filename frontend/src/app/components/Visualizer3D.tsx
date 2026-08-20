@@ -12,8 +12,15 @@ import {
 } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 
-import type { DiagramEdge, DiagramGroup, DiagramNode, ProcessStep } from "../types";
-import { edgeStroke, nodeStroke } from "./diagramPalette";
+import type {
+  Diagram,
+  DiagramEdge,
+  DiagramGroup,
+  DiagramNode,
+  DiffState,
+  ProcessStep,
+} from "../types";
+import { diffTint, edgeStroke, nodeStroke } from "./diagramPalette";
 import { CHASSIS_D, CHASSIS_H, CHASSIS_W, NodeAssembly } from "./NodeAssembly";
 import { ProcessTheater, type TheaterControl } from "./ProcessTheater";
 
@@ -27,12 +34,6 @@ const NODE_W = CHASSIS_W;
 const NODE_H = CHASSIS_H;
 const NODE_D = CHASSIS_D;
 const BASE_Y = 1.35; // chassis center height above the floor
-
-type Diagram = {
-  nodes: DiagramNode[];
-  edges: DiagramEdge[];
-  groups: DiagramGroup[];
-};
 
 function nodePosition(node: DiagramNode): THREE.Vector3 {
   // 2D flows top-down (+y); in 3D the flow runs into the scene (+z).
@@ -62,6 +63,8 @@ function Node3D({
   dimmed,
   hideLabel,
   storyboard,
+  diffState,
+  highlighted,
   onClick,
 }: {
   node: DiagramNode;
@@ -70,6 +73,8 @@ function Node3D({
   dimmed: boolean;
   hideLabel?: boolean;
   storyboard?: ProcessStep[];
+  diffState?: DiffState;
+  highlighted?: boolean;
   onClick: (node: DiagramNode) => void;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -107,7 +112,20 @@ function Node3D({
         dimmed={dimmed}
         spawnDelay={node.layer * 0.09}
         storyboard={storyboard}
+        diffState={diffState}
       />
+      {highlighted && (
+        <mesh position={[0, -CHASSIS_H / 2 - 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.72, 0.95, 32]} />
+          <meshBasicMaterial
+            color="#fbbf24"
+            transparent
+            opacity={0.85}
+            side={THREE.DoubleSide}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
       {!dimmed && !hideLabel && (
         <Html
           center
@@ -120,8 +138,9 @@ function Node3D({
             className="flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-medium text-zinc-100 backdrop-blur-sm"
             style={{
               backgroundColor: "rgba(20,20,23,0.82)",
-              borderColor: selected ? color : "rgba(63,63,70,0.9)",
+              borderColor: diffTint(diffState) ?? (selected ? color : "rgba(63,63,70,0.9)"),
               boxShadow: selected ? `0 0 12px ${color}55` : undefined,
+              textDecoration: diffState === "removed" ? "line-through" : undefined,
             }}
           >
             <span
@@ -180,13 +199,15 @@ function Edge3D({
   edge,
   curve,
   dimmed,
+  diffState,
 }: {
   edge: DiagramEdge;
   curve: THREE.QuadraticBezierCurve3;
   dimmed: boolean;
+  diffState?: DiffState;
 }) {
-  const color = edgeStroke(edge.kind);
-  const weak = edge.back || edge.kind === "reference";
+  const color = diffTint(diffState) ?? edgeStroke(edge.kind);
+  const weak = edge.back || edge.kind === "reference" || diffState === "removed";
 
   const tube = useMemo(
     () => new THREE.TubeGeometry(curve, 40, weak ? 0.028 : 0.042, 8, false),
@@ -233,6 +254,7 @@ function Edge3D({
         />
       </mesh>
       {!dimmed &&
+        diffState !== "removed" &&
         [0, 0.5].map((lead) => (
           <FlowDot
             key={lead}
@@ -365,6 +387,10 @@ export function Visualizer3D({
   focusNodeId,
   processSteps,
   storyboards,
+  diffStates,
+  edgeDiffStates,
+  highlightNodeIds,
+  dimUnchanged,
   loopPlayback,
   theaterControl,
   onNodeClick,
@@ -379,6 +405,10 @@ export function Visualizer3D({
   processSteps?: ProcessStep[] | null;
   /** Per-node storyboards, used to build each chassis's internal machinery. */
   storyboards?: Record<string, ProcessStep[]>;
+  diffStates?: Record<string, DiffState>;
+  edgeDiffStates?: Record<string, DiffState>;
+  highlightNodeIds?: string[];
+  dimUnchanged?: boolean;
   loopPlayback?: boolean;
   theaterControl?: { current: TheaterControl };
   onNodeClick: (node: DiagramNode) => void;
@@ -570,18 +600,26 @@ export function Visualizer3D({
           edge={edge}
           curve={curve}
           dimmed={focusNode !== null}
+          diffState={edgeDiffStates?.[`${edge.source}->${edge.target}`]}
         />
       ))}
 
       {diagram.nodes.map((node) => (
         <Node3D
-          key={node.id}
+          key={`${node.id}-${diffStates?.[node.id] ?? "base"}`}
           node={node}
           degree={degrees.get(node.id) ?? 0}
           selected={selectedNodeId === node.id}
-          dimmed={focusNode !== null && focusNode.id !== node.id}
+          dimmed={
+            (focusNode !== null && focusNode.id !== node.id) ||
+            (Boolean(dimUnchanged) &&
+              focusNode === null &&
+              diffStates?.[node.id] === "unchanged")
+          }
           hideLabel={focusNode !== null && focusNode.id === node.id}
           storyboard={storyboards?.[node.id]}
+          diffState={diffStates?.[node.id]}
+          highlighted={highlightNodeIds?.includes(node.id)}
           onClick={onNodeClick}
         />
       ))}

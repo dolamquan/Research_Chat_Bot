@@ -15,7 +15,12 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
+  AlertTriangle,
+  GitBranch,
+  Layers,
+  MessagesSquare,
   Search,
+  ShieldCheck,
   Sparkles,
   Trash2,
   Workflow,
@@ -23,28 +28,48 @@ import {
 } from "lucide-react";
 
 import {
+  applyModification,
+  clearDiscussion,
+  getMissingBackendRoutes,
+  deleteVariant,
   deleteVisualization,
   expandVisualizationNode,
+  discussChange,
+  getDiscussion,
+  getVariantsForVisualization,
+  proposeModification,
+  verifyTarget,
   generateVisualization,
   getArticles,
   getPreparedStages,
   getVisualizations,
 } from "../api";
 import type {
+  AlgorithmVariant,
   Article,
+  DiscussionMessage,
   DiagramKind,
   DiagramNode,
+  DiffState,
   NodeExpansion,
   PaperVisualization,
   ProcessStep,
+  VariantProposal,
+  VariantTreeRow,
+  VerificationReportData,
 } from "../types";
 import {
+  diffTint,
   edgeStroke,
   formatKind,
   nodeStroke,
   primitiveColor,
 } from "./diagramPalette";
+import { buildDiagramDiff, edgeKey } from "./diagramDiff";
 import type { TheaterControl } from "./ProcessTheater";
+import { VariantChat } from "./VariantChat";
+import { VariantPanel } from "./VariantPanel";
+import { VerificationReport } from "./VerificationReport";
 import { Visualizer3D } from "./Visualizer3D";
 
 const NODE_W = 180;
@@ -126,6 +151,32 @@ export function VisualizerView() {
   const [expansionLoading, setExpansionLoading] = useState(false);
   const [expansionError, setExpansionError] = useState<string | null>(null);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
+  // --- variant lab -------------------------------------------------------
+  const [variants, setVariants] = useState<AlgorithmVariant[]>([]);
+  const [tree, setTree] = useState<VariantTreeRow[]>([]);
+  const [activeVariantId, setActiveVariantId] = useState<string | null>(null);
+  const [dockTab, setDockTab] = useState<
+    "paper" | "modify" | "findings" | "discuss"
+  >("paper");
+  const [discussion, setDiscussion] = useState<DiscussionMessage[]>([]);
+  const [discussing, setDiscussing] = useState(false);
+  const [discussError, setDiscussError] = useState<string | null>(null);
+  const [staleRoutes, setStaleRoutes] = useState<string[]>([]);
+  const [overlayMode, setOverlayMode] = useState<"none" | "diff">("none");
+  const [dimUnchanged, setDimUnchanged] = useState(true);
+  const [intent, setIntent] = useState("");
+  const [baseVariantId, setBaseVariantId] = useState<string | null>(null);
+  const [proposal, setProposal] = useState<VariantProposal | null>(null);
+  const [proposing, setProposing] = useState(false);
+  const [proposeElapsed, setProposeElapsed] = useState(0);
+  const [proposeError, setProposeError] = useState<string | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [report, setReport] = useState<VerificationReportData | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [hoverOpTarget, setHoverOpTarget] = useState<string | null>(null);
+  const [findingNodeIds, setFindingNodeIds] = useState<string[]>([]);
+
   const [viewMode, setViewMode] = useState<"2d" | "3d">("3d");
   const [fit3dCounter, setFit3dCounter] = useState(0);
 
@@ -167,6 +218,20 @@ export function VisualizerView() {
     };
   }, []);
 
+  // Detect a backend running older code, so a missing route reads as
+  // "restart your backend" rather than a bare 404 on every button.
+  useEffect(() => {
+    let cancelled = false;
+    getMissingBackendRoutes()
+      .then((missing) => {
+        if (!cancelled) setStaleRoutes(missing);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const filteredArticles = useMemo(() => {
     const query = articleQuery.trim().toLowerCase();
     if (!query) return articles;
@@ -180,6 +245,32 @@ export function VisualizerView() {
     for (const node of viz?.diagram.nodes ?? []) map.set(node.id, node);
     return map;
   }, [viz]);
+
+
+  const activeVariant = activeVariantId
+    ? variants.find((item) => item.variant_id === activeVariantId) ?? null
+    : null;
+  // Storyboards and expansions belong to whichever diagram is on screen.
+  const activeDiagramId = activeVariant?.variant_id ?? viz?.viz_id ?? null;
+  const parentDiagram = activeVariant
+    ? variants.find(
+        (item) => item.variant_id === activeVariant.parent_variant_id,
+      )?.diagram ?? viz?.diagram ?? null
+    : null;
+  const variantDiagram = activeVariant?.diagram ?? viz?.diagram;
+  const diff = useMemo(
+    () =>
+      activeVariant && parentDiagram
+        ? buildDiagramDiff(parentDiagram, activeVariant.diagram)
+        : null,
+    [activeVariant, parentDiagram],
+  );
+  const showDiff = overlayMode === "diff" && diff !== null;
+  const diagram = showDiff && diff ? diff.merged : variantDiagram;
+  const highlightNodeIds = useMemo(
+    () => (hoverOpTarget ? [hoverOpTarget] : findingNodeIds),
+    [hoverOpTarget, findingNodeIds],
+  );
 
   const fitView = useCallback(
     (target?: PaperVisualization | null) => {
@@ -268,7 +359,7 @@ export function VisualizerView() {
     setExpansion(null);
     setExpansionError(null);
     setExpansionLoading(true);
-    expandVisualizationNode({ vizId: viz.viz_id, nodeId: node.id })
+    expandVisualizationNode({ vizId: activeDiagramId ?? viz.viz_id, nodeId: node.id })
       .then((response) => {
         // Ignore stale responses after the user clicked another node.
         setPreparedIds((current) => new Set(current).add(node.id));
@@ -293,6 +384,14 @@ export function VisualizerView() {
     setSelectedNode(node);
     setPopupOpen(true);
     setPlaying3d(false);
+    if (diff?.ghostNodeIds.has(node.id)) {
+      // Removed by this variant: there is nothing on the server to expand.
+      activeNodeRef.current = null;
+      setExpansion(null);
+      setExpansionLoading(false);
+      setExpansionError(null);
+      return;
+    }
     loadExpansion(node);
   }
 
@@ -304,7 +403,7 @@ export function VisualizerView() {
       return;
     }
     let cancelled = false;
-    getPreparedStages(viz.viz_id)
+    getPreparedStages(activeDiagramId ?? viz.viz_id)
       .then((response) => {
         if (cancelled) return;
         setPreparedIds(new Set(response.prepared));
@@ -352,14 +451,214 @@ export function VisualizerView() {
   }, [storyboards]);
 
   const unpreparedCount = viz
-    ? viz.diagram.nodes.filter((node) => !preparedIds.has(node.id)).length
+    ? (activeVariant?.diagram.nodes ?? viz.diagram.nodes).filter(
+        (node) => !preparedIds.has(node.id),
+      ).length
     : 0;
 
   const prepareAbortRef = useRef(false);
+  const proposeAbortRef = useRef<AbortController | null>(null);
+
+  const loadVariants = useCallback(
+    (vizId: string) =>
+      getVariantsForVisualization(vizId)
+        .then((response) => {
+          setVariants(response.variants);
+          setTree(response.tree);
+        })
+        .catch(() => undefined),
+    [],
+  );
+
+  useEffect(() => {
+    if (!viz) {
+      setVariants([]);
+      setTree([]);
+      setActiveVariantId(null);
+      setOverlayMode("none");
+      setProposal(null);
+      setReport(null);
+      return;
+    }
+    void loadVariants(viz.viz_id);
+  }, [viz, loadVariants]);
+
+  // The conversation belongs to the diagram on screen, so switching variants
+  // switches transcripts rather than mixing them.
+  useEffect(() => {
+    if (!activeDiagramId) {
+      setDiscussion([]);
+      return;
+    }
+    let cancelled = false;
+    setDiscussError(null);
+    getDiscussion(activeDiagramId)
+      .then((response) => {
+        if (!cancelled) setDiscussion(response.history);
+      })
+      .catch(() => {
+        if (!cancelled) setDiscussion([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeDiagramId]);
+
+  // A 404 from these endpoints almost always means the backend predates the
+  // code, not that something is genuinely missing.
+  function explainError(err: unknown): string {
+    const message = err instanceof Error ? err.message : String(err);
+    if (staleRoutes.length > 0 || /not found/i.test(message)) {
+      return "The backend is running older code and does not have this endpoint yet. Restart it with restart-backend.ps1, then try again.";
+    }
+    return message;
+  }
+
+  async function handleDiscuss(message: string) {
+    if (!activeDiagramId || discussing) return;
+    setDiscussing(true);
+    setDiscussError(null);
+    // Show the question straight away rather than after the round trip.
+    const pending: DiscussionMessage = {
+      message_id: `pending-${Date.now()}`,
+      target_id: activeDiagramId,
+      role: "user",
+      content: message,
+      node_ids: [],
+      suggestions: [],
+      model: "",
+      created_at: new Date().toISOString(),
+    };
+    setDiscussion((current) => [...current, pending]);
+    try {
+      const response = await discussChange({
+        targetId: activeDiagramId,
+        message,
+      });
+      setDiscussion(response.history);
+    } catch (err) {
+      setDiscussion((current) =>
+        current.filter((item) => item.message_id !== pending.message_id),
+      );
+      setDiscussError(explainError(err));
+    } finally {
+      setDiscussing(false);
+    }
+  }
+
+  async function handleClearDiscussion() {
+    if (!activeDiagramId) return;
+    try {
+      await clearDiscussion(activeDiagramId);
+      setDiscussion([]);
+    } catch (err) {
+      setDiscussError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // Elapsed counter so a slow proposal never looks stuck.
+  useEffect(() => {
+    if (!proposing) return;
+    setProposeElapsed(0);
+    const timer = window.setInterval(
+      () => setProposeElapsed((value) => value + 1),
+      1000,
+    );
+    return () => window.clearInterval(timer);
+  }, [proposing]);
+
+  async function handlePropose() {
+    const targetId = baseVariantId ?? activeVariantId ?? viz?.viz_id;
+    if (!targetId || !intent.trim() || proposing) return;
+    proposeAbortRef.current?.abort();
+    const controller = new AbortController();
+    proposeAbortRef.current = controller;
+    setProposing(true);
+    setProposeError(null);
+    setProposal(null);
+    try {
+      const response = await proposeModification({
+        targetId,
+        intent: intent.trim(),
+        signal: controller.signal,
+      });
+      setProposal(response.proposal);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      setProposeError(explainError(err));
+    } finally {
+      setProposing(false);
+    }
+  }
+
+  async function handleApply() {
+    const targetId = proposal?.base.id;
+    if (!proposal || !targetId || applying) return;
+    setApplying(true);
+    setProposeError(null);
+    try {
+      const response = await applyModification({
+        targetId,
+        intent: proposal.intent,
+        patch: proposal.patch,
+      });
+      const variant = response.variant;
+      setVariants((current) => [variant, ...current]);
+      setActiveVariantId(variant.variant_id);
+      setBaseVariantId(null);
+      setProposal(null);
+      setOverlayMode("diff");
+      setReport(response.run.report ?? null);
+      setDockTab("findings");
+      closeNodePopup();
+      if (viz) void loadVariants(viz.viz_id);
+    } catch (err) {
+      setProposeError(explainError(err));
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  async function handleVerify(targetId: string) {
+    setVerifying(true);
+    setVerifyError(null);
+    try {
+      const response = await verifyTarget(targetId);
+      setReport(response.report);
+      if (viz) void loadVariants(viz.viz_id);
+    } catch (err) {
+      setVerifyError(explainError(err));
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  function handleSelectVariant(variantId: string | null) {
+    setActiveVariantId(variantId);
+    setOverlayMode(variantId ? "diff" : "none");
+    setFindingNodeIds([]);
+    closeNodePopup();
+    const selected = variantId
+      ? variants.find((item) => item.variant_id === variantId)
+      : null;
+    setReport(null);
+    if (selected) void handleVerify(selected.variant_id);
+  }
+
+  async function handleDeleteVariant(variantId: string) {
+    try {
+      await deleteVariant(variantId);
+      if (activeVariantId === variantId) handleSelectVariant(null);
+      if (viz) void loadVariants(viz.viz_id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
 
   async function prepareAllStages() {
     if (!viz || prepareDone !== null) return;
-    const pending = viz.diagram.nodes.filter((node) => !preparedIds.has(node.id));
+    const nodes = activeVariant?.diagram.nodes ?? viz.diagram.nodes;
+    const pending = nodes.filter((node) => !preparedIds.has(node.id));
     if (pending.length === 0) return;
 
     prepareAbortRef.current = false;
@@ -375,7 +674,7 @@ export function VisualizerView() {
         const node = pending[cursor++];
         try {
           const response = await expandVisualizationNode({
-            vizId: viz.viz_id,
+            vizId: activeDiagramId ?? viz.viz_id,
             nodeId: node.id,
           });
           setPreparedIds((current) => new Set(current).add(node.id));
@@ -406,11 +705,11 @@ export function VisualizerView() {
   }, []);
 
   const tourOrder = useMemo(() => {
-    if (!viz) return [] as DiagramNode[];
-    return [...viz.diagram.nodes].sort(
-      (a, b) => a.layer - b.layer || a.x - b.x,
-    );
-  }, [viz]);
+    // The variant's real stages, never the diff's ghosts.
+    const source = activeVariant?.diagram.nodes ?? viz?.diagram.nodes;
+    if (!source) return [] as DiagramNode[];
+    return [...source].sort((a, b) => a.layer - b.layer || a.x - b.x);
+  }, [viz, activeVariant]);
 
   function focusAndPlay(node: DiagramNode, viaTourIndex: number | null = null) {
     if (!viz) return;
@@ -425,7 +724,7 @@ export function VisualizerView() {
     // Warm the server cache for the next stage while this one plays.
     if (viaTourIndex !== null && viaTourIndex + 1 < tourOrder.length) {
       expandVisualizationNode({
-        vizId: viz.viz_id,
+        vizId: activeDiagramId ?? viz.viz_id,
         nodeId: tourOrder[viaTourIndex + 1].id,
       }).catch(() => undefined);
     }
@@ -668,10 +967,33 @@ export function VisualizerView() {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
 
-  const diagram = viz?.diagram;
 
   return (
-    <div className="flex h-full min-h-0 bg-[#191919] text-zinc-200">
+    <div className="flex h-full min-h-0 flex-col bg-[#191919] text-zinc-200">
+      {staleRoutes.length > 0 && (
+        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-amber-800/70 bg-amber-950/60 px-4 py-2">
+          <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-amber-300">
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Backend is running older code
+          </span>
+          <span className="text-xs text-amber-100/90">
+            {staleRoutes.length} endpoint
+            {staleRoutes.length === 1 ? "" : "s"} this view needs
+            {staleRoutes.length === 1 ? " is" : " are"} missing, so those
+            actions fail with <span className="font-mono">Not Found</span>.
+          </span>
+          <code className="rounded bg-black/50 px-2 py-0.5 font-mono text-[10px] text-amber-200">
+            .\restart-backend.ps1
+          </code>
+          <span
+            className="font-mono text-[9px] text-amber-200/50"
+            title={staleRoutes.join("\n")}
+          >
+            {staleRoutes.join("  ")}
+          </span>
+        </div>
+      )}
+      <div className="flex min-h-0 flex-1">
       {/* Left rail: paper picker + controls */}
       <div className="flex w-72 shrink-0 flex-col border-r border-zinc-800">
         <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
@@ -799,12 +1121,16 @@ export function VisualizerView() {
         {viz && diagram && viewMode === "3d" ? (
           <div className="absolute inset-0">
             <Visualizer3D
-              key={`${viz.viz_id}-${viz.updated_at}-${fit3dCounter}`}
+              key={`${activeDiagramId}-${viz.updated_at}-${fit3dCounter}-${overlayMode}`}
               diagram={diagram}
               selectedNodeId={selectedNode?.id ?? null}
               focusNodeId={playing3d ? selectedNode?.id ?? null : null}
               processSteps={playing3d ? processSteps : null}
               storyboards={storyboards}
+              diffStates={showDiff ? (diff?.nodeState as Record<string, DiffState>) : undefined}
+              edgeDiffStates={showDiff ? (diff?.edgeState as Record<string, DiffState>) : undefined}
+              highlightNodeIds={highlightNodeIds}
+              dimUnchanged={showDiff && dimUnchanged}
               loopPlayback={tourIndex === null}
               theaterControl={theaterControlRef}
               onNodeClick={handle3dNodeClick}
@@ -832,17 +1158,27 @@ export function VisualizerView() {
         >
           <rect width="100%" height="100%" fill="#191919" />
           <defs>
-            <marker
-              id="viz-arrow"
-              viewBox="0 0 10 10"
-              refX="9"
-              refY="5"
-              markerWidth="7"
-              markerHeight="7"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b8b93" />
-            </marker>
+            {(
+              [
+                ["viz-arrow", "#8b8b93"],
+                ["viz-arrow-added", "#34d399"],
+                ["viz-arrow-removed", "#fb7185"],
+                ["viz-arrow-changed", "#fbbf24"],
+              ] as const
+            ).map(([id, fill]) => (
+              <marker
+                key={id}
+                id={id}
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="7"
+                markerHeight="7"
+                orient="auto-start-reverse"
+              >
+                <path d="M 0 0 L 10 5 L 0 10 z" fill={fill} />
+              </marker>
+            ))}
           </defs>
           <g
             transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}
@@ -877,9 +1213,15 @@ export function VisualizerView() {
               const source = nodeById.get(edge.source);
               const target = nodeById.get(edge.target);
               if (!source || !target) return null;
-              const stroke = edgeStroke(edge.kind);
+              const edgeDiff = showDiff
+                ? diff?.edgeState[edgeKey(edge)]
+                : undefined;
+              const stroke = diffTint(edgeDiff) ?? edgeStroke(edge.kind);
               const dashed =
-                edge.kind === "feedback" || edge.kind === "reference" || edge.back;
+                edge.kind === "feedback" ||
+                edge.kind === "reference" ||
+                edge.back ||
+                edgeDiff === "removed";
               const path = edgePath(source, target, edge.back);
               const midX = (source.x + target.x) / 2;
               const midY = (source.y + target.y) / 2;
@@ -891,8 +1233,16 @@ export function VisualizerView() {
                     stroke={stroke}
                     strokeWidth={1.6}
                     strokeDasharray={dashed ? "6 4" : undefined}
-                    markerEnd="url(#viz-arrow)"
-                    opacity={0.85}
+                    markerEnd={`url(#viz-arrow${
+                      edgeDiff && edgeDiff !== "unchanged" ? `-${edgeDiff}` : ""
+                    })`}
+                    opacity={
+                      edgeDiff === "removed"
+                        ? 0.32
+                        : showDiff && edgeDiff === "unchanged" && dimUnchanged
+                          ? 0.4
+                          : 0.85
+                    }
                   />
                   {edge.label && (
                     <text
@@ -909,27 +1259,73 @@ export function VisualizerView() {
             })}
 
             {diagram?.nodes.map((node) => {
-              const stroke = nodeStroke(node.kind);
+              const nodeDiff = showDiff ? diff?.nodeState[node.id] : undefined;
+              const tint = diffTint(nodeDiff);
+              const ghost = nodeDiff === "removed";
+              const stroke = tint ?? nodeStroke(node.kind);
               const isSelected = selectedNode?.id === node.id;
+              const highlighted = highlightNodeIds.includes(node.id);
               const lines = wrapLabel(node.label);
               const pill = node.kind === "input" || node.kind === "output";
+              const faded =
+                showDiff && nodeDiff === "unchanged" && dimUnchanged ? 0.45 : 1;
               return (
                 <g
                   key={node.id}
                   className="cursor-pointer"
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={() => openNodePopup(node)}
+                  opacity={faded}
                 >
+                  {(tint || highlighted) && (
+                    <rect
+                      x={node.x - NODE_W / 2 - 4}
+                      y={node.y - NODE_H / 2 - 4}
+                      width={NODE_W + 8}
+                      height={NODE_H + 8}
+                      rx={pill ? NODE_H / 2 + 4 : 12}
+                      fill="none"
+                      stroke={highlighted ? "#fbbf24" : (tint as string)}
+                      strokeWidth={highlighted ? 2.4 : 2}
+                      strokeDasharray={ghost ? "5 4" : undefined}
+                    />
+                  )}
                   <rect
                     x={node.x - NODE_W / 2}
                     y={node.y - NODE_H / 2}
                     width={NODE_W}
                     height={NODE_H}
                     rx={pill ? NODE_H / 2 : 8}
-                    fill={isSelected ? "#134e4a" : "#27272a"}
+                    fill={ghost ? "#1f1f22" : isSelected ? "#134e4a" : "#27272a"}
                     stroke={stroke}
                     strokeWidth={isSelected ? 2.2 : 1.4}
+                    strokeDasharray={ghost ? "5 4" : undefined}
                   />
+                  {tint && (
+                    <>
+                      <circle
+                        cx={node.x + NODE_W / 2 + 4}
+                        cy={node.y - NODE_H / 2 - 4}
+                        r={7}
+                        fill="#18181b"
+                        stroke={tint as string}
+                        strokeWidth={1.2}
+                      />
+                      <text
+                        x={node.x + NODE_W / 2 + 4}
+                        y={node.y - NODE_H / 2 - 0.5}
+                        fontSize={10}
+                        textAnchor="middle"
+                        fill={tint as string}
+                      >
+                        {nodeDiff === "added"
+                          ? "+"
+                          : nodeDiff === "removed"
+                            ? "\u2212"
+                            : "~"}
+                      </text>
+                    </>
+                  )}
                   {lines.map((line, lineIndex) => (
                     <text
                       key={lineIndex}
@@ -941,7 +1337,8 @@ export function VisualizerView() {
                       }
                       fontSize={12}
                       textAnchor="middle"
-                      fill="#e4e4e7"
+                      fill={ghost ? "#a1a1aa" : "#e4e4e7"}
+                      textDecoration={ghost ? "line-through" : undefined}
                     >
                       {line}
                     </text>
@@ -998,6 +1395,22 @@ export function VisualizerView() {
                   Walkthrough
                 </button>
               </>
+            )}
+            {diff && (
+              <button
+                onClick={() =>
+                  setOverlayMode((current) => (current === "diff" ? "none" : "diff"))
+                }
+                title="Highlight what this variant changed"
+                className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                  showDiff
+                    ? "border-teal-700 bg-teal-600/20 text-teal-200"
+                    : "border-zinc-700 bg-zinc-900/90 text-zinc-400 hover:text-zinc-200"
+                }`}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                Diff
+              </button>
             )}
             <div className="flex overflow-hidden rounded-md border border-zinc-700 bg-zinc-900/90">
               {(["2d", "3d"] as const).map((mode) => (
@@ -1070,6 +1483,44 @@ export function VisualizerView() {
         {error && (
           <div className="absolute bottom-3 left-3 right-3 rounded-md border border-red-900/60 bg-red-950/80 px-3 py-2 text-xs text-red-300">
             {error}
+          </div>
+        )}
+
+        {/* Which diagram am I looking at, and what changed in it */}
+        {viz && (activeVariant || tree.length > 0) && (
+          <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/85 px-2 py-1 text-[11px] backdrop-blur-sm">
+            <GitBranch className="h-3 w-3 text-zinc-500" />
+            <button
+              onClick={() => handleSelectVariant(null)}
+              className={activeVariant ? "text-zinc-400 hover:text-zinc-200" : "text-teal-200"}
+            >
+              Original
+            </button>
+            {activeVariant && (
+              <>
+                <span className="text-zinc-600">/</span>
+                <span className="max-w-[16rem] truncate text-teal-200">
+                  {activeVariant.variant_title}
+                </span>
+              </>
+            )}
+            {showDiff && diff && (
+              <>
+                <span className="text-zinc-600">|</span>
+                <span className="font-mono text-emerald-300">+{diff.counts.added}</span>
+                <span className="font-mono text-amber-300">~{diff.counts.changed}</span>
+                <span className="font-mono text-rose-300">-{diff.counts.removed}</span>
+                <button
+                  onClick={() => setDimUnchanged((value) => !value)}
+                  title="Dim the stages this variant did not touch"
+                  className={`ml-1 rounded px-1 font-mono text-[9px] ${
+                    dimUnchanged ? "bg-teal-600/30 text-teal-200" : "text-zinc-500"
+                  }`}
+                >
+                  dim
+                </button>
+              </>
+            )}
           </div>
         )}
 
@@ -1271,6 +1722,20 @@ export function VisualizerView() {
                   </p>
                 )}
 
+                {diff?.ghostNodeIds.has(selectedNode.id) && (
+                  <div className="mb-3 rounded-md border border-rose-900/60 bg-rose-950/30 p-2.5">
+                    <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-rose-300">
+                      Removed by this variant
+                    </div>
+                    <p className="text-xs leading-relaxed text-zinc-400">
+                      {activeVariant?.patch.ops.find(
+                        (op) => op.node_id === selectedNode.id,
+                      )?.intent ??
+                        "This stage is not part of the variant. It is shown here so you can see what the modification took out."}
+                    </p>
+                  </div>
+                )}
+
                 {expansionLoading ? (
                   <div className="flex items-center gap-2 py-6 text-sm text-zinc-400">
                     <Loader2 className="h-4 w-4 animate-spin text-teal-300" />
@@ -1333,8 +1798,125 @@ export function VisualizerView() {
         )}
       </div>
 
-      {/* Right panel: paper summary */}
-      <div className="w-80 shrink-0 overflow-y-auto border-l border-zinc-800 p-4">
+      {/* Right dock: paper summary, modification, findings */}
+      <div
+        className={`flex shrink-0 flex-col border-l border-zinc-800 ${
+          dockTab === "findings" || dockTab === "discuss" ? "w-[26rem]" : "w-80"
+        }`}
+      >
+        <div className="flex shrink-0 border-b border-zinc-800">
+          {(
+            [
+              ["paper", "Paper"],
+              ["modify", "Modify"],
+              ["findings", "Findings"],
+              ["discuss", "Discuss"],
+            ] as const
+          ).map(([tab, label]) => (
+            <button
+              key={tab}
+              onClick={() => setDockTab(tab)}
+              disabled={!viz}
+              className={`flex flex-1 items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium transition-colors disabled:opacity-40 ${
+                dockTab === tab
+                  ? "border-b-2 border-teal-500 text-teal-200"
+                  : "text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              {tab === "modify" ? <GitBranch className="h-3.5 w-3.5" /> : null}
+              {tab === "findings" ? <ShieldCheck className="h-3.5 w-3.5" /> : null}
+              {tab === "discuss" ? (
+                <MessagesSquare className="h-3.5 w-3.5" />
+              ) : null}
+              {label}
+              {tab === "findings" &&
+                report &&
+                report.findings.filter((f) => !f.inherited).length > 0 && (
+                  <span className="rounded bg-zinc-800 px-1 font-mono text-[9px] text-zinc-300">
+                    {report.findings.filter((f) => !f.inherited).length}
+                  </span>
+                )}
+              {tab === "discuss" && discussion.length > 0 && (
+                <span className="rounded bg-zinc-800 px-1 font-mono text-[9px] text-zinc-300">
+                  {discussion.filter((m) => m.role === "user").length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {dockTab === "modify" && viz && (
+          <VariantPanel
+            baseLabel={
+              (baseVariantId
+                ? variants.find((v) => v.variant_id === baseVariantId)?.variant_title
+                : activeVariant?.variant_title) ?? "the original"
+            }
+            intent={intent}
+            onIntentChange={setIntent}
+            proposing={proposing}
+            proposeElapsed={proposeElapsed}
+            proposeError={proposeError}
+            proposal={proposal}
+            applying={applying}
+            variants={variants}
+            tree={tree}
+            activeVariantId={activeVariantId}
+            onPropose={() => void handlePropose()}
+            onCancelPropose={() => proposeAbortRef.current?.abort()}
+            onApply={() => void handleApply()}
+            onDiscard={() => setProposal(null)}
+            onSelectVariant={handleSelectVariant}
+            onBranchFrom={(id) => {
+              setBaseVariantId(id);
+              setProposal(null);
+              setDockTab("modify");
+            }}
+            onDeleteVariant={(id) => void handleDeleteVariant(id)}
+            onHoverOpTarget={setHoverOpTarget}
+          />
+        )}
+
+        {dockTab === "discuss" && viz && (
+          <VariantChat
+            targetLabel={
+              activeVariant?.variant_title ?? viz.algorithm_name ?? viz.title
+            }
+            isVariant={activeVariant !== null}
+            history={discussion}
+            loading={discussing}
+            error={discussError}
+            onSend={(message) => void handleDiscuss(message)}
+            onClear={() => void handleClearDiscussion()}
+            onFocusNodes={(nodeIds) => {
+              setFindingNodeIds(nodeIds);
+              setDimUnchanged(false);
+            }}
+          />
+        )}
+
+        {dockTab === "findings" && (
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <VerificationReport
+              report={report}
+              loading={verifying}
+              error={verifyError}
+              onReverify={() =>
+                activeDiagramId ? void handleVerify(activeDiagramId) : undefined
+              }
+              onFocusNodes={(nodeIds) => {
+                setFindingNodeIds(nodeIds);
+                setDimUnchanged(false);
+              }}
+            />
+          </div>
+        )}
+
+        <div
+          className={`min-h-0 flex-1 overflow-y-auto p-4 ${
+            dockTab === "paper" ? "" : "hidden"
+          }`}
+        >
         {viz ? (
           <div>
             <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">
@@ -1405,6 +1987,8 @@ export function VisualizerView() {
             as an interactive diagram.
           </div>
         )}
+        </div>
+      </div>
       </div>
     </div>
   );

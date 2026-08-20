@@ -320,3 +320,57 @@ def list_expanded_node_ids(viz_id: str) -> List[str]:
         if all(isinstance(step, dict) and "values" in step for step in steps):
             prepared.append(row["node_id"])
     return prepared
+
+
+def copy_node_expansions(
+    from_id: str, to_id: str, node_ids: List[str]
+) -> int:
+    """Carry storyboards over to a variant for stages the patch left alone.
+
+    Stages that were changed, removed, or had their edges rewired are
+    deliberately not copied: their storyboard prompt embeds the node's
+    neighbourhood, so it would be stale. Those simply have no row and are
+    regenerated on demand by the existing readiness path.
+    """
+    if not node_ids:
+        return 0
+    placeholders = ",".join("?" for _ in node_ids)
+    timestamp = _now()
+    with _connect() as conn:
+        rows = conn.execute(
+            f"SELECT node_id, node_label, content_json, model FROM node_expansions "
+            f"WHERE viz_id = ? AND node_id IN ({placeholders})",
+            (from_id, *node_ids),
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                """
+                INSERT INTO node_expansions (
+                    expansion_id, viz_id, node_id, node_label, content_json,
+                    model, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(viz_id, node_id) DO UPDATE SET
+                    content_json = excluded.content_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    uuid.uuid4().hex,
+                    to_id,
+                    row["node_id"],
+                    row["node_label"],
+                    row["content_json"],
+                    row["model"],
+                    timestamp,
+                    timestamp,
+                ),
+            )
+    return len(rows)
+
+
+def delete_node_expansions(viz_id: str) -> int:
+    with _connect() as conn:
+        cursor = conn.execute(
+            "DELETE FROM node_expansions WHERE viz_id = ?", (viz_id,)
+        )
+    return cursor.rowcount

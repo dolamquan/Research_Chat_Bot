@@ -3,8 +3,8 @@ import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { RoundedBox } from "@react-three/drei";
 
-import type { DiagramNode, ProcessStep } from "../types";
-import { nodeStroke } from "./diagramPalette";
+import type { DiagramNode, DiffState, ProcessStep } from "../types";
+import { diffTint, nodeStroke } from "./diagramPalette";
 import { MechanismChain, chassisWidthFor } from "./MechanismChain";
 
 /**
@@ -444,6 +444,7 @@ export function NodeAssembly({
   dimmed,
   spawnDelay,
   storyboard,
+  diffState,
 }: {
   node: DiagramNode;
   degree: number;
@@ -453,8 +454,15 @@ export function NodeAssembly({
   spawnDelay: number;
   /** This stage's own process steps, when the paper has been read for it. */
   storyboard?: ProcessStep[];
+  /** How this stage differs from the diagram it was modified from. */
+  diffState?: DiffState;
 }) {
+  // Two colour channels: the cage says how this stage differs from the
+  // original, the machinery keeps saying what the stage does. Overloading
+  // `kind` would change which mechanism geometry renders.
   const color = nodeStroke(node.kind);
+  const cageColor = diffTint(diffState) ?? color;
+  const removed = diffState === "removed";
   const seed = useMemo(
     () => node.id.split("").reduce((total, ch) => total + ch.charCodeAt(0), 0),
     [node.id],
@@ -490,8 +498,13 @@ export function NodeAssembly({
   // differ per stage rather than every block being identical.
   const width = chassisWidthFor(storyboard);
   const emissive = dimmed ? 0.05 : selected ? 1.6 : hovered ? 1.0 : 0.6;
-  const shellOpacity = dimmed ? 0.05 : 0.1;
-  const edgeOpacity = dimmed ? 0.1 : selected ? 0.95 : hovered ? 0.7 : 0.4;
+  const shellOpacity = removed ? 0.03 : dimmed ? 0.05 : 0.1;
+  const edgeOpacity = removed
+    ? 0.22
+    : dimmed
+      ? 0.1
+      : (selected ? 0.95 : hovered ? 0.7 : 0.4) +
+        (diffState === "added" || diffState === "changed" ? 0.25 : 0);
 
   return (
     <group ref={root}>
@@ -502,7 +515,7 @@ export function NodeAssembly({
         smoothness={4}
       >
         <meshPhysicalMaterial
-          color={color}
+          color={cageColor}
           transparent
           opacity={shellOpacity}
           roughness={0.06}
@@ -513,14 +526,14 @@ export function NodeAssembly({
           depthWrite={false}
         />
       </RoundedBox>
-      <Frame color={color} opacity={edgeOpacity} width={width} />
-      {!dimmed && (
-        <ScanPlane color={color} active={selected || hovered} width={width} />
+      <Frame color={cageColor} opacity={edgeOpacity} width={width} />
+      {!dimmed && !removed && (
+        <ScanPlane color={cageColor} active={selected || hovered} width={width} />
       )}
 
       {/* Internal machinery: built from this stage's own storyboard when the
           paper has been read for it, otherwise a form implied by its kind. */}
-      {!dimmed && (
+      {!dimmed && !removed && (
         <>
           <group ref={detail}>
             {storyboard && storyboard.length > 0 ? (
@@ -555,7 +568,10 @@ export function NodeAssembly({
         </>
       )}
 
-      <Ports color={color} intensity={dimmed ? 0.05 : emissive * 0.7} />
+      <Ports
+        color={cageColor}
+        intensity={dimmed || removed ? 0.05 : emissive * 0.7}
+      />
 
       {/* pedestal + emissive base ring anchor the chassis to the floor */}
       <group position={[0, -CHASSIS_H / 2 - 0.06, 0]}>
@@ -572,9 +588,17 @@ export function NodeAssembly({
         <mesh position={[0, 0.055, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[0.4, 0.52, 28]} />
           <meshBasicMaterial
-            color={color}
+            color={cageColor}
             transparent
-            opacity={dimmed ? 0.08 : selected ? 0.9 : 0.42}
+            opacity={
+              dimmed
+                ? 0.08
+                : diffState === "added"
+                  ? 0.95
+                  : selected
+                    ? 0.9
+                    : 0.42
+            }
             side={THREE.DoubleSide}
             toneMapped={false}
           />
