@@ -1,20 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { Grid, Html, OrbitControls, RoundedBox } from "@react-three/drei";
+import {
+  Edges,
+  Environment,
+  Grid,
+  Html,
+  Lightformer,
+  MeshReflectorMaterial,
+  OrbitControls,
+} from "@react-three/drei";
+import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 
 import type { DiagramEdge, DiagramGroup, DiagramNode, ProcessStep } from "../types";
 import { edgeStroke, nodeStroke } from "./diagramPalette";
+import { CHASSIS_D, CHASSIS_H, CHASSIS_W, NodeAssembly } from "./NodeAssembly";
 import { ProcessTheater, type TheaterControl } from "./ProcessTheater";
 
 // 2D layout units (COLUMN_GAP=220, LAYER_GAP=130) -> world units.
 // Depth (flow axis) gets more room than width so layers read clearly in 3D.
 const SX = 1 / 55;
-const SZ = 1 / 36;
-const NODE_W = 3.1;
-const NODE_H = 1.15;
-const NODE_D = 1.15;
-const BASE_Y = 1.05; // node center height above the floor grid
+// Layers sit closer together than the 2D layout implies, so a long chain stays
+// compact enough for the chassis detail to read at the default framing.
+const SZ = 1 / 46;
+const NODE_W = CHASSIS_W;
+const NODE_H = CHASSIS_H;
+const NODE_D = CHASSIS_D;
+const BASE_Y = 1.35; // chassis center height above the floor
 
 type Diagram = {
   nodes: DiagramNode[];
@@ -49,6 +61,7 @@ function Node3D({
   selected,
   dimmed,
   hideLabel,
+  storyboard,
   onClick,
 }: {
   node: DiagramNode;
@@ -56,14 +69,14 @@ function Node3D({
   selected: boolean;
   dimmed: boolean;
   hideLabel?: boolean;
+  storyboard?: ProcessStep[];
   onClick: (node: DiagramNode) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const color = nodeStroke(node.kind);
   const position = useMemo(() => nodePosition(node), [node]);
   // Well-connected components read as bigger.
-  const scale = 1 + Math.min(degree, 4) * 0.1;
-  const emissiveIntensity = dimmed ? 0.04 : selected ? 0.6 : hovered ? 0.34 : 0.14;
+  const scale = 1 + Math.min(degree, 4) * 0.08;
 
   useEffect(() => {
     document.body.style.cursor = hovered ? "pointer" : "auto";
@@ -71,20 +84,6 @@ function Node3D({
       document.body.style.cursor = "auto";
     };
   }, [hovered]);
-
-  const material = (
-    <meshStandardMaterial
-      color={color}
-      roughness={0.38}
-      metalness={0.2}
-      emissive={color}
-      emissiveIntensity={emissiveIntensity}
-      transparent
-      opacity={dimmed ? 0.18 : 1}
-    />
-  );
-
-  const pill = node.kind === "input" || node.kind === "output";
 
   return (
     <group
@@ -100,37 +99,39 @@ function Node3D({
       }}
       onPointerOut={() => setHovered(false)}
     >
-      {pill ? (
-        <mesh rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.62, 0.62, NODE_W, 28]} />
-          {material}
-        </mesh>
-      ) : node.kind === "decision" ? (
-        <mesh>
-          <octahedronGeometry args={[1.05]} />
-          {material}
-        </mesh>
-      ) : (
-        <RoundedBox args={[NODE_W, NODE_H, NODE_D]} radius={0.2} smoothness={4}>
-          {material}
-        </RoundedBox>
-      )}
+      <NodeAssembly
+        node={node}
+        degree={degree}
+        selected={selected}
+        hovered={hovered}
+        dimmed={dimmed}
+        spawnDelay={node.layer * 0.09}
+        storyboard={storyboard}
+      />
       {!dimmed && !hideLabel && (
         <Html
           center
-          position={[0, NODE_H + 0.55, 0]}
+          position={[0, CHASSIS_H + 0.62, 0]}
           distanceFactor={13}
           style={{ pointerEvents: "none" }}
           zIndexRange={[10, 0]}
         >
           <div
-            className="whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-medium text-zinc-100"
+            className="flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-medium text-zinc-100 backdrop-blur-sm"
             style={{
-              backgroundColor: "rgba(24,24,27,0.88)",
+              backgroundColor: "rgba(20,20,23,0.82)",
               borderColor: selected ? color : "rgba(63,63,70,0.9)",
+              boxShadow: selected ? `0 0 12px ${color}55` : undefined,
             }}
           >
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: color }}
+            />
             {node.label}
+            <span className="font-mono text-[9px] text-zinc-500">
+              L{node.layer}
+            </span>
           </div>
         </Html>
       )}
@@ -149,17 +150,29 @@ function FlowDot({
   offset: number;
   reverse: boolean;
 }) {
-  const ref = useRef<THREE.Mesh>(null);
+  const ref = useRef<THREE.Group>(null);
   useFrame(({ clock }) => {
     let t = (((clock.getElapsedTime() * 0.28 + offset) % 1) + 1) % 1;
     if (reverse) t = 1 - t;
     ref.current?.position.copy(curve.getPoint(t));
   });
   return (
-    <mesh ref={ref}>
-      <sphereGeometry args={[0.1, 10, 10]} />
-      <meshBasicMaterial color={color} />
-    </mesh>
+    <group ref={ref}>
+      <mesh>
+        <sphereGeometry args={[0.075, 12, 12]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+      {/* soft halo so bloom picks the packet up as a light source */}
+      <mesh>
+        <sphereGeometry args={[0.17, 12, 12]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.28}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
   );
 }
 
@@ -201,9 +214,12 @@ function Edge3D({
         <meshStandardMaterial
           color={color}
           emissive={color}
-          emissiveIntensity={dimmed ? 0.05 : 0.35}
+          emissiveIntensity={dimmed ? 0.05 : 0.8}
+          roughness={0.25}
+          metalness={0.6}
           transparent
-          opacity={dimmed ? 0.08 : weak ? 0.4 : 0.7}
+          opacity={dimmed ? 0.08 : weak ? 0.4 : 0.72}
+          toneMapped={false}
         />
       </mesh>
       <mesh position={arrow.point} quaternion={arrow.quaternion}>
@@ -216,14 +232,18 @@ function Edge3D({
           opacity={dimmed ? 0.08 : 1}
         />
       </mesh>
-      {!dimmed && (
-        <FlowDot
-          curve={curve}
-          color={color}
-          offset={(midpoint.x * 7919 + midpoint.z * 104729) % 1}
-          reverse={false}
-        />
-      )}
+      {!dimmed &&
+        [0, 0.5].map((lead) => (
+          <FlowDot
+            key={lead}
+            curve={curve}
+            color={color}
+            offset={
+              (((midpoint.x * 7919 + midpoint.z * 104729) % 1) + lead + 1) % 1
+            }
+            reverse={false}
+          />
+        ))}
       {edge.label && !dimmed && (
         <Html
           center
@@ -257,12 +277,22 @@ function Group3D({ group, nodes }: { group: DiagramGroup; nodes: DiagramNode[] }
     <group>
       <mesh position={[(minX + maxX) / 2, height / 2 + 0.02, (minZ + maxZ) / 2]}>
         <boxGeometry args={[maxX - minX, height, maxZ - minZ]} />
-        <meshStandardMaterial
+        <meshPhysicalMaterial
           color="#6ee7d8"
           transparent
-          opacity={0.06}
+          opacity={0.045}
+          roughness={0.1}
+          clearcoat={1}
           depthWrite={false}
         />
+        <Edges threshold={15}>
+          <lineBasicMaterial
+            color="#6ee7d8"
+            transparent
+            opacity={0.35}
+            toneMapped={false}
+          />
+        </Edges>
       </mesh>
       <Html
         position={[minX + 0.4, height + 0.35, minZ + 0.4]}
@@ -319,9 +349,9 @@ function CameraRig({ center, radius }: { center: THREE.Vector3; radius: number }
   useEffect(() => {
     // Diagonal three-quarter view so the flow axis reads as depth.
     camera.position.set(
-      center.x + radius * 1.05,
-      center.y + radius * 0.72,
-      center.z + radius * 0.9,
+      center.x + radius * 0.95,
+      center.y + radius * 0.6,
+      center.z + radius * 0.85,
     );
     camera.lookAt(center);
     camera.updateProjectionMatrix();
@@ -334,6 +364,7 @@ export function Visualizer3D({
   selectedNodeId,
   focusNodeId,
   processSteps,
+  storyboards,
   loopPlayback,
   theaterControl,
   onNodeClick,
@@ -346,6 +377,8 @@ export function Visualizer3D({
   selectedNodeId: string | null;
   focusNodeId?: string | null;
   processSteps?: ProcessStep[] | null;
+  /** Per-node storyboards, used to build each chassis's internal machinery. */
+  storyboards?: Record<string, ProcessStep[]>;
   loopPlayback?: boolean;
   theaterControl?: { current: TheaterControl };
   onNodeClick: (node: DiagramNode) => void;
@@ -361,6 +394,26 @@ export function Visualizer3D({
     () => (focusNode ? nodePosition(focusNode) : null),
     [focusNode],
   );
+  const laneMarkers = useMemo(() => {
+    const byLayer = new Map<number, { z: number; minX: number; maxX: number }>();
+    for (const node of diagram.nodes) {
+      const z = node.y * SZ;
+      const x = node.x * SX;
+      const lane = byLayer.get(node.layer);
+      if (lane) {
+        lane.minX = Math.min(lane.minX, x);
+        lane.maxX = Math.max(lane.maxX, x);
+      } else {
+        byLayer.set(node.layer, { z, minX: x, maxX: x });
+      }
+    }
+    return [...byLayer.entries()].map(([layer, lane]) => ({
+      layer,
+      z: lane.z,
+      width: lane.maxX - lane.minX + CHASSIS_W + 2.4,
+    }));
+  }, [diagram]);
+
   const { center, radius, degrees, curves } = useMemo(() => {
     const positions = new Map(
       diagram.nodes.map((node) => [node.id, nodePosition(node)]),
@@ -385,7 +438,8 @@ export function Visualizer3D({
     for (const position of positions.values()) box.expandByPoint(position);
     const boxCenter = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
-    const fitRadius = Math.max(size.x, size.z, 8) * 0.85 + 6;
+    // Fit the true diagonal so nothing clips, with a small margin.
+    const fitRadius = Math.max(size.length() * 0.92, 9);
 
     return {
       center: boxCenter,
@@ -403,12 +457,48 @@ export function Visualizer3D({
       onCreated={(state) => onCanvasReady?.(state.gl.domElement)}
       onPointerMissed={() => onPointerMissed?.()}
     >
-      <color attach="background" args={["#191919"]} />
-      <fog attach="fog" args={["#191919", radius * 2.2, radius * 5.5]} />
+      <color attach="background" args={["#0c0c0e"]} />
+      <fog attach="fog" args={["#0c0c0e", radius * 1.9, radius * 5.5]} />
 
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[10, 16, 8]} intensity={1.15} />
-      <pointLight position={[-12, 8, -6]} intensity={28} color="#6ee7d8" />
+      <ambientLight intensity={0.28} />
+      <directionalLight position={[10, 18, 8]} intensity={0.85} />
+      <pointLight position={[-12, 8, -6]} intensity={26} color="#6ee7d8" />
+      <pointLight position={[14, 6, 10]} intensity={18} color="#a5b4fc" />
+
+      {/* Studio reflections built from light shapes — no external HDR asset. */}
+      <Environment resolution={128} frames={1}>
+        <Lightformer
+          intensity={2.4}
+          form="rect"
+          position={[0, 6, -8]}
+          scale={[14, 4, 1]}
+          color="#dfe7ff"
+        />
+        <Lightformer
+          intensity={1.5}
+          form="rect"
+          rotation-y={Math.PI / 2}
+          position={[-9, 3, 0]}
+          scale={[10, 3, 1]}
+          color="#6ee7d8"
+        />
+        <Lightformer
+          intensity={1.2}
+          form="rect"
+          rotation-y={-Math.PI / 2}
+          position={[9, 3, 0]}
+          scale={[10, 3, 1]}
+          color="#c4b5fd"
+        />
+        <Lightformer
+          intensity={1.8}
+          form="circle"
+          rotation-x={Math.PI / 2}
+          position={[0, 10, 0]}
+          scale={8}
+          color="#ffffff"
+        />
+      </Environment>
 
       <CameraRig center={center} radius={radius} />
       <CameraFly focus={focusPosition} />
@@ -421,16 +511,54 @@ export function Visualizer3D({
         enableDamping
       />
 
+      {/* Polished floor: the whole assembly reflects into it. */}
+      <mesh
+        position={[center.x, -0.02, center.z]}
+        rotation={[-Math.PI / 2, 0, 0]}
+      >
+        <planeGeometry args={[radius * 7, radius * 7]} />
+        <MeshReflectorMaterial
+          resolution={512}
+          mixBlur={1.1}
+          mixStrength={22}
+          blur={[320, 90]}
+          mirror={0.62}
+          depthScale={1.1}
+          minDepthThreshold={0.4}
+          maxDepthThreshold={1.35}
+          color="#0e0e11"
+          metalness={0.72}
+          roughness={0.92}
+        />
+      </mesh>
+
       <Grid
-        position={[center.x, 0, center.z]}
+        position={[center.x, 0.005, center.z]}
         args={[radius * 6, radius * 6]}
         cellSize={1.5}
-        cellColor="#27272a"
+        cellColor="#1f1f24"
         sectionSize={7.5}
-        sectionColor="#3f3f46"
-        fadeDistance={radius * 3.2}
-        fadeStrength={1.5}
+        sectionColor="#33333b"
+        fadeDistance={radius * 3.0}
+        fadeStrength={1.6}
       />
+
+      {/* One lane marker per depth layer, so the flow axis is legible. */}
+      {laneMarkers.map((lane) => (
+        <mesh
+          key={lane.layer}
+          position={[center.x, 0.012, lane.z]}
+          rotation={[-Math.PI / 2, 0, 0]}
+        >
+          <planeGeometry args={[lane.width, 0.035]} />
+          <meshBasicMaterial
+            color="#6ee7d8"
+            transparent
+            opacity={0.16}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
 
       {diagram.groups.map((group) => (
         <Group3D key={group.id} group={group} nodes={diagram.nodes} />
@@ -453,9 +581,20 @@ export function Visualizer3D({
           selected={selectedNodeId === node.id}
           dimmed={focusNode !== null && focusNode.id !== node.id}
           hideLabel={focusNode !== null && focusNode.id === node.id}
+          storyboard={storyboards?.[node.id]}
           onClick={onNodeClick}
         />
       ))}
+
+      <EffectComposer multisampling={4}>
+        <Bloom
+          mipmapBlur
+          intensity={0.85}
+          luminanceThreshold={0.55}
+          luminanceSmoothing={0.3}
+        />
+        <Vignette darkness={0.55} offset={0.28} />
+      </EffectComposer>
 
       {focusNode && focusPosition && processSteps && processSteps.length > 0 && (
         <ProcessTheater

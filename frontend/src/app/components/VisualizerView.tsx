@@ -36,8 +36,14 @@ import type {
   DiagramNode,
   NodeExpansion,
   PaperVisualization,
+  ProcessStep,
 } from "../types";
-import { edgeStroke, formatKind, nodeStroke } from "./diagramPalette";
+import {
+  edgeStroke,
+  formatKind,
+  nodeStroke,
+  primitiveColor,
+} from "./diagramPalette";
 import type { TheaterControl } from "./ProcessTheater";
 import { Visualizer3D } from "./Visualizer3D";
 
@@ -109,6 +115,11 @@ export function VisualizerView() {
   const [stepIndex, setStepIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [preparedIds, setPreparedIds] = useState<Set<string>>(new Set());
+  // Storyboards for every prepared stage, so each 3D chassis can be built from
+  // the machinery the paper describes for that stage.
+  const [storyboards, setStoryboards] = useState<Record<string, ProcessStep[]>>(
+    {},
+  );
   const [prepareDone, setPrepareDone] = useState<number | null>(null);
   const [prepareTotal, setPrepareTotal] = useState(0);
   const [expansion, setExpansion] = useState<NodeExpansion | null>(null);
@@ -261,6 +272,10 @@ export function VisualizerView() {
       .then((response) => {
         // Ignore stale responses after the user clicked another node.
         setPreparedIds((current) => new Set(current).add(node.id));
+        const steps = response.expansion.content.process_steps;
+        if (steps && steps.length > 0) {
+          setStoryboards((current) => ({ ...current, [node.id]: steps }));
+        }
         refreshViz();
         if (activeNodeRef.current !== node.id) return;
         setExpansion(response.expansion);
@@ -285,12 +300,20 @@ export function VisualizerView() {
   useEffect(() => {
     if (!viz) {
       setPreparedIds(new Set());
+      setStoryboards({});
       return;
     }
     let cancelled = false;
     getPreparedStages(viz.viz_id)
       .then((response) => {
-        if (!cancelled) setPreparedIds(new Set(response.prepared));
+        if (cancelled) return;
+        setPreparedIds(new Set(response.prepared));
+        const next: Record<string, ProcessStep[]> = {};
+        for (const expansion of response.expansions) {
+          const steps = expansion.content.process_steps;
+          if (steps && steps.length > 0) next[expansion.node_id] = steps;
+        }
+        setStoryboards(next);
       })
       .catch(() => undefined);
     return () => {
@@ -317,6 +340,17 @@ export function VisualizerView() {
       .catch(() => undefined);
   }, [viz]);
 
+  const activePrimitives = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const steps of Object.values(storyboards)) {
+      for (const step of steps) {
+        if (step.primitive === "note") continue;
+        seen.set(step.primitive, (seen.get(step.primitive) ?? 0) + 1);
+      }
+    }
+    return [...seen.keys()].sort();
+  }, [storyboards]);
+
   const unpreparedCount = viz
     ? viz.diagram.nodes.filter((node) => !preparedIds.has(node.id)).length
     : 0;
@@ -340,8 +374,15 @@ export function VisualizerView() {
       while (cursor < pending.length && !prepareAbortRef.current) {
         const node = pending[cursor++];
         try {
-          await expandVisualizationNode({ vizId: viz.viz_id, nodeId: node.id });
+          const response = await expandVisualizationNode({
+            vizId: viz.viz_id,
+            nodeId: node.id,
+          });
           setPreparedIds((current) => new Set(current).add(node.id));
+          const steps = response.expansion.content.process_steps;
+          if (steps && steps.length > 0) {
+            setStoryboards((current) => ({ ...current, [node.id]: steps }));
+          }
         } catch {
           // A failed stage stays unprepared; it retries on demand when played.
         }
@@ -763,6 +804,7 @@ export function VisualizerView() {
               selectedNodeId={selectedNode?.id ?? null}
               focusNodeId={playing3d ? selectedNode?.id ?? null : null}
               processSteps={playing3d ? processSteps : null}
+              storyboards={storyboards}
               loopPlayback={tourIndex === null}
               theaterControl={theaterControlRef}
               onNodeClick={handle3dNodeClick}
@@ -1028,6 +1070,29 @@ export function VisualizerView() {
         {error && (
           <div className="absolute bottom-3 left-3 right-3 rounded-md border border-red-900/60 bg-red-950/80 px-3 py-2 text-xs text-red-300">
             {error}
+          </div>
+        )}
+
+        {/* Key for the machinery colours, limited to what this paper uses */}
+        {viewMode === "3d" && viz && !playing3d && activePrimitives.length > 0 && (
+          <div className="pointer-events-none absolute bottom-4 left-4 max-w-[15rem] rounded-lg border border-zinc-800 bg-zinc-900/80 p-2.5 backdrop-blur-sm">
+            <div className="mb-1.5 text-[9px] uppercase tracking-wide text-zinc-500">
+              Machinery in this paper
+            </div>
+            <div className="flex flex-wrap gap-x-2.5 gap-y-1">
+              {activePrimitives.map((primitive) => (
+                <span
+                  key={primitive}
+                  className="flex items-center gap-1 text-[10px] text-zinc-400"
+                >
+                  <span
+                    className="inline-block h-2 w-2 rounded-sm"
+                    style={{ backgroundColor: primitiveColor(primitive) }}
+                  />
+                  {formatKind(primitive)}
+                </span>
+              ))}
+            </div>
           </div>
         )}
 

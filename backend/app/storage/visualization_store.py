@@ -289,6 +289,16 @@ def get_node_expansion(viz_id: str, node_id: str) -> Dict[str, Any] | None:
     return _row_to_expansion(row) if row else None
 
 
+def list_node_expansions(viz_id: str) -> List[Dict[str, Any]]:
+    """Every stored expansion for a visualization, content included."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM node_expansions WHERE viz_id = ?",
+            (viz_id,),
+        ).fetchall()
+    return [_row_to_expansion(row) for row in rows]
+
+
 def list_expanded_node_ids(viz_id: str) -> List[str]:
     """Node ids that already have a stored expansion for this visualization."""
     with _connect() as conn:

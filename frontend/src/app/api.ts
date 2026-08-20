@@ -598,7 +598,7 @@ export function expandVisualizationNode({
 
 export function getPreparedStages(
   vizId: string,
-): Promise<{ prepared: string[] }> {
+): Promise<{ prepared: string[]; expansions: NodeExpansion[] }> {
   return requestJson(
     `/visualizer/item/${encodeURIComponent(vizId)}/expansions`,
   );

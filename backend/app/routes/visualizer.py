@@ -7,6 +7,7 @@ from app.rag.paper_visualizer import expand_node, generate_paper_visualization
 from app.storage.visualization_store import (
     delete_visualization,
     list_expanded_node_ids,
+    list_node_expansions,
     list_visualizations,
 )
 
@@ -66,7 +67,15 @@ def expand_node_endpoint(request: ExpandNodeRequest) -> Dict[str, Any]:
 
 @router.get("/item/{viz_id}/expansions")
 def list_prepared_stages(viz_id: str) -> Dict[str, Any]:
-    return {"prepared": list_expanded_node_ids(viz_id)}
+    """Prepared node ids plus their stored storyboards.
+
+    The 3D scene builds each stage's internal machinery from these primitives,
+    so it needs the content, not just which stages exist.
+    """
+    return {
+        "prepared": list_expanded_node_ids(viz_id),
+        "expansions": list_node_expansions(viz_id),
+    }
 
 
 @router.get("/{article_id}")
