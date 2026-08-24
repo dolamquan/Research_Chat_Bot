@@ -31,3 +31,7 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Generated databases and caches (never commit)
+backend/app/data/*.sqlite
+backend/app/data/*.sqlite3
+backend/app/data/uploads/

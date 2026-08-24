@@ -17,3 +17,14 @@ ragas
 PyMuPDF
 python-multipart
 langsmith
+networkx
+
+# Optional. Install to enable the anthropic provider (LLM_PROVIDER=anthropic).
+# langchain-anthropic
+
+# Optional. Install for structured PDF parsing (sections, figures, equations).
+# Without it, document_structure falls back to the existing chunk pipeline.
+# docling
+
+# Optional. Install to enable ONNX model-graph verification evidence.
+# onnx

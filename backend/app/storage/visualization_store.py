@@ -53,6 +53,7 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         """
     )
     _ensure_column(conn, "worked_example_json", "TEXT")
+    _ensure_column(conn, "mechanism_domain", "TEXT")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS node_expansions (
@@ -100,6 +101,15 @@ def _row_to_record(row: sqlite3.Row) -> Dict[str, Any]:
     except Exception:
         record["worked_example"] = None
     return record
+
+
+def set_mechanism_domain(viz_id: str, domain: str) -> None:
+    """Which mechanism vocabulary this paper's storyboards may draw on."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE paper_visualizations SET mechanism_domain = ? WHERE viz_id = ?",
+            (domain, viz_id),
+        )
 
 
 def set_worked_example(viz_id: str, worked_example: Dict[str, Any]) -> None:

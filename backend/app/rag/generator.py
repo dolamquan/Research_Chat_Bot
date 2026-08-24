@@ -3,8 +3,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI  # noqa: F401  (kept for type parity)
 from langsmith import traceable
+
+from app.rag.llm_provider import build_chat_model, resolve_provider
 
 from app.rag.prompt import build_no_context_response, build_rag_prompt
 from app.rag.formula_extractor import extract_document_formula_report
@@ -192,12 +194,29 @@ def _trim_whole_document_context(chunks: List[Dict[str, Any]]) -> List[Dict[str,
     return trimmed
 
 
-def get_llm(model: str = DEFAULT_MODEL, temperature: float = 0) -> ChatOpenAI:
-    load_dotenv()
+def get_llm(
+    model: str = DEFAULT_MODEL,
+    temperature: float = 0,
+    provider: str | None = None,
+) -> Any:
+    """Construct a chat model.
 
-    return ChatOpenAI(
-        model=model,
-        temperature=temperature,
+    Delegates to the provider adapter so OpenAI and Anthropic are selectable
+    through one interface. The signature and default behaviour are unchanged:
+    with no `provider` and no `LLM_PROVIDER` set, this returns the same
+    `ChatOpenAI(model=DEFAULT_MODEL)` it always did, so the existing callers
+    across the RAG package keep working untouched.
+    """
+    load_dotenv()
+    resolved = resolve_provider(provider)
+
+    # `model` carries an OpenAI default, so passing it verbatim to another
+    # provider would request a model that does not exist there. Only forward it
+    # when the caller actually meant this provider.
+    requested_model = model if (resolved == "openai" or model != DEFAULT_MODEL) else None
+
+    return build_chat_model(
+        provider=resolved, model=requested_model, temperature=temperature
     )
 
 

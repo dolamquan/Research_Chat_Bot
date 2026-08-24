@@ -468,6 +468,8 @@ export type NodeExpansion = {
     substeps: ExpansionStep[];
     example: string;
     process_steps?: ProcessStep[];
+    /** Absent on expansions generated before the scene composer existed. */
+    scene?: MechanismScene | null;
   };
   model: string;
   created_at: string;
@@ -499,6 +501,86 @@ export type ProcessStep = {
   label_in: string;
   label_out: string;
   detail: string;
+};
+
+/**
+ * A stage animation described as data. The backend composes one of these per
+ * paper stage; `SceneStage` interprets any of them without knowing the domain.
+ */
+export type ActorForm =
+  | "particles"
+  | "strand"
+  | "lattice"
+  | "blob"
+  | "field"
+  | "vessel"
+  | "beam"
+  | "marker";
+
+export type ActorTone =
+  | "primary"
+  | "secondary"
+  | "signal"
+  | "inhibitor"
+  | "substrate"
+  | "product"
+  | "neutral";
+
+export type BehaviorKind =
+  | "enter"
+  | "travel"
+  | "bind"
+  | "split"
+  | "merge"
+  | "spread_along"
+  | "accumulate"
+  | "deplete"
+  | "oscillate"
+  | "transform"
+  | "amplify"
+  | "threshold"
+  | "scatter"
+  | "exit";
+
+export type SceneSlot =
+  | "left"
+  | "center"
+  | "right"
+  | "upper"
+  | "lower"
+  | "front"
+  | "back"
+  | "offstage"
+  | "same";
+
+export type SceneActor = {
+  actor_id: string;
+  label: string;
+  form: ActorForm | string;
+  tone: ActorTone | string;
+  count: number;
+  at: SceneSlot | string;
+  note: string;
+};
+
+export type SceneBeat = {
+  start: number;
+  duration: number;
+  kind: BehaviorKind | string;
+  actor_id: string;
+  target_id: string;
+  to: SceneSlot | string;
+  magnitude: number;
+  caption: string;
+};
+
+export type MechanismScene = {
+  title: string;
+  summary: string;
+  actors: SceneActor[];
+  beats: SceneBeat[];
+  evidence: string;
+  described: boolean;
 };
 
 export type WorkedExample = {
@@ -725,3 +807,6 @@ export type DiscussionMessage = {
   model: string;
   created_at: string;
 };
+
+/** Extra primitives added when the vocabulary became domain-aware. */
+export type MechanismDomain = "computational" | "biological" | "general";

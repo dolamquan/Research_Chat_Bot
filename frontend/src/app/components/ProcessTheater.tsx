@@ -3,7 +3,8 @@ import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { Html, RoundedBox } from "@react-three/drei";
 
-import type { ProcessStep } from "../types";
+import type { MechanismScene, ProcessStep } from "../types";
+import { SceneStage } from "./SceneStage";
 
 /** Animated diorama that plays a node's process storyboard in the 3D scene. */
 
@@ -768,8 +769,69 @@ function framingScale(step: ProcessStep): number {
   }
 }
 
+
+/** The paper does not describe this stage. Shown as an admitted gap. */
+function NotDescribed({ step }: { step: ProcessStep; t: number }) {
+  return (
+    <group>
+      <mesh rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[3.4, 2.2]} />
+        <meshBasicMaterial color="#52525b" wireframe transparent opacity={0.4} />
+      </mesh>
+      <Html
+        center
+        distanceFactor={12}
+        style={{ pointerEvents: "none" }}
+        zIndexRange={[20, 0]}
+      >
+        <div className="max-w-[16rem] rounded-md border border-zinc-700 bg-zinc-900/90 px-3 py-2 text-center">
+          <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+            not described in the paper
+          </div>
+          <div className="text-[11px] leading-snug text-zinc-400">
+            {step.caption}
+          </div>
+        </div>
+      </Html>
+    </group>
+  );
+}
+
 function StepScene({ step, t }: { step: ProcessStep; t: number }) {
   switch (step.primitive) {
+    // --- the paper is silent
+    case "not_described":
+      return <NotDescribed step={step} t={t} />;
+
+    // --- domain-neutral core
+    case "transport":
+    case "cascade":
+    case "translocate":
+      return <TokenStream step={step} t={t} />;
+    case "combine":
+    case "bind":
+      return <ElementwiseCombine step={step} t={t} />;
+    case "split":
+      return <SplitParallel step={step} t={t} />;
+    case "gate":
+      return <Nonlinearity step={step} t={t} />;
+    case "amplify":
+    case "upregulate":
+    case "accumulate":
+    case "population_shift":
+      return <Distribution step={step} t={t} />;
+    case "suppress":
+    case "downregulate":
+      return <Nonlinearity step={step} t={t} />;
+    case "cycle":
+      return <LoopRepeat step={step} t={t} />;
+    case "select":
+      return <FilterSelect step={step} t={t} />;
+    case "transform":
+    case "differentiate":
+    case "emit":
+      return <MatrixTransform step={step} t={t} />;
+
     case "token_stream":
       return <TokenStream step={step} t={t} />;
     case "vector_array":
@@ -809,6 +871,7 @@ export type TheaterControl = {
 export function ProcessTheater({
   position,
   steps,
+  scene,
   loop,
   control,
   onStepChange,
@@ -816,6 +879,7 @@ export function ProcessTheater({
 }: {
   position: THREE.Vector3;
   steps: ProcessStep[];
+  scene?: MechanismScene | null;
   loop: boolean;
   control?: { current: TheaterControl };
   onStepChange?: (index: number) => void;
@@ -880,6 +944,18 @@ export function ProcessTheater({
 
   // Enter/exit envelope: each step's scene grows and rises in, then sinks out,
   // so step changes read as transitions instead of hard cuts.
+  // A scene composed for this specific paper beats anything the fixed library
+  // can offer, so it wins whenever one exists. Papers explored before the
+  // composer shipped have no scene and keep the old behaviour.
+  // A scene composed for this paper beats the hand-written library. The
+  // executable-code tier that used to sit above this was removed: the Scene IR
+  // pipeline (scene_planner -> AlgorithmScene -> SceneCompiler) replaces it
+  // with data that can be validated against the paper.
+  const useScene = Boolean(scene && scene.actors.length > 0);
+  // The scene spans the whole node; the step sequence is its narration, so map
+  // the scene's 0..1 timeline across all steps rather than restarting it.
+  const sceneT = (stepIndex + t) / Math.max(1, steps.length);
+
   const envelope = Math.min(
     easeInOut(phase(t, 0, 0.09)),
     1 - easeInOut(phase(t, 0.93, 1)),
@@ -893,10 +969,15 @@ export function ProcessTheater({
         <meshBasicMaterial color="#111113" transparent opacity={0.72} />
       </mesh>
       <group
-        scale={framingScale(step) * (0.82 + 0.18 * envelope)}
+        scale={(useScene ? 1 : framingScale(step)) * (0.82 + 0.18 * envelope)}
         position={[0, (1 - envelope) * 0.45, 0]}
       >
-        <StepScene step={step} t={t} />
+        {useScene ? (
+          <SceneStage scene={scene as MechanismScene} t={sceneT} />
+        ) : (
+          <StepScene step={step} t={t} />
+        )}
+
       </group>
     </group>
   );

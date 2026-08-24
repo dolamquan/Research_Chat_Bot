@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0",
+  "title": "Convolutional feature extraction",
+  "algorithm_name": "CNN convolution pipeline",
+  "visualization_mode": "2_5d",
+  "summary": "An input image passes through convolution, a nonlinearity and pooling to produce a feature map. Kernel values shown are illustrative.",
+  "entities": [
+    {
+      "id": "image",
+      "label": "Input image",
+      "kind": "input",
+      "semantic_role": "raw pixels",
+      "group": null,
+      "evidence_ids": [
+        "ev_abstract"
+      ]
+    },
+    {
+      "id": "kernel",
+      "label": "Convolution kernel",
+      "kind": "parameter",
+      "semantic_role": "learned filter",
+      "group": null,
+      "evidence_ids": [
+        "ev_sec_conv"
+      ]
+    },
+    {
+      "id": "featuremap",
+      "label": "Feature map",
+      "kind": "tensor",
+      "semantic_role": "convolved activations",
+      "group": null,
+      "evidence_ids": [
+        "ev_sec_conv"
+      ]
+    },
+    {
+      "id": "activated",
+      "label": "Activated map",
+      "kind": "tensor",
+      "semantic_role": "post-ReLU activations",
+      "group": null,
+      "evidence_ids": [
+        "ev_sec_relu"
+      ]
+    },
+    {
+      "id": "pooled",
+      "label": "Pooled features",
+      "kind": "output",
+      "semantic_role": "downsampled map",
+      "group": null,
+      "evidence_ids": [
+        "ev_sec_pool"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "ev_abstract",
+      "chunk_id": null,
+      "section": "Abstract",
+      "page": 1,
+      "quote": "We train a large, deep convolutional neural network to classify images.",
+      "confidence": 0.9
+    },
+    {
+      "evidence_id": "ev_sec_conv",
+      "chunk_id": null,
+      "section": "3 The Architecture",
+      "page": 4,
+      "quote": "The first convolutional layer filters the input image with kernels of size 11x11x3.",
+      "confidence": 0.9
+    },
+    {
+      "evidence_id": "ev_sec_relu",
+      "chunk_id": null,
+      "section": "3.1 ReLU Nonlinearity",
+      "page": 3,
+      "quote": "Deep convolutional neural networks with ReLUs train several times faster.",
+      "confidence": 0.9
+    },
+    {
+      "evidence_id": "ev_sec_pool",
+      "chunk_id": null,
+      "section": "3.4 Overlapping Pooling",
+      "page": 4,
+      "quote": "Pooling layers summarize the outputs of neighbouring groups of neurons.",
+      "confidence": 0.9
+    }
+  ],
+  "steps": [
+    {
+      "id": "c1",
+      "node_id": null,
+      "primitive": "matrix_transform",
+      "caption": "The kernel convolves across the input image",
+      "detail": "",
+      "items": [],
+      "values": [],
+      "count": 25,
+      "label_in": "image",
+      "label_out": "feature map",
+      "input_ids": [
+        "image",
+        "kernel"
+      ],
+      "output_ids": [
+        "featuremap"
+      ],
+      "execution": "sequential",
+      "duration_ms": 1400,
+      "evidence_ids": [
+        "ev_sec_conv"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "id": "c2",
+      "node_id": null,
+      "primitive": "nonlinearity",
+      "caption": "ReLU zeroes negative activations",
+      "detail": "Activation values are illustrative.",
+      "items": [],
+      "values": [
+        0.8,
+        -0.4,
+        0.6,
+        -0.2,
+        0.9,
+        0.3
+      ],
+      "count": 0,
+      "label_in": "pre-activation",
+      "label_out": "activation",
+      "input_ids": [
+        "featuremap"
+      ],
+      "output_ids": [
+        "activated"
+      ],
+      "execution": "sequential",
+      "duration_ms": 1400,
+      "evidence_ids": [
+        "ev_sec_relu"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "id": "c3",
+      "node_id": null,
+      "primitive": "filter_select",
+      "caption": "Pooling keeps the strongest response per window",
+      "detail": "",
+      "items": [],
+      "values": [],
+      "count": 9,
+      "label_in": "activations",
+      "label_out": "pooled",
+      "input_ids": [
+        "activated"
+      ],
+      "output_ids": [
+        "pooled"
+      ],
+      "execution": "sequential",
+      "duration_ms": 1400,
+      "evidence_ids": [
+        "ev_sec_pool"
+      ],
+      "confidence": 0.85
+    }
+  ],
+  "camera_cues": [
+    {
+      "step_id": "c1",
+      "focus_entity_ids": [
+        "image",
+        "kernel"
+      ],
+      "framing": "detail",
+      "transition_ms": 700
+    }
+  ]
+}

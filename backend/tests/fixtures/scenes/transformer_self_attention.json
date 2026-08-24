@@ -1,0 +1,259 @@
+{
+  "schema_version": "1.0",
+  "title": "Scaled dot-product self-attention",
+  "algorithm_name": "Transformer self-attention",
+  "visualization_mode": "3d",
+  "summary": "Token embeddings are projected to queries, keys and values; attention weights are formed from scaled dot products and applied to the values. Numeric values shown are illustrative.",
+  "entities": [
+    {
+      "id": "tokens",
+      "label": "Token embeddings",
+      "kind": "input",
+      "semantic_role": "sequence input",
+      "group": null,
+      "evidence_ids": [
+        "ev_abstract"
+      ]
+    },
+    {
+      "id": "q",
+      "label": "Queries Q",
+      "kind": "tensor",
+      "semantic_role": "projected queries",
+      "group": null,
+      "evidence_ids": [
+        "ev_sec_attn"
+      ]
+    },
+    {
+      "id": "k",
+      "label": "Keys K",
+      "kind": "tensor",
+      "semantic_role": "projected keys",
+      "group": null,
+      "evidence_ids": [
+        "ev_sec_attn"
+      ]
+    },
+    {
+      "id": "v",
+      "label": "Values V",
+      "kind": "tensor",
+      "semantic_role": "projected values",
+      "group": null,
+      "evidence_ids": [
+        "ev_sec_attn"
+      ]
+    },
+    {
+      "id": "weights",
+      "label": "Attention weights",
+      "kind": "tensor",
+      "semantic_role": "softmax scores",
+      "group": null,
+      "evidence_ids": [
+        "ev_eq_softmax"
+      ]
+    },
+    {
+      "id": "context",
+      "label": "Context vectors",
+      "kind": "output",
+      "semantic_role": "attended output",
+      "group": null,
+      "evidence_ids": [
+        "ev_sec_attn"
+      ]
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "ev_abstract",
+      "chunk_id": null,
+      "section": "Abstract",
+      "page": 1,
+      "quote": "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms.",
+      "confidence": 0.9
+    },
+    {
+      "evidence_id": "ev_sec_attn",
+      "chunk_id": null,
+      "section": "3.2 Attention",
+      "page": 3,
+      "quote": "An attention function can be described as mapping a query and a set of key-value pairs to an output.",
+      "confidence": 0.9
+    },
+    {
+      "evidence_id": "ev_eq_softmax",
+      "chunk_id": null,
+      "section": "Equation 1",
+      "page": 4,
+      "quote": "Attention(Q, K, V) = softmax(QK^T / sqrt(d_k))V",
+      "confidence": 0.9
+    }
+  ],
+  "steps": [
+    {
+      "id": "s1",
+      "node_id": null,
+      "primitive": "token_stream",
+      "caption": "Token embeddings enter in sequence order",
+      "detail": "Illustrative six-token example.",
+      "items": [
+        "The",
+        "cat",
+        "sat",
+        "on",
+        "the",
+        "mat"
+      ],
+      "values": [],
+      "count": 6,
+      "label_in": "tokens",
+      "label_out": "embeddings",
+      "input_ids": [],
+      "output_ids": [
+        "tokens"
+      ],
+      "execution": "sequential",
+      "duration_ms": 1400,
+      "evidence_ids": [
+        "ev_abstract"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "id": "s2",
+      "node_id": null,
+      "primitive": "split_parallel",
+      "caption": "Embeddings project into Q, K and V",
+      "detail": "",
+      "items": [],
+      "values": [],
+      "count": 0,
+      "label_in": "embeddings",
+      "label_out": "Q,K,V",
+      "input_ids": [
+        "tokens"
+      ],
+      "output_ids": [
+        "q",
+        "k",
+        "v"
+      ],
+      "execution": "parallel",
+      "duration_ms": 1400,
+      "evidence_ids": [
+        "ev_sec_attn"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "id": "s3",
+      "node_id": null,
+      "primitive": "attention_links",
+      "caption": "Scaled dot products score every query against every key",
+      "detail": "Weights are illustrative, not reported by the paper.",
+      "items": [],
+      "values": [
+        0.42,
+        0.18,
+        0.09,
+        0.21,
+        0.06,
+        0.04
+      ],
+      "count": 6,
+      "label_in": "",
+      "label_out": "",
+      "input_ids": [
+        "q",
+        "k"
+      ],
+      "output_ids": [
+        "weights"
+      ],
+      "execution": "sequential",
+      "duration_ms": 1400,
+      "evidence_ids": [
+        "ev_eq_softmax"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "id": "s4",
+      "node_id": null,
+      "primitive": "normalize",
+      "caption": "Softmax normalises the scores into a distribution",
+      "detail": "",
+      "items": [],
+      "values": [
+        0.42,
+        0.18,
+        0.09,
+        0.21,
+        0.06,
+        0.04
+      ],
+      "count": 0,
+      "label_in": "scores",
+      "label_out": "weights",
+      "input_ids": [
+        "weights"
+      ],
+      "output_ids": [
+        "weights"
+      ],
+      "execution": "sequential",
+      "duration_ms": 1400,
+      "evidence_ids": [
+        "ev_eq_softmax"
+      ],
+      "confidence": 0.85
+    },
+    {
+      "id": "s5",
+      "node_id": null,
+      "primitive": "matrix_transform",
+      "caption": "Weights are applied to the value vectors",
+      "detail": "",
+      "items": [],
+      "values": [],
+      "count": 16,
+      "label_in": "weights x V",
+      "label_out": "context",
+      "input_ids": [
+        "weights",
+        "v"
+      ],
+      "output_ids": [
+        "context"
+      ],
+      "execution": "sequential",
+      "duration_ms": 1400,
+      "evidence_ids": [
+        "ev_eq_softmax"
+      ],
+      "confidence": 0.85
+    }
+  ],
+  "camera_cues": [
+    {
+      "step_id": "s1",
+      "focus_entity_ids": [
+        "tokens"
+      ],
+      "framing": "overview",
+      "transition_ms": 600
+    },
+    {
+      "step_id": "s3",
+      "focus_entity_ids": [
+        "q",
+        "k"
+      ],
+      "framing": "detail",
+      "transition_ms": 800
+    }
+  ]
+}

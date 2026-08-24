@@ -12,14 +12,7 @@ import {
 } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 
-import type {
-  Diagram,
-  DiagramEdge,
-  DiagramGroup,
-  DiagramNode,
-  DiffState,
-  ProcessStep,
-} from "../types";
+import type { Diagram, DiagramEdge, DiagramGroup, DiagramNode, DiffState, MechanismScene, ProcessStep } from "../types";
 import { diffTint, edgeStroke, nodeStroke } from "./diagramPalette";
 import { CHASSIS_D, CHASSIS_H, CHASSIS_W, NodeAssembly } from "./NodeAssembly";
 import { ProcessTheater, type TheaterControl } from "./ProcessTheater";
@@ -386,6 +379,7 @@ export function Visualizer3D({
   selectedNodeId,
   focusNodeId,
   processSteps,
+  processScene,
   storyboards,
   diffStates,
   edgeDiffStates,
@@ -403,6 +397,7 @@ export function Visualizer3D({
   selectedNodeId: string | null;
   focusNodeId?: string | null;
   processSteps?: ProcessStep[] | null;
+  processScene?: MechanismScene | null;
   /** Per-node storyboards, used to build each chassis's internal machinery. */
   storyboards?: Record<string, ProcessStep[]>;
   diffStates?: Record<string, DiffState>;
@@ -639,6 +634,7 @@ export function Visualizer3D({
           key={focusNode.id}
           position={focusPosition}
           steps={processSteps}
+          scene={processScene}
           loop={loopPlayback ?? true}
           control={theaterControl}
           onStepChange={onStepChange}

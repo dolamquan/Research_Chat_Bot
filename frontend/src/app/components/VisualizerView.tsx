@@ -4,21 +4,21 @@ import type {
   WheelEvent as ReactWheelEvent,
 } from "react";
 import {
+  AlertTriangle,
   BookOpen,
   ChevronLeft,
   ChevronRight,
   Download,
+  GitBranch,
   Image as ImageIcon,
+  Layers,
   Loader2,
   Maximize2,
+  MessagesSquare,
   Pause,
   Play,
   RefreshCw,
   RotateCcw,
-  AlertTriangle,
-  GitBranch,
-  Layers,
-  MessagesSquare,
   Search,
   ShieldCheck,
   Sparkles,
@@ -30,19 +30,21 @@ import {
 import {
   applyModification,
   clearDiscussion,
-  getMissingBackendRoutes,
   deleteVariant,
   deleteVisualization,
-  expandVisualizationNode,
   discussChange,
+  expandVisualizationNode,
+  generateAlgorithmScene,
+  generateVisualization,
+  getAlgorithmScene,
+  getArticles,
   getDiscussion,
+  getMissingBackendRoutes,
+  getPreparedStages,
   getVariantsForVisualization,
+  getVisualizations,
   proposeModification,
   verifyTarget,
-  generateVisualization,
-  getArticles,
-  getPreparedStages,
-  getVisualizations,
 } from "../api";
 import type {
   AlgorithmVariant,
@@ -67,6 +69,8 @@ import {
 } from "./diagramPalette";
 import { buildDiagramDiff, edgeKey } from "./diagramDiff";
 import type { TheaterControl } from "./ProcessTheater";
+import ScenePlayer from "./visualization/ScenePlayer";
+import type { SceneRecord } from "./visualization/sceneTypes";
 import { VariantChat } from "./VariantChat";
 import { VariantPanel } from "./VariantPanel";
 import { VerificationReport } from "./VerificationReport";
@@ -156,9 +160,61 @@ export function VisualizerView() {
   const [tree, setTree] = useState<VariantTreeRow[]>([]);
   const [activeVariantId, setActiveVariantId] = useState<string | null>(null);
   const [dockTab, setDockTab] = useState<
-    "paper" | "modify" | "findings" | "discuss"
+    "paper" | "modify" | "findings" | "discuss" | "scene"
   >("paper");
+  // Evidence-grounded Scene IR for the current visualization. Loaded lazily and
+  // kept separate from `viz` so the existing diagram, variants and findings are
+  // untouched whether or not a scene exists.
+  const [sceneRecord, setSceneRecord] = useState<SceneRecord | null>(null);
+  const [sceneLoading, setSceneLoading] = useState(false);
+  const [sceneError, setSceneError] = useState<string | null>(null);
   const [discussion, setDiscussion] = useState<DiscussionMessage[]>([]);
+
+  // Fetch the stored scene when the Scene tab is opened. A 404 is the normal
+  // "not generated yet" case, not an error worth showing.
+  useEffect(() => {
+    if (dockTab !== "scene" || !viz) return;
+    let live = true;
+    setSceneLoading(true);
+    setSceneError(null);
+    getAlgorithmScene(viz.viz_id)
+      .then((response) => {
+        if (live) setSceneRecord(response.scene);
+      })
+      .catch(() => {
+        if (live) setSceneRecord(null);
+      })
+      .finally(() => {
+        if (live) setSceneLoading(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, [dockTab, viz?.viz_id]);
+
+  const requestScene = useCallback(
+    async (force: boolean) => {
+      if (!viz) return;
+      setSceneLoading(true);
+      setSceneError(null);
+      try {
+        const response = await generateAlgorithmScene({
+          vizId: viz.viz_id,
+          force,
+          allowOfflineFallback: true,
+        });
+        setSceneRecord(response.scene);
+      } catch (error) {
+        setSceneError(
+          error instanceof Error ? error.message : "Scene generation failed.",
+        );
+      } finally {
+        setSceneLoading(false);
+      }
+    },
+    [viz?.viz_id],
+  );
+
   const [discussing, setDiscussing] = useState(false);
   const [discussError, setDiscussError] = useState<string | null>(null);
   const [staleRoutes, setStaleRoutes] = useState<string[]>([]);
@@ -183,6 +239,15 @@ export function VisualizerView() {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const canvas3dRef = useRef<HTMLCanvasElement | null>(null);
   const activeNodeRef = useRef<string | null>(null);
+  // Guards the paper-selection race: without it a slow getVisualizations for
+  // paper A resolves after the user has moved to paper B and renders A's
+  // diagram under B's name, which then poisons storyboards, chat and any
+  // variant created from it.
+  const selectionRef = useRef<string | null>(null);
+  // Same idea one level down: which *diagram* (baseline or variant) is on
+  // screen. Storyboards, variants, verdicts and transcripts are all scoped to
+  // it, so each async write is checked against this before it lands.
+  const diagramRef = useRef<string | null>(null);
   const theaterControlRef = useRef<TheaterControl>({
     paused: false,
     seekStep: null,
@@ -265,6 +330,7 @@ export function VisualizerView() {
         : null,
     [activeVariant, parentDiagram],
   );
+  diagramRef.current = activeDiagramId;
   const showDiff = overlayMode === "diff" && diff !== null;
   const diagram = showDiff && diff ? diff.merged : variantDiagram;
   const highlightNodeIds = useMemo(
@@ -312,27 +378,52 @@ export function VisualizerView() {
 
   const loadSaved = useCallback((article: Article) => {
     getVisualizations(article.article_id)
-      .then((response) => setSaved(response.visualizations))
-      .catch(() => setSaved([]));
+      .then((response) => {
+        if (selectionRef.current !== article.article_id) return;
+        setSaved(response.visualizations);
+      })
+      .catch(() => {
+        if (selectionRef.current === article.article_id) setSaved([]);
+      });
   }, []);
 
   function selectArticle(article: Article) {
+    selectionRef.current = article.article_id;
     setSelectedArticle(article);
     closeNodePopup();
     setError(null);
     setViz(null);
     setSaved([]);
+    setVariants([]);
+    setTree([]);
+    setActiveVariantId(null);
+    setOverlayMode("none");
+    setReport(null);
+    setProposal(null);
     getVisualizations(article.article_id)
       .then((response) => {
+        // Another paper was clicked while this was in flight.
+        if (selectionRef.current !== article.article_id) return;
         setSaved(response.visualizations);
         if (response.visualizations.length > 0) {
           showVisualization(response.visualizations[0]);
         }
       })
-      .catch((err: Error) => setError(err.message));
+      .catch((err: Error) => {
+        if (selectionRef.current === article.article_id) setError(err.message);
+      });
   }
 
   function showVisualization(record: PaperVisualization) {
+    if (
+      selectionRef.current !== null &&
+      record.article_id !== selectionRef.current
+    ) {
+      console.warn(
+        `refusing to show a diagram for ${record.article_id} while ${selectionRef.current} is selected`,
+      );
+      return;
+    }
     setViz(record);
     closeNodePopup();
     // Fit after the SVG has the new content sized.
@@ -355,6 +446,7 @@ export function VisualizerView() {
 
   function loadExpansion(node: DiagramNode) {
     if (!viz) return;
+    const targetDiagramId = activeDiagramId;
     activeNodeRef.current = node.id;
     setExpansion(null);
     setExpansionError(null);
@@ -362,6 +454,7 @@ export function VisualizerView() {
     expandVisualizationNode({ vizId: activeDiagramId ?? viz.viz_id, nodeId: node.id })
       .then((response) => {
         // Ignore stale responses after the user clicked another node.
+        if (diagramRef.current !== targetDiagramId) return;
         setPreparedIds((current) => new Set(current).add(node.id));
         const steps = response.expansion.content.process_steps;
         if (steps && steps.length > 0) {
@@ -463,6 +556,10 @@ export function VisualizerView() {
     (vizId: string) =>
       getVariantsForVisualization(vizId)
         .then((response) => {
+          // A different paper may have been selected while this was in flight.
+          if (selectionRef.current && response.variants[0]) {
+            if (response.variants[0].article_id !== selectionRef.current) return;
+          }
           setVariants(response.variants);
           setTree(response.tree);
         })
@@ -535,11 +632,13 @@ export function VisualizerView() {
         targetId: activeDiagramId,
         message,
       });
+      if (diagramRef.current !== activeDiagramId) return;
       setDiscussion(response.history);
     } catch (err) {
       setDiscussion((current) =>
         current.filter((item) => item.message_id !== pending.message_id),
       );
+      if (diagramRef.current !== activeDiagramId) return;
       setDiscussError(explainError(err));
     } finally {
       setDiscussing(false);
@@ -594,6 +693,8 @@ export function VisualizerView() {
   async function handleApply() {
     const targetId = proposal?.base.id;
     if (!proposal || !targetId || applying) return;
+    // Applying takes a round trip; remember which paper asked for it.
+    const forArticle = selectionRef.current;
     setApplying(true);
     setProposeError(null);
     try {
@@ -603,6 +704,10 @@ export function VisualizerView() {
         patch: proposal.patch,
       });
       const variant = response.variant;
+      // The user moved to another paper mid-apply. The variant is saved
+      // server-side and will appear when they come back; do not graft it onto
+      // whatever is on screen now.
+      if (selectionRef.current !== forArticle) return;
       setVariants((current) => [variant, ...current]);
       setActiveVariantId(variant.variant_id);
       setBaseVariantId(null);
@@ -624,6 +729,8 @@ export function VisualizerView() {
     setVerifyError(null);
     try {
       const response = await verifyTarget(targetId);
+      // Don't show a verdict for a diagram the user has navigated away from.
+      if (diagramRef.current !== targetId) return;
       setReport(response.report);
       if (viz) void loadVariants(viz.viz_id);
     } catch (err) {
@@ -662,6 +769,7 @@ export function VisualizerView() {
     if (pending.length === 0) return;
 
     prepareAbortRef.current = false;
+    const targetDiagramId = activeDiagramId;
     setPrepareTotal(pending.length);
     setPrepareDone(0);
 
@@ -674,9 +782,11 @@ export function VisualizerView() {
         const node = pending[cursor++];
         try {
           const response = await expandVisualizationNode({
-            vizId: activeDiagramId ?? viz.viz_id,
+            vizId: targetDiagramId ?? viz.viz_id,
             nodeId: node.id,
           });
+          // Storyboards are per-diagram; drop late arrivals for an old one.
+          if (diagramRef.current !== targetDiagramId) return;
           setPreparedIds((current) => new Set(current).add(node.id));
           const steps = response.expansion.content.process_steps;
           if (steps && steps.length > 0) {
@@ -773,6 +883,14 @@ export function VisualizerView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [popupOpen, playing3d]);
 
+  // The paper-specific animation for the focused node, when one was composed.
+  const processScene = useMemo(() => {
+    if (!expansion || !selectedNode || expansion.node_id !== selectedNode.id) {
+      return null;
+    }
+    return expansion.content.scene ?? null;
+  }, [expansion, selectedNode]);
+
   // Storyboard for the focused node; falls back to narrated substeps.
   const processSteps = useMemo(() => {
     if (!expansion || !selectedNode || expansion.node_id !== selectedNode.id) {
@@ -820,8 +938,10 @@ export function VisualizerView() {
   }
 
   async function handleDelete(record: PaperVisualization) {
+    const forArticle = selectionRef.current;
     try {
       await deleteVisualization(record.viz_id);
+      if (selectionRef.current !== forArticle) return;
       setSaved((current) =>
         current.filter((item) => item.viz_id !== record.viz_id),
       );
@@ -1126,6 +1246,7 @@ export function VisualizerView() {
               selectedNodeId={selectedNode?.id ?? null}
               focusNodeId={playing3d ? selectedNode?.id ?? null : null}
               processSteps={playing3d ? processSteps : null}
+              processScene={playing3d ? processScene : null}
               storyboards={storyboards}
               diffStates={showDiff ? (diff?.nodeState as Record<string, DiffState>) : undefined}
               edgeDiffStates={showDiff ? (diff?.edgeState as Record<string, DiffState>) : undefined}
@@ -1801,13 +1922,16 @@ export function VisualizerView() {
       {/* Right dock: paper summary, modification, findings */}
       <div
         className={`flex shrink-0 flex-col border-l border-zinc-800 ${
-          dockTab === "findings" || dockTab === "discuss" ? "w-[26rem]" : "w-80"
+          dockTab === "findings" || dockTab === "discuss" || dockTab === "scene"
+            ? "w-[26rem]"
+            : "w-80"
         }`}
       >
         <div className="flex shrink-0 border-b border-zinc-800">
           {(
             [
               ["paper", "Paper"],
+              ["scene", "Scene"],
               ["modify", "Modify"],
               ["findings", "Findings"],
               ["discuss", "Discuss"],
@@ -1844,6 +1968,62 @@ export function VisualizerView() {
             </button>
           ))}
         </div>
+
+        {dockTab === "scene" && viz && (
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
+            <div className="flex items-center gap-2">
+              <div className="min-w-0">
+                <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+                  algorithm scene
+                </div>
+                <div className="truncate text-sm font-medium text-zinc-200">
+                  {sceneRecord?.scene.algorithm_name || "Not generated yet"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => requestScene(Boolean(sceneRecord))}
+                disabled={sceneLoading}
+                className="ml-auto shrink-0 rounded border border-teal-600 bg-teal-600/20 px-2 py-1 text-xs text-teal-200 disabled:opacity-50"
+              >
+                {sceneLoading
+                  ? "Working..."
+                  : sceneRecord
+                    ? "Regenerate"
+                    : "Generate scene"}
+              </button>
+            </div>
+
+            {sceneRecord ? (
+              <p className="font-mono text-[10px] text-zinc-500">
+                {sceneRecord.provider || "unknown"} / {sceneRecord.model || "unknown"}
+                {sceneRecord.extraction_strategy
+                  ? ` · ${sceneRecord.extraction_strategy}`
+                  : ""}
+              </p>
+            ) : null}
+
+            {sceneError ? (
+              <p className="rounded border border-red-900 bg-red-950/40 px-2 py-1.5 text-[11px] leading-snug text-red-200">
+                {sceneError}
+              </p>
+            ) : null}
+
+            {sceneRecord ? (
+              <ScenePlayer
+                sceneInput={sceneRecord.scene}
+                verification={sceneRecord.verification}
+                className="min-h-[26rem] flex-1"
+              />
+            ) : (
+              <p className="text-[11px] leading-snug text-zinc-500">
+                Generate an evidence-grounded scene to step through this
+                method&apos;s mechanism. Every entity and step is traced back to a
+                passage in the paper, or marked uncertain.
+              </p>
+            )}
+          </div>
+        )}
 
         {dockTab === "modify" && viz && (
           <VariantPanel

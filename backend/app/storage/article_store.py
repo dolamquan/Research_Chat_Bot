@@ -230,10 +230,18 @@ def get_article(article_id: str) -> Dict[str, Any]:
             (article_id,),
         ).fetchone()
 
-    if row is None:
-        raise ValueError(f"Article not found: {article_id}")
+    if row is not None:
+        return _row_to_article(row)
 
-    return _row_to_article(row)
+    # Papers from the arXiv manifest have no row in `articles`, but
+    # list_articles() surfaces them alongside the indexed ones. Anything that
+    # resolves a paper the user can see in a list has to find them here too,
+    # otherwise most of the library looks broken.
+    for article in _manifest_articles():
+        if article.get("article_id") == article_id:
+            return article
+
+    raise ValueError(f"Article not found: {article_id}")
 
 
 def list_articles(

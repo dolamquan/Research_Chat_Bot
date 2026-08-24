@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
+import { Html } from "@react-three/drei";
 
 import type { ProcessStep } from "../types";
 import { primitiveColor } from "./diagramPalette";
@@ -385,8 +386,371 @@ function CompareGlyph({ color }: GlyphProps) {
   );
 }
 
+
+// ---------------------------------------------------------------- core glyphs
+// Domain-neutral mechanism shapes. These have to read as *mechanism*, not as
+// machine learning, or a biology paper ends up looking like a neural network.
+
+/** Something crosses a boundary and comes out changed. */
+function TransformGlyph({ color }: GlyphProps) {
+  return (
+    <group>
+      <mesh rotation={[0, Math.PI / 2, 0]}>
+        <torusGeometry args={[0.3, 0.045, 8, 24]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={0.8}
+          metalness={0.8}
+          roughness={0.2}
+          toneMapped={false}
+        />
+      </mesh>
+      <mesh geometry={SHARED_BOX} position={[-0.3, 0, 0]} scale={0.19}>
+        <meshStandardMaterial color="#71717a" emissive="#71717a" emissiveIntensity={0.3} />
+      </mesh>
+      <mesh position={[0.3, 0, 0]}>
+        <icosahedronGeometry args={[0.14, 0]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={0.9}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+/** A barrier only some things get past. */
+function BarrierGlyph({ color }: GlyphProps) {
+  return (
+    <group>
+      <mesh geometry={SHARED_BOX} scale={[0.05, 0.62, 0.62]}>
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={0.55}
+          transparent
+          opacity={0.5}
+          toneMapped={false}
+        />
+      </mesh>
+      {[-0.18, 0.18].map((z, index) => (
+        <mesh
+          key={z}
+          geometry={SHARED_BOX}
+          position={[index === 0 ? 0.28 : -0.28, 0, z]}
+          scale={0.15}
+        >
+          <meshStandardMaterial
+            color={index === 0 ? color : "#52525b"}
+            emissive={index === 0 ? color : "#52525b"}
+            emissiveIntensity={index === 0 ? 0.9 : 0.12}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** A quantity growing or shrinking. */
+function LevelGlyph({ color, falling = false }: GlyphProps & { falling?: boolean }) {
+  const steps = [0.22, 0.4, 0.58, 0.76];
+  const heights = falling ? [...steps].reverse() : steps;
+  const tone = falling ? "#fb7185" : color;
+  return (
+    <group>
+      {heights.map((height, index) => (
+        <mesh
+          key={index}
+          geometry={SHARED_BOX}
+          position={[0, -0.3 + height / 2, (index - 1.5) * 0.17]}
+          scale={[0.12, height, 0.12]}
+        >
+          <meshStandardMaterial
+            color={tone}
+            emissive={tone}
+            emissiveIntensity={0.75}
+            metalness={0.55}
+            roughness={0.3}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+      <mesh
+        position={[0, falling ? -0.1 : 0.5, 0.42]}
+        rotation={[0, 0, falling ? Math.PI : 0]}
+      >
+        <coneGeometry args={[0.11, 0.24, 10]} />
+        <meshStandardMaterial color={tone} emissive={tone} emissiveIntensity={1} toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+/** Layers piling up. */
+function AccumulateGlyph({ color }: GlyphProps) {
+  return (
+    <group>
+      {[0, 1, 2, 3].map((index) => (
+        <mesh
+          key={index}
+          geometry={SHARED_BOX}
+          position={[0, -0.28 + index * 0.16, 0]}
+          scale={[0.5 - index * 0.06, 0.11, 0.5 - index * 0.06]}
+        >
+          <meshStandardMaterial
+            color={color}
+            emissive={color}
+            emissiveIntensity={0.35 + index * 0.2}
+            metalness={0.6}
+            roughness={0.3}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** A result leaving the system. */
+function EmitGlyph({ color }: GlyphProps) {
+  return (
+    <group>
+      <mesh>
+        <sphereGeometry args={[0.17, 14, 14]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={1.3}
+          toneMapped={false}
+        />
+      </mesh>
+      {[0, 1, 2, 3, 4].map((index) => {
+        const angle = (index / 5) * Math.PI * 2;
+        return (
+          <mesh
+            key={index}
+            position={[0.34 * Math.cos(angle), 0.34 * Math.sin(angle), 0]}
+            scale={0.07}
+          >
+            <sphereGeometry args={[1, 8, 8]} />
+            <meshBasicMaterial color={color} toneMapped={false} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+// ----------------------------------------------------------- biology glyphs
+
+/** Two bodies docking together. */
+function BindGlyph({ color }: GlyphProps) {
+  return (
+    <group>
+      <mesh position={[-0.16, 0, 0]}>
+        <sphereGeometry args={[0.2, 14, 14]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={0.7}
+          metalness={0.4}
+          roughness={0.35}
+          toneMapped={false}
+        />
+      </mesh>
+      <mesh position={[0.19, 0, 0]}>
+        <coneGeometry args={[0.19, 0.32, 16]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={0.5}
+          metalness={0.4}
+          roughness={0.35}
+          toneMapped={false}
+        />
+      </mesh>
+      <mesh geometry={SHARED_BOX} scale={[0.1, 0.05, 0.05]}>
+        <meshBasicMaterial color="#ffffff" toneMapped={false} />
+      </mesh>
+    </group>
+  );
+}
+
+/** A signal running down a chain of intermediates. */
+function CascadeGlyph({ color }: GlyphProps) {
+  return (
+    <group>
+      {[0, 1, 2, 3].map((index) => (
+        <group key={index} position={[(index - 1.5) * 0.26, (1.5 - index) * 0.13, 0]}>
+          <mesh>
+            <sphereGeometry args={[0.11, 10, 10]} />
+            <meshStandardMaterial
+              color={color}
+              emissive={color}
+              emissiveIntensity={0.4 + index * 0.3}
+              toneMapped={false}
+            />
+          </mesh>
+          {index < 3 && (
+            <mesh geometry={SHARED_BOX} position={[0.13, -0.065, 0]} rotation={[0, 0, -0.45]} scale={[0.2, 0.03, 0.03]}>
+              <meshBasicMaterial color={color} toneMapped={false} />
+            </mesh>
+          )}
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/** One form becoming a different form. */
+function DifferentiateGlyph({ color }: GlyphProps) {
+  return (
+    <group>
+      <mesh geometry={SHARED_BOX} position={[-0.28, 0, 0]} scale={0.26}>
+        <meshStandardMaterial
+          color="#71717a"
+          emissive="#71717a"
+          emissiveIntensity={0.25}
+          metalness={0.5}
+          roughness={0.4}
+        />
+      </mesh>
+      <mesh geometry={SHARED_BOX} scale={[0.22, 0.03, 0.03]}>
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+      <mesh position={[0.3, 0, 0]}>
+        <dodecahedronGeometry args={[0.2, 0]} />
+        <meshStandardMaterial
+          color={color}
+          emissive={color}
+          emissiveIntensity={0.95}
+          metalness={0.45}
+          roughness={0.3}
+          toneMapped={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+/** Crossing a boundary into another compartment. */
+function TranslocateGlyph({ color }: GlyphProps) {
+  return (
+    <group>
+      <mesh rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[0.7, 0.7]} />
+        <meshBasicMaterial
+          color="#a1a1aa"
+          transparent
+          opacity={0.22}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      {[-0.26, 0.26].map((x, index) => (
+        <mesh key={x} position={[x, 0, 0]} scale={index === 1 ? 0.15 : 0.13}>
+          <sphereGeometry args={[1, 12, 12]} />
+          <meshStandardMaterial
+            color={color}
+            emissive={color}
+            emissiveIntensity={index === 1 ? 1.1 : 0.35}
+            toneMapped={false}
+          />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+/** The makeup of a population changing. */
+function PopulationGlyph({ step, color }: GlyphProps) {
+  const values = stepValues(step);
+  const raw = values.length > 0 ? values : [0.6, 0.3, 0.1];
+  const total = raw.reduce((sum, value) => sum + Math.abs(value), 0) || 1;
+  let offset = -0.35;
+  return (
+    <group>
+      {raw.map((value, index) => {
+        const width = (Math.abs(value) / total) * 0.7;
+        const x = offset + width / 2;
+        offset += width;
+        const shade = new THREE.Color(color).offsetHSL(0, 0, -0.12 * index);
+        return (
+          <mesh
+            key={index}
+            geometry={SHARED_BOX}
+            position={[0, 0, x]}
+            scale={[0.24, 0.24, Math.max(width, 0.02)]}
+          >
+            <meshStandardMaterial
+              color={shade}
+              emissive={shade}
+              emissiveIntensity={0.7}
+              metalness={0.5}
+              roughness={0.35}
+              toneMapped={false}
+            />
+          </mesh>
+        );
+      })}
+    </group>
+  );
+}
+
+/** The paper does not say. Shown as an explicit hole, not filler. */
+function NotDescribedGlyph() {
+  return (
+    <group>
+      <mesh rotation={[0, Math.PI / 2, 0]}>
+        <planeGeometry args={[0.6, 0.6]} />
+        <meshBasicMaterial color="#52525b" wireframe transparent opacity={0.55} />
+      </mesh>
+      <Html
+        center
+        distanceFactor={9}
+        style={{ pointerEvents: "none" }}
+        zIndexRange={[20, 0]}
+      >
+        <div className="whitespace-nowrap rounded bg-zinc-900/85 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-zinc-500">
+          not described
+        </div>
+      </Html>
+    </group>
+  );
+}
+
 function Glyph(props: GlyphProps) {
   switch (props.step.primitive) {
+    // --- domain-neutral core
+    case "transport":
+      return <StreamGlyph {...props} />;
+    case "transform":
+      return <TransformGlyph {...props} />;
+    case "combine":
+      return <CombineGlyph {...props} />;
+    case "split":
+      return <BranchGlyph {...props} />;
+    case "gate":
+      return <BarrierGlyph {...props} />;
+    case "amplify":
+      return <LevelGlyph {...props} />;
+    case "suppress":
+      return <LevelGlyph {...props} falling />;
+    case "accumulate":
+      return <AccumulateGlyph {...props} />;
+    case "cycle":
+      return <LoopGlyph {...props} />;
+    case "compare":
+      return <CompareGlyph {...props} />;
+    case "select":
+      return <GateGlyph {...props} />;
+    case "emit":
+      return <EmitGlyph {...props} />;
+
+    // --- computational
     case "matrix_transform":
       return <MatrixGlyph {...props} />;
     case "attention_links":
@@ -410,8 +774,27 @@ function Glyph(props: GlyphProps) {
       return <GateGlyph {...props} />;
     case "loop_repeat":
       return <LoopGlyph {...props} />;
-    case "compare":
-      return <CompareGlyph {...props} />;
+
+    // --- biological
+    case "bind":
+      return <BindGlyph {...props} />;
+    case "upregulate":
+      return <LevelGlyph {...props} />;
+    case "downregulate":
+      return <LevelGlyph {...props} falling />;
+    case "cascade":
+      return <CascadeGlyph {...props} />;
+    case "differentiate":
+      return <DifferentiateGlyph {...props} />;
+    case "translocate":
+      return <TranslocateGlyph {...props} />;
+    case "population_shift":
+      return <PopulationGlyph {...props} />;
+
+    // --- the paper simply does not say
+    case "not_described":
+      return <NotDescribedGlyph />;
+
     default:
       return (
         <mesh>

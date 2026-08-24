@@ -1,3 +1,4 @@
+import type { SceneRecord } from "./components/visualization/sceneTypes";
 import type {
   AgentSession,
   AgentSessionDetail,
@@ -610,6 +611,58 @@ export function getPreparedStages(
   return requestJson(
     `/visualizer/item/${encodeURIComponent(vizId)}/expansions`,
   );
+}
+
+// --- algorithm scenes --------------------------------------------------------
+//
+// A scene is the validated, evidence-carrying description of an animation. It
+// contains no executable content; see backend/app/rag/scene_ir.py.
+
+export function generateAlgorithmScene({
+  vizId,
+  force = false,
+  provider,
+  model,
+  allowOfflineFallback = false,
+}: {
+  vizId: string;
+  force?: boolean;
+  provider?: string;
+  model?: string;
+  allowOfflineFallback?: boolean;
+}): Promise<{ scene: SceneRecord; fallback?: string }> {
+  return requestJson("/visualizer/generate-scene", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      viz_id: vizId,
+      force,
+      provider: provider ?? null,
+      model: model ?? null,
+      allow_offline_fallback: allowOfflineFallback,
+    }),
+  });
+}
+
+export function getAlgorithmScene(
+  vizId: string,
+): Promise<{ scene: SceneRecord }> {
+  return requestJson(
+    `/visualizer/item/${encodeURIComponent(vizId)}/scene`,
+  );
+}
+
+export function verifyAlgorithmScene(
+  vizId: string,
+): Promise<{ scene: SceneRecord }> {
+  return requestJson(
+    `/visualizer/item/${encodeURIComponent(vizId)}/verify-scene`,
+    { method: "POST" },
+  );
+}
+
+export function listSceneProviders(): Promise<{ providers: string[] }> {
+  return requestJson("/visualizer/providers");
 }
 
 export function proposeModification({

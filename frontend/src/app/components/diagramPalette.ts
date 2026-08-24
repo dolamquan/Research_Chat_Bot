@@ -41,6 +41,27 @@ const PRIMITIVE_COLORS: Record<string, string> = {
   compare: "#a3e635",
   loop_repeat: "#fcd34d",
   note: "#71717a",
+  // domain-neutral core
+  transport: "#7dd3fc",
+  transform: "#fbbf24",
+  combine: "#86efac",
+  split: "#a5b4fc",
+  gate: "#f472b6",
+  amplify: "#4ade80",
+  suppress: "#fb7185",
+  accumulate: "#c4b5fd",
+  cycle: "#fcd34d",
+  select: "#f472b6",
+  emit: "#38bdf8",
+  // biological
+  bind: "#f0abfc",
+  upregulate: "#4ade80",
+  downregulate: "#fb7185",
+  cascade: "#fdba74",
+  differentiate: "#a78bfa",
+  translocate: "#22d3ee",
+  population_shift: "#facc15",
+  not_described: "#52525b",
 };
 
 export function primitiveColor(primitive: string): string {
