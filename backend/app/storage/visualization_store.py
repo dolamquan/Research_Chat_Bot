@@ -3,11 +3,66 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set
+
+# scene_composer is a leaf module (no app imports at module level), so this
+# does not create an import cycle even though rag modules import this store.
+from app.rag.scene_composer import SCENE_SCHEMA_VERSION
 
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "researchmind.sqlite3"
+
+
+def expansion_content_is_current(
+    content: Dict[str, Any],
+    allowed_primitives: Set[str] | None = None,
+) -> bool:
+    """The one definition of "this stored expansion matches the current schema".
+
+    Shared by the per-click regeneration gate (`_expansion_is_current` in
+    `paper_visualizer`) and the prepared-stages listing below. If those two
+    ever disagree, the UI reports a stage as ready that every click then
+    silently regenerates at full LLM cost.
+
+    `allowed_primitives` is None when the caller does not know the paper's
+    mechanism domain; the vocabulary check is skipped rather than guessed.
+    """
+    steps = content.get("process_steps")
+    if steps is None:
+        return False
+    if not all(isinstance(step, dict) and "values" in step for step in steps):
+        # Predates concrete `values`; regenerate so animations show real numbers.
+        return False
+
+    # A storyboard describing a biology paper in matrix-and-attention terms is
+    # stale even though it parses: the vocabulary was chosen before the paper's
+    # domain was known. Regenerating is how those self-heal.
+    if allowed_primitives is not None and not all(
+        step.get("primitive") in allowed_primitives for step in steps
+    ):
+        return False
+
+    # Predates stage-targeted retrieval, so its scene and code were grounded
+    # in the paper's opening pages rather than in this stage.
+    if not content.get("stage_grounded"):
+        return False
+
+    # Keyed on presence, not on truthiness: composition is best-effort and
+    # stores None when it fails, and re-running the whole expansion on every
+    # click for a stage that keeps failing would cost a lot and converge never.
+    if "scene" not in content:
+        return False
+
+    # The version stamps the composition *attempt*, not its outcome, so a
+    # failed compose is a recorded attempt at the current schema -- retried
+    # once per schema bump, never once per click. Rows written before the
+    # stamp existed count as version 1.
+    try:
+        stored_version = int(content.get("scene_schema_version") or 1)
+    except (TypeError, ValueError):
+        stored_version = 1
+    return stored_version >= SCENE_SCHEMA_VERSION
 
 
 def _now() -> str:
@@ -53,6 +108,7 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         """
     )
     _ensure_column(conn, "worked_example_json", "TEXT")
+    _ensure_column(conn, "mechanism_domain", "TEXT")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS node_expansions (
@@ -100,6 +156,15 @@ def _row_to_record(row: sqlite3.Row) -> Dict[str, Any]:
     except Exception:
         record["worked_example"] = None
     return record
+
+
+def set_mechanism_domain(viz_id: str, domain: str) -> None:
+    """Which mechanism vocabulary this paper's storyboards may draw on."""
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE paper_visualizations SET mechanism_domain = ? WHERE viz_id = ?",
+            (domain, viz_id),
+        )
 
 
 def set_worked_example(viz_id: str, worked_example: Dict[str, Any]) -> None:
@@ -308,16 +373,15 @@ def list_expanded_node_ids(viz_id: str) -> List[str]:
         ).fetchall()
     # Only count expansions matching the current storyboard schema, so stages
     # stored by an older version are re-prepared rather than reported ready.
+    # The store does not know the paper's mechanism domain, so the vocabulary
+    # check is skipped here; every other criterion matches the per-click gate.
     prepared: List[str] = []
     for row in rows:
         try:
             content = json.loads(row["content_json"] or "{}")
         except Exception:
             continue
-        steps = content.get("process_steps")
-        if steps is None:
-            continue
-        if all(isinstance(step, dict) and "values" in step for step in steps):
+        if expansion_content_is_current(content):
             prepared.append(row["node_id"])
     return prepared
 

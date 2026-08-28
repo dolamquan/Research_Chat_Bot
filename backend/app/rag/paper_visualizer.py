@@ -6,18 +6,24 @@ The LLM never writes drawing syntax; Mermaid output is derived deterministically
 """
 
 import json
+import logging
 import re
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, Optional
 
 from langsmith import traceable
+
+from .scene_composer import SCENE_SCHEMA_VERSION, compose_mechanism_scene, scene_to_dict
+from .scene_graph import compose_scene_graph, graph_to_dict
 from pydantic import BaseModel, ValidationError
 
 from app.rag.generator import DEFAULT_MODEL, get_llm
-from app.rag.retriever import retrieve_document_chunks
+from app.rag.retriever import retrieve, retrieve_document_chunks
 from app.storage.article_store import get_article
 from app.storage.visualization_store import (
+    expansion_content_is_current,
     get_node_expansion,
+    set_mechanism_domain,
     get_visualization,
     get_visualization_by_id,
     list_visualizations,
@@ -26,6 +32,8 @@ from app.storage.visualization_store import (
     upsert_visualization,
 )
 
+
+logger = logging.getLogger(__name__)
 
 MAX_VIZ_CHUNKS = 80
 MAX_VIZ_CONTEXT_CHARS = 45_000
@@ -88,7 +96,30 @@ class ExpansionStep(BaseModel):
     detail: str
 
 
-ProcessPrimitive = Literal[
+# The vocabulary a stage's internal mechanism is described with.
+#
+# Originally this was a single ML-flavoured list, which was a category error:
+# it encoded what neural architectures do rather than what *mechanisms* do, so
+# a biology paper had nothing correct to choose and every stage collapsed to
+# the same generic triple. It is now a domain-neutral core plus per-domain
+# extensions, and the prompt only offers the sets that fit the paper.
+
+CORE_PRIMITIVES = (
+    "transport",      # something moves from one place to another
+    "transform",      # something is converted into another form
+    "combine",        # two or more things merge into one
+    "split",          # one thing divides into several
+    "gate",           # a condition decides whether it proceeds
+    "amplify",        # magnitude increases
+    "suppress",       # magnitude decreases or is blocked
+    "accumulate",     # builds up over repeated steps
+    "cycle",          # repeats
+    "compare",        # two things are measured against each other
+    "select",         # candidates are scored and only some survive
+    "emit",           # a result is produced
+)
+
+COMPUTATIONAL_PRIMITIVES = (
     "token_stream",
     "vector_array",
     "matrix_transform",
@@ -100,10 +131,53 @@ ProcessPrimitive = Literal[
     "normalize",
     "distribution",
     "filter_select",
-    "compare",
     "loop_repeat",
+)
+
+BIOLOGICAL_PRIMITIVES = (
+    "bind",           # molecules or receptors bind
+    "upregulate",     # expression or activity increases
+    "downregulate",   # expression or activity decreases
+    "cascade",        # a signal propagates along a chain
+    "differentiate",  # an entity changes type or fate
+    "translocate",    # moves between compartments
+    "population_shift",  # the makeup of a population changes
+)
+
+# Used when the paper simply does not describe a stage's internals. Rendering
+# an explicit unknown is better than inventing a plausible mechanism.
+UNKNOWN_PRIMITIVE = "not_described"
+
+MechanismDomain = Literal["computational", "biological", "general"]
+
+DOMAIN_EXTENSIONS: Dict[str, tuple] = {
+    "computational": COMPUTATIONAL_PRIMITIVES,
+    "biological": BIOLOGICAL_PRIMITIVES,
+    "general": (),
+}
+
+ProcessPrimitive = Literal[
+    # core
+    "transport", "transform", "combine", "split", "gate", "amplify",
+    "suppress", "accumulate", "cycle", "compare", "select", "emit",
+    # computational
+    "token_stream", "vector_array", "matrix_transform", "attention_links",
+    "split_parallel", "merge_parallel", "elementwise_combine", "nonlinearity",
+    "normalize", "distribution", "filter_select", "loop_repeat",
+    # biological
+    "bind", "upregulate", "downregulate", "cascade", "differentiate",
+    "translocate", "population_shift",
+    # neither described nor inferable
+    "not_described",
+    # retained so storyboards stored before this change still load
     "note",
 ]
+
+
+def primitives_for_domain(domain: str) -> tuple:
+    """Core plus the extension for this paper's domain, and the unknown marker."""
+    extension = DOMAIN_EXTENSIONS.get(domain, ())
+    return CORE_PRIMITIVES + extension + (UNKNOWN_PRIMITIVE,)
 
 
 class ProcessStep(BaseModel):
@@ -287,8 +361,15 @@ def _structured_llm_call(llm: Any, prompt: str, model_cls: type) -> Any:
         result = structured_llm.invoke(prompt)
         if result is not None:
             return result
-    except Exception:
-        pass
+    except Exception as error:
+        # The exception text is the only way to tell "provider lacks strict
+        # mode" from "our schema is strict-mode illegal"; don't discard it.
+        logger.warning(
+            "strict structured output unavailable for %s, falling back to "
+            "plain JSON: %s",
+            model_cls.__name__,
+            error,
+        )
 
     schema_hint = json.dumps(model_cls.model_json_schema(), ensure_ascii=False)
     fallback_prompt = (
@@ -669,6 +750,83 @@ def _worked_example_block(example: Dict[str, Any] | None) -> str:
     return "\n".join(lines)
 
 
+
+class MechanismDomainGuess(BaseModel):
+    domain: MechanismDomain
+    reason: str
+
+
+@traceable(name="classify_mechanism_domain", run_type="chain")
+def classify_mechanism_domain(
+    record: Dict[str, Any],
+    article: Dict[str, Any] | None,
+    chunks: List[Dict[str, Any]],
+    llm: Any = None,
+) -> MechanismDomainGuess:
+    """Which family of mechanism does this paper's method belong to?
+
+    Decides which vocabulary the storyboards may draw on, so a biology paper is
+    never described in terms of matrices and attention.
+    """
+    llm = llm or get_llm(temperature=0)
+    stages = ", ".join(
+        node.get("label", "") for node in record.get("diagram", {}).get("nodes", [])
+    )
+    prompt = f"""Classify the KIND of mechanism this paper's method is, so it can be described with appropriate vocabulary.
+
+Algorithm: {record.get('algorithm_name', '')}
+Paper: {record.get('title', '')}
+Summary: {record.get('summary', '')}
+Stages: {stages}
+
+Choose exactly one:
+- "computational": the mechanism is computation over data — neural networks, retrieval, search, optimisation, signal processing, algorithms on data structures.
+- "biological": the mechanism is a biological or biochemical process — gene expression, signalling, cell fate, protein interaction, physiology.
+- "general": anything else, or a mechanism that does not clearly sit in either (physical systems, economics, a workflow, a mixed method).
+
+Pick "general" rather than forcing a poor fit. reason: one short sentence.
+
+Paper metadata:
+{_article_header(article)}
+
+Paper context:
+{_format_context(chunks, max_chars=12_000)}
+"""
+    return _structured_llm_call(llm, prompt, MechanismDomainGuess)
+
+
+def ensure_mechanism_domain(
+    record: Dict[str, Any],
+    article: Dict[str, Any] | None,
+    chunks: List[Dict[str, Any]],
+    llm: Any = None,
+) -> str:
+    """The paper's stored mechanism domain, classified once."""
+    existing = _string(record.get("mechanism_domain")).strip()
+    if existing in DOMAIN_EXTENSIONS:
+        return existing
+
+    try:
+        guess = classify_mechanism_domain(record, article, chunks, llm=llm)
+        domain = guess.domain
+    except Exception:
+        # A failed classification must not block the storyboard; the neutral
+        # core alone still describes any mechanism.
+        return "general"
+
+    # The domain is a property of the paper, so a classification triggered
+    # through a variant persists onto the root visualization -- the variants
+    # table has no mechanism_domain column, and writing to the variant id
+    # would silently update zero rows.
+    viz_id = record.get("viz_id") or record.get("root_viz_id")
+    if viz_id:
+        try:
+            set_mechanism_domain(viz_id, domain)
+        except Exception:
+            pass
+    record["mechanism_domain"] = domain
+    return domain
+
 def _node_neighborhood(diagram: Dict[str, Any], node_id: str) -> str:
     """Describe a node's incoming/outgoing edges for the expansion prompt."""
     labels = {node["id"]: node["label"] for node in diagram.get("nodes", [])}
@@ -682,12 +840,59 @@ def _node_neighborhood(diagram: Dict[str, Any], node_id: str) -> str:
     return "\n".join(lines) or "- no connections recorded"
 
 
+PRIMITIVE_HELP: Dict[str, str] = {
+    # core — describe any mechanism
+    "transport": "something moves from one place or stage to another",
+    "transform": "something is converted into a different form",
+    "combine": "two or more things merge into one",
+    "split": "one thing divides into several",
+    "gate": "a condition or threshold decides whether it proceeds",
+    "amplify": "a quantity increases",
+    "suppress": "a quantity is reduced or blocked",
+    "accumulate": "something builds up over repeated steps",
+    "cycle": "the preceding steps repeat",
+    "compare": "two things are measured against each other",
+    "select": "candidates are scored and only some survive",
+    "emit": "a final result is produced",
+    # computational
+    "token_stream": "discrete items (tokens, documents, candidates) flow through",
+    "vector_array": "a set of vectors or embeddings, shown as columns of cells",
+    "matrix_transform": "data passes through a learned matrix, projection or layer",
+    "attention_links": "elements exchange information via weighted pairwise links",
+    "split_parallel": "one stream splits into parallel branches such as heads",
+    "merge_parallel": "parallel branches recombine",
+    "elementwise_combine": "two inputs combine element-wise",
+    "nonlinearity": "values pass through an activation or gate",
+    "normalize": "values are rescaled to a standard range",
+    "distribution": "a probability or score distribution over options appears",
+    "filter_select": "candidates are scored and only some survive",
+    "loop_repeat": "the preceding steps repeat",
+    # biological
+    "bind": "molecules, receptors or factors bind to each other",
+    "upregulate": "expression or activity of something increases",
+    "downregulate": "expression or activity of something decreases",
+    "cascade": "a signal propagates along a chain of intermediates",
+    "differentiate": "a cell or entity changes type or fate",
+    "translocate": "something moves between compartments or locations",
+    "population_shift": "the composition of a population changes",
+    "not_described": "the paper does not describe this stage's internals",
+}
+
+
+def _primitive_menu(domain: str) -> str:
+    lines = []
+    for name in primitives_for_domain(domain):
+        lines.append(f"  * {name} - {PRIMITIVE_HELP.get(name, '')}")
+    return "\n".join(lines)
+
+
 def _build_expansion_prompt(
     record: Dict[str, Any],
     node: Dict[str, Any],
     article: Dict[str, Any] | None,
     chunks: List[Dict[str, Any]],
     worked_example: Dict[str, Any] | None = None,
+    domain: str = "general",
 ) -> str:
     example_block = _worked_example_block(worked_example)
     return f"""You are writing a focused deep-dive explanation of ONE component of a research paper's algorithm, for a reader who clicked on that component in a diagram.
@@ -711,22 +916,11 @@ Write, grounded ONLY in the provided paper context (do not invent claims):
 - role: its inputs and outputs and how it connects to the neighboring components above (2-3 sentences).
 - substeps: the ordered internal steps of this component as short label + 1-2 sentence detail pairs. Use 2-6 substeps when the component decomposes naturally; use an empty list when it does not.
 - example: a concrete worked example or intuitive analogy that makes the mechanism click (2-3 sentences); empty string if nothing grounded is possible.
-- process_steps: an animated storyboard of this component's internal process, as 2-6 ordered steps. Each step uses exactly ONE primitive from this vocabulary (pick the closest match; these drive a 3D animation):
-  * token_stream - discrete items (tokens, documents, candidates, samples) flow through. Put 3-6 short concrete example items in "items" when the paper implies them (e.g. example tokens); set count to how many flow.
-  * vector_array - a set of vectors/embeddings shown as columns of cells. count = number of vectors; detail = dimension label like "d_model=512" when known.
-  * matrix_transform - data passes through a learned matrix/projection/layer. detail = the matrix or layer name (e.g. "W_Q", "FFN W_1").
-  * attention_links - elements exchange information via weighted pairwise links. count = number of elements; detail = the scoring formula if given (e.g. "softmax(QK^T/sqrt(d_k))").
-  * split_parallel - one stream splits into parallel branches. count = number of branches (e.g. heads).
-  * merge_parallel - parallel branches recombine. detail = "concat" or "sum".
-  * elementwise_combine - two inputs combine element-wise. detail = the operator ("+", "x", "concat"); label_in = what joins in.
-  * nonlinearity - values pass through an activation or gate. detail = the function ("ReLU", "GELU", "sigmoid").
-  * normalize - values are rescaled to a standard range. detail = the kind ("LayerNorm", "softmax", "L2 norm").
-  * distribution - a probability/score distribution over options appears, optionally with one selected. count = number of bars; items = option labels if concrete.
-  * filter_select - candidates are scored and only some survive. count = candidates in; detail = the rule ("top-k", "threshold 0.5").
-  * compare - two representations are compared for similarity/relevance. detail = the metric ("cosine", "dot product").
-  * loop_repeat - the previous steps repeat. count = iterations if known; detail = what repeats ("per layer", "until converged").
-  * note - a plain narration beat with no specific animation.
-  For every step: caption = one short sentence narrating the beat (shown while it animates); label_in / label_out = what enters and leaves the step ("" if not meaningful); set unused fields to "" / [] / 0. Order the steps as the data actually moves.
+- process_steps: an animated storyboard of this stage's internal process, as 2-6 ordered steps. Each step uses exactly ONE primitive from the vocabulary below — the vocabulary offered is chosen for this paper's kind of mechanism, so do not reach for terms that are not listed.
+{_primitive_menu(domain)}
+  For every step: caption = one short sentence narrating the beat (shown while it animates); label_in / label_out = what enters and leaves the step ("" if not meaningful); count = how many things are involved when that is meaningful, else 0; items = 3-6 short concrete names for those things when the paper implies them, else []; detail = the governing rule, formula, gene, molecule or threshold the paper gives for this step, else "".
+  If the paper does NOT describe how this stage works internally, emit a single step with primitive "not_described" and say in its caption what the paper does and does not tell us. Do not invent a mechanism to fill space, and never use a primitive from another field to approximate one.
+  Order the steps as things actually happen.
   Also fill "values" with concrete numbers whenever the step displays magnitudes, so the animation shows real data instead of placeholders:
   * distribution - the probabilities/scores, one per item, summing to about 1.0 (e.g. [0.62, 0.21, 0.11, 0.06]).
   * attention_links - the attention weights FROM the most interesting query unit TO each unit of the worked example, one per unit, summing to about 1.0. Put the units in "items".
@@ -744,15 +938,96 @@ Paper context:
 """
 
 
-def _expansion_is_current(cached: Dict[str, Any]) -> bool:
-    """False for expansions stored before the current storyboard schema."""
+
+STAGE_CONTEXT_CHUNKS = 30
+STAGE_CONTEXT_CHARS = 18_000
+
+
+def _stage_context(
+    record: Dict[str, Any],
+    node: Dict[str, Any],
+    fallback_chunks: List[Dict[str, Any]],
+) -> str:
+    """Excerpts about THIS stage, rather than the paper's opening pages.
+
+    `retrieve_document_chunks` returns a document in reading order, and
+    `_format_context` fills from the front until it hits its character cap. So
+    every stage of a paper was being shown the same thing: title, abstract,
+    introduction, related work. A stage described in section 4 had the text
+    describing it sitting outside the window entirely, and the model was left
+    animating a label with no mechanism behind it -- which is exactly what an
+    animation unrelated to its stage looks like.
+
+    Searching the same document semantically, using the stage's own label and
+    detail as the query, puts the passages that actually describe it in front
+    of the model. Reading order is restored afterwards so the excerpt still
+    flows as prose.
+    """
+    query = " ".join(
+        part
+        for part in (
+            _string(node.get("label")),
+            _string(node.get("detail")),
+            _string(record.get("diagram", {}).get("title")),
+        )
+        if part
+    ).strip()
+
+    if not query:
+        return _format_context(fallback_chunks, max_chars=STAGE_CONTEXT_CHARS)
+
+    try:
+        hits = retrieve(
+            query=query,
+            limit=STAGE_CONTEXT_CHUNKS,
+            document_source=record["document_source"],
+        )
+    except Exception:
+        # Retrieval is best-effort: a vector-store hiccup must not cost the
+        # user the whole expansion.
+        hits = []
+
+    if not hits:
+        return _format_context(fallback_chunks, max_chars=STAGE_CONTEXT_CHARS)
+
+    # The store holds near-duplicate chunks for the same passage, so a
+    # relevance search returns the best-matching paragraph several times over.
+    # Left in, they burn the whole budget restating one sentence, and the model
+    # concludes the mechanism is undescribed when in fact it was shown a third
+    # of the evidence three times.
+    unique: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+    for chunk in hits:
+        text = " ".join(_string(chunk.get("text")).split()).lower()
+        if not text:
+            continue
+        fingerprint = text[:400]
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        unique.append(chunk)
+    hits = unique
+
+    hits.sort(
+        key=lambda chunk: (
+            chunk.get("parent_index") if chunk.get("parent_index") is not None else 0,
+            chunk.get("chunk_index") if chunk.get("chunk_index") is not None else 0,
+        )
+    )
+    return _format_context(hits, max_chars=STAGE_CONTEXT_CHARS)
+
+
+def _expansion_is_current(cached: Dict[str, Any], domain: str = "general") -> bool:
+    """False for expansions stored before the current storyboard schema.
+
+    The criteria live in `expansion_content_is_current`, shared with the
+    prepared-stages listing so the UI's notion of "ready" cannot drift from
+    the regeneration gate's.
+    """
     content = cached.get("content") or {}
-    steps = content.get("process_steps")
-    if steps is None:
-        return False
-    # Storyboards predating concrete `values` are regenerated so animations
-    # show real numbers rather than placeholders.
-    return all(isinstance(step, dict) and "values" in step for step in steps)
+    return expansion_content_is_current(
+        content, allowed_primitives=set(primitives_for_domain(domain))
+    )
 
 
 def _resolve_diagram_record(diagram_id: str) -> Dict[str, Any] | None:
@@ -764,7 +1039,17 @@ def _resolve_diagram_record(diagram_id: str) -> Dict[str, Any] | None:
     # the dependency one-directional at import time.
     from app.storage.variant_store import get_variant
 
-    return get_variant(diagram_id)
+    variant = get_variant(diagram_id)
+    if variant is not None and not _string(variant.get("mechanism_domain")).strip():
+        # The variants table has no mechanism_domain column, and the domain is
+        # a property of the paper, not of one diagram. Without this, every
+        # variant resolved to "general", whose vocabulary excludes the
+        # computational primitives -- so every click on a variant node
+        # regenerated the expansion and re-classified the domain, forever.
+        root = get_visualization_by_id(_string(variant.get("root_viz_id")))
+        if root:
+            variant["mechanism_domain"] = root.get("mechanism_domain") or ""
+    return variant
 
 
 @traceable(name="expand_diagram_node", run_type="chain")
@@ -775,14 +1060,16 @@ def expand_node(
     llm: Any = None,
 ) -> Dict[str, Any]:
     """Deep-dive explanation of one diagram node, cached per (viz_id, node_id)."""
-    if not force:
-        cached = get_node_expansion(viz_id, node_id)
-        if cached and _expansion_is_current(cached):
-            return cached
-
     record = _resolve_diagram_record(viz_id)
     if record is None:
         raise ValueError(f"Diagram not found: {viz_id}")
+
+    if not force:
+        cached = get_node_expansion(viz_id, node_id)
+        stored_domain = _string(record.get("mechanism_domain")).strip() or "general"
+        if cached and _expansion_is_current(cached, stored_domain):
+            return cached
+
     node = next(
         (n for n in record.get("diagram", {}).get("nodes", []) if n.get("id") == node_id),
         None,
@@ -800,8 +1087,16 @@ def expand_node(
 
     llm = llm or get_llm(temperature=0)
     worked_example = ensure_worked_example(record, article, chunks, llm=llm)
+    # Which vocabulary this paper's mechanisms may be described with. Without
+    # this, every paper was described in machine-learning terms.
+    domain = ensure_mechanism_domain(record, article, chunks, llm=llm)
     prompt = _build_expansion_prompt(
-        record, node, article, chunks, worked_example=worked_example
+        record,
+        node,
+        article,
+        chunks,
+        worked_example=worked_example,
+        domain=domain,
     )
     content = _structured_llm_call(llm, prompt, NodeExpansionContent)
     content.substeps = content.substeps[:8]
@@ -813,10 +1108,71 @@ def expand_node(
         ]
         step.count = max(0, min(step.count, 24))
 
+    payload = content.model_dump()
+    # Marks this expansion as grounded in stage-specific excerpts; older rows
+    # lack it and regenerate.
+    payload["stage_grounded"] = True
+    # Stamped before the composition attempt, deliberately: a compose failure
+    # below stores scene=None but still records that this schema version was
+    # tried, so a stage that keeps failing regenerates once per schema bump
+    # rather than once per click.
+    payload["scene_schema_version"] = SCENE_SCHEMA_VERSION
+
+    # Choreograph this stage from scratch rather than mapping it onto one of a
+    # fixed set of hand-written scenes. A failure here must not cost the user
+    # the explanation they already paid for, so the scene is best-effort and
+    # the renderer falls back to the primitive library when it is absent.
+    # Both generators below describe this one stage, so both get excerpts
+    # chosen for this stage rather than the front of the paper.
+    stage_context = _stage_context(record, node, chunks)
+
+    # The fully dynamic tier: a parametric scene graph the model composes
+    # freely from geometry primitives and keyframe tracks. Best-effort like
+    # the actor scene below; the renderer prefers it and falls back tier by
+    # tier (graph -> actor scene -> primitive library) when absent.
+    try:
+        payload["scene_graph"] = graph_to_dict(
+            compose_scene_graph(
+                stage_label=node.get("label", ""),
+                stage_detail=_string(node.get("detail")) or content.mechanism,
+                algorithm_name=_string(record.get("diagram", {}).get("title"))
+                or _string(record.get("algorithm_name")),
+                domain=domain,
+                context=stage_context,
+                process_steps=payload["process_steps"],
+                worked_example=worked_example,
+                llm=llm,
+            )
+        )
+    except Exception:
+        payload["scene_graph"] = None
+
+    composed_scene = None
+    try:
+        payload["scene"] = scene_to_dict(
+            compose_mechanism_scene(
+                stage_label=node.get("label", ""),
+                stage_detail=_string(node.get("detail")) or content.mechanism,
+                algorithm_name=_string(record.get("diagram", {}).get("title"))
+                or _string(record.get("algorithm_name")),
+                domain=domain,
+                context=stage_context,
+                # The storyboard's own units and numbers, already clamped
+                # above; without them the composer invents a second worked
+                # example and its actors render as featureless shapes.
+                process_steps=payload["process_steps"],
+                worked_example=worked_example,
+                llm=llm,
+            )
+        )
+        composed_scene = payload["scene"]
+    except Exception:
+        payload["scene"] = None
+
     return upsert_node_expansion(
         viz_id=viz_id,
         node_id=node_id,
         node_label=node.get("label", ""),
-        content=content.model_dump(),
+        content=payload,
         model=DEFAULT_MODEL,
     )

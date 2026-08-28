@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Component, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
@@ -12,14 +12,7 @@ import {
 } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 
-import type {
-  Diagram,
-  DiagramEdge,
-  DiagramGroup,
-  DiagramNode,
-  DiffState,
-  ProcessStep,
-} from "../types";
+import type { Diagram, DiagramEdge, DiagramGroup, DiagramNode, DiffState, MechanismGraph, MechanismScene, ProcessStep } from "../types";
 import { diffTint, edgeStroke, nodeStroke } from "./diagramPalette";
 import { CHASSIS_D, CHASSIS_H, CHASSIS_W, NodeAssembly } from "./NodeAssembly";
 import { ProcessTheater, type TheaterControl } from "./ProcessTheater";
@@ -381,11 +374,69 @@ function CameraRig({ center, radius }: { center: THREE.Vector3; radius: number }
   return null;
 }
 
-export function Visualizer3D({
+/**
+ * Contains 3D failures so they cannot white-screen the whole app.
+ *
+ * R3F re-throws render errors into the outer React tree, and the only other
+ * boundary is at the app root -- so before this existed, one WebGL hiccup
+ * (typically context exhaustion after many dev hot-reloads: the browser caps
+ * WebGL contexts and `Canvas` then reads attributes off a null context)
+ * killed every panel, not just the 3D one.
+ */
+class CanvasErrorBoundary extends Component<
+  { children: ReactNode },
+  { error?: Error }
+> {
+  state: { error?: Error } = {};
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="grid h-full min-h-[16rem] place-items-center rounded-lg border border-zinc-700/80 bg-zinc-900/70 p-6">
+          <div className="max-w-sm text-center">
+            <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
+              3d view unavailable
+            </div>
+            <p className="mb-3 text-xs leading-snug text-zinc-400">
+              {this.state.error.message.includes("alpha") ||
+              /webgl|context/i.test(this.state.error.message)
+                ? "The browser could not create a WebGL context (this happens after many dev reloads). Reload the page -- or close and reopen the tab -- to free the stale contexts."
+                : this.state.error.message}
+            </p>
+            <button
+              type="button"
+              className="rounded border border-zinc-600 px-3 py-1 text-xs text-zinc-200 hover:bg-zinc-800"
+              onClick={() => window.location.reload()}
+            >
+              Reload page
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export function Visualizer3D(props: Parameters<typeof Visualizer3DCanvas>[0]) {
+  return (
+    <CanvasErrorBoundary>
+      <Visualizer3DCanvas {...props} />
+    </CanvasErrorBoundary>
+  );
+}
+
+function Visualizer3DCanvas({
   diagram,
   selectedNodeId,
   focusNodeId,
   processSteps,
+  processScene,
+  processGraph,
   storyboards,
   diffStates,
   edgeDiffStates,
@@ -403,6 +454,8 @@ export function Visualizer3D({
   selectedNodeId: string | null;
   focusNodeId?: string | null;
   processSteps?: ProcessStep[] | null;
+  processScene?: MechanismScene | null;
+  processGraph?: MechanismGraph | null;
   /** Per-node storyboards, used to build each chassis's internal machinery. */
   storyboards?: Record<string, ProcessStep[]>;
   diffStates?: Record<string, DiffState>;
@@ -639,6 +692,8 @@ export function Visualizer3D({
           key={focusNode.id}
           position={focusPosition}
           steps={processSteps}
+          scene={processScene}
+          graph={processGraph}
           loop={loopPlayback ?? true}
           control={theaterControl}
           onStepChange={onStepChange}
