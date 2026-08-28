@@ -6,19 +6,22 @@ The LLM never writes drawing syntax; Mermaid output is derived deterministically
 """
 
 import json
+import logging
 import re
 from collections import defaultdict
 from typing import Any, Dict, List, Literal, Optional
 
 from langsmith import traceable
 
-from .scene_composer import compose_mechanism_scene, scene_to_dict
+from .scene_composer import SCENE_SCHEMA_VERSION, compose_mechanism_scene, scene_to_dict
+from .scene_graph import compose_scene_graph, graph_to_dict
 from pydantic import BaseModel, ValidationError
 
 from app.rag.generator import DEFAULT_MODEL, get_llm
 from app.rag.retriever import retrieve, retrieve_document_chunks
 from app.storage.article_store import get_article
 from app.storage.visualization_store import (
+    expansion_content_is_current,
     get_node_expansion,
     set_mechanism_domain,
     get_visualization,
@@ -29,6 +32,8 @@ from app.storage.visualization_store import (
     upsert_visualization,
 )
 
+
+logger = logging.getLogger(__name__)
 
 MAX_VIZ_CHUNKS = 80
 MAX_VIZ_CONTEXT_CHARS = 45_000
@@ -356,8 +361,15 @@ def _structured_llm_call(llm: Any, prompt: str, model_cls: type) -> Any:
         result = structured_llm.invoke(prompt)
         if result is not None:
             return result
-    except Exception:
-        pass
+    except Exception as error:
+        # The exception text is the only way to tell "provider lacks strict
+        # mode" from "our schema is strict-mode illegal"; don't discard it.
+        logger.warning(
+            "strict structured output unavailable for %s, falling back to "
+            "plain JSON: %s",
+            model_cls.__name__,
+            error,
+        )
 
     schema_hint = json.dumps(model_cls.model_json_schema(), ensure_ascii=False)
     fallback_prompt = (
@@ -802,7 +814,11 @@ def ensure_mechanism_domain(
         # core alone still describes any mechanism.
         return "general"
 
-    viz_id = record.get("viz_id") or record.get("variant_id")
+    # The domain is a property of the paper, so a classification triggered
+    # through a variant persists onto the root visualization -- the variants
+    # table has no mechanism_domain column, and writing to the variant id
+    # would silently update zero rows.
+    viz_id = record.get("viz_id") or record.get("root_viz_id")
     if viz_id:
         try:
             set_mechanism_domain(viz_id, domain)
@@ -1002,33 +1018,16 @@ def _stage_context(
 
 
 def _expansion_is_current(cached: Dict[str, Any], domain: str = "general") -> bool:
-    """False for expansions stored before the current storyboard schema."""
+    """False for expansions stored before the current storyboard schema.
+
+    The criteria live in `expansion_content_is_current`, shared with the
+    prepared-stages listing so the UI's notion of "ready" cannot drift from
+    the regeneration gate's.
+    """
     content = cached.get("content") or {}
-    steps = content.get("process_steps")
-    if steps is None:
-        return False
-    if not all(isinstance(step, dict) and "values" in step for step in steps):
-        # Predates concrete `values`; regenerate so animations show real numbers.
-        return False
-
-    # A storyboard describing a biology paper in matrix-and-attention terms is
-    # stale even though it parses: the vocabulary was chosen before the paper's
-    # domain was known. Regenerating is how those self-heal.
-    allowed = set(primitives_for_domain(domain))
-    if not all(step.get("primitive") in allowed for step in steps):
-        return False
-
-    # Predates the composed scene, so it would still animate from the fixed
-    # library. Regenerating is how those self-heal into paper-specific motion.
-    # Keyed on presence, not on truthiness: composition is best-effort and
-    # stores None when it fails, and re-running the whole expansion on every
-    # click for a stage that keeps failing would cost a lot and converge never.
-    # Built before stage-targeted retrieval existed, so its scene and code
-    # were grounded in the paper's opening pages rather than in this stage.
-    if not content.get("stage_grounded"):
-        return False
-
-    return "scene" in content
+    return expansion_content_is_current(
+        content, allowed_primitives=set(primitives_for_domain(domain))
+    )
 
 
 def _resolve_diagram_record(diagram_id: str) -> Dict[str, Any] | None:
@@ -1040,7 +1039,17 @@ def _resolve_diagram_record(diagram_id: str) -> Dict[str, Any] | None:
     # the dependency one-directional at import time.
     from app.storage.variant_store import get_variant
 
-    return get_variant(diagram_id)
+    variant = get_variant(diagram_id)
+    if variant is not None and not _string(variant.get("mechanism_domain")).strip():
+        # The variants table has no mechanism_domain column, and the domain is
+        # a property of the paper, not of one diagram. Without this, every
+        # variant resolved to "general", whose vocabulary excludes the
+        # computational primitives -- so every click on a variant node
+        # regenerated the expansion and re-classified the domain, forever.
+        root = get_visualization_by_id(_string(variant.get("root_viz_id")))
+        if root:
+            variant["mechanism_domain"] = root.get("mechanism_domain") or ""
+    return variant
 
 
 @traceable(name="expand_diagram_node", run_type="chain")
@@ -1103,6 +1112,11 @@ def expand_node(
     # Marks this expansion as grounded in stage-specific excerpts; older rows
     # lack it and regenerate.
     payload["stage_grounded"] = True
+    # Stamped before the composition attempt, deliberately: a compose failure
+    # below stores scene=None but still records that this schema version was
+    # tried, so a stage that keeps failing regenerates once per schema bump
+    # rather than once per click.
+    payload["scene_schema_version"] = SCENE_SCHEMA_VERSION
 
     # Choreograph this stage from scratch rather than mapping it onto one of a
     # fixed set of hand-written scenes. A failure here must not cost the user
@@ -1111,6 +1125,27 @@ def expand_node(
     # Both generators below describe this one stage, so both get excerpts
     # chosen for this stage rather than the front of the paper.
     stage_context = _stage_context(record, node, chunks)
+
+    # The fully dynamic tier: a parametric scene graph the model composes
+    # freely from geometry primitives and keyframe tracks. Best-effort like
+    # the actor scene below; the renderer prefers it and falls back tier by
+    # tier (graph -> actor scene -> primitive library) when absent.
+    try:
+        payload["scene_graph"] = graph_to_dict(
+            compose_scene_graph(
+                stage_label=node.get("label", ""),
+                stage_detail=_string(node.get("detail")) or content.mechanism,
+                algorithm_name=_string(record.get("diagram", {}).get("title"))
+                or _string(record.get("algorithm_name")),
+                domain=domain,
+                context=stage_context,
+                process_steps=payload["process_steps"],
+                worked_example=worked_example,
+                llm=llm,
+            )
+        )
+    except Exception:
+        payload["scene_graph"] = None
 
     composed_scene = None
     try:
@@ -1122,6 +1157,11 @@ def expand_node(
                 or _string(record.get("algorithm_name")),
                 domain=domain,
                 context=stage_context,
+                # The storyboard's own units and numbers, already clamped
+                # above; without them the composer invents a second worked
+                # example and its actors render as featureless shapes.
+                process_steps=payload["process_steps"],
+                worked_example=worked_example,
                 llm=llm,
             )
         )

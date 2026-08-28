@@ -1,0 +1,58 @@
+{
+  "title": "Input Embeddings",
+  "summary": "Each token is transformed into a dense vector representation.",
+  "actors": [
+    {
+      "actor_id": "tokens",
+      "label": "Input Tokens",
+      "form": "particles",
+      "tone": "substrate",
+      "count": 5,
+      "at": "left",
+      "note": "the tokenized input sentence"
+    },
+    {
+      "actor_id": "vectors",
+      "label": "Dense Vectors",
+      "form": "blob",
+      "tone": "product",
+      "count": 5,
+      "at": "center",
+      "note": "one embedding per token"
+    }
+  ],
+  "beats": [
+    {
+      "start": 0.0,
+      "duration": 0.25,
+      "kind": "enter",
+      "actor_id": "tokens",
+      "target_id": "",
+      "to": "same",
+      "magnitude": 1.0,
+      "caption": "Input tokens enter the stage."
+    },
+    {
+      "start": 0.3,
+      "duration": 0.4,
+      "kind": "travel",
+      "actor_id": "tokens",
+      "target_id": "",
+      "to": "center",
+      "magnitude": 1.0,
+      "caption": "Each token is mapped to a vector using a learned embedding matrix."
+    },
+    {
+      "start": 0.55,
+      "duration": 0.35,
+      "kind": "transform",
+      "actor_id": "vectors",
+      "target_id": "",
+      "to": "same",
+      "magnitude": 0.8,
+      "caption": ""
+    }
+  ],
+  "evidence": "Each token is mapped to a vector using a learned embedding matrix.",
+  "described": true
+}

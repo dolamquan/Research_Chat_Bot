@@ -891,6 +891,15 @@ export function VisualizerView() {
     return expansion.content.scene ?? null;
   }, [expansion, selectedNode]);
 
+  // The fully dynamic tier: a parametric scene graph, preferred over the
+  // actor scene by the renderer when present.
+  const processGraph = useMemo(() => {
+    if (!expansion || !selectedNode || expansion.node_id !== selectedNode.id) {
+      return null;
+    }
+    return expansion.content.scene_graph ?? null;
+  }, [expansion, selectedNode]);
+
   // Storyboard for the focused node; falls back to narrated substeps.
   const processSteps = useMemo(() => {
     if (!expansion || !selectedNode || expansion.node_id !== selectedNode.id) {
@@ -1247,6 +1256,7 @@ export function VisualizerView() {
               focusNodeId={playing3d ? selectedNode?.id ?? null : null}
               processSteps={playing3d ? processSteps : null}
               processScene={playing3d ? processScene : null}
+              processGraph={playing3d ? processGraph : null}
               storyboards={storyboards}
               diffStates={showDiff ? (diff?.nodeState as Record<string, DiffState>) : undefined}
               edgeDiffStates={showDiff ? (diff?.edgeState as Record<string, DiffState>) : undefined}

@@ -3,7 +3,8 @@ import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { Html, RoundedBox } from "@react-three/drei";
 
-import type { MechanismScene, ProcessStep } from "../types";
+import type { MechanismGraph, MechanismScene, ProcessStep } from "../types";
+import { SceneGraphStage } from "./SceneGraphStage";
 import { SceneStage } from "./SceneStage";
 
 /** Animated diorama that plays a node's process storyboard in the 3D scene. */
@@ -872,6 +873,7 @@ export function ProcessTheater({
   position,
   steps,
   scene,
+  graph,
   loop,
   control,
   onStepChange,
@@ -880,6 +882,7 @@ export function ProcessTheater({
   position: THREE.Vector3;
   steps: ProcessStep[];
   scene?: MechanismScene | null;
+  graph?: MechanismGraph | null;
   loop: boolean;
   control?: { current: TheaterControl };
   onStepChange?: (index: number) => void;
@@ -951,7 +954,11 @@ export function ProcessTheater({
   // executable-code tier that used to sit above this was removed: the Scene IR
   // pipeline (scene_planner -> AlgorithmScene -> SceneCompiler) replaces it
   // with data that can be validated against the paper.
-  const useScene = Boolean(scene && scene.actors.length > 0);
+  // Tiered rendering: the parametric scene graph (fully model-composed) wins
+  // when present; the actor scene is the middle tier; the fixed primitive
+  // library is the floor for rows that predate both.
+  const useGraph = Boolean(graph && graph.described !== false && graph.nodes?.length > 0);
+  const useScene = !useGraph && Boolean(scene && scene.actors?.length > 0);
   // The scene spans the whole node; the step sequence is its narration, so map
   // the scene's 0..1 timeline across all steps rather than restarting it.
   const sceneT = (stepIndex + t) / Math.max(1, steps.length);
@@ -969,10 +976,12 @@ export function ProcessTheater({
         <meshBasicMaterial color="#111113" transparent opacity={0.72} />
       </mesh>
       <group
-        scale={(useScene ? 1 : framingScale(step)) * (0.82 + 0.18 * envelope)}
+        scale={(useGraph || useScene ? 1 : framingScale(step)) * (0.82 + 0.18 * envelope)}
         position={[0, (1 - envelope) * 0.45, 0]}
       >
-        {useScene ? (
+        {useGraph ? (
+          <SceneGraphStage graph={graph as MechanismGraph} t={sceneT} />
+        ) : useScene ? (
           <SceneStage scene={scene as MechanismScene} t={sceneT} />
         ) : (
           <StepScene step={step} t={t} />

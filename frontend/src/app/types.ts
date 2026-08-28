@@ -470,6 +470,8 @@ export type NodeExpansion = {
     process_steps?: ProcessStep[];
     /** Absent on expansions generated before the scene composer existed. */
     scene?: MechanismScene | null;
+    /** Absent on expansions generated before the scene-graph tier existed. */
+    scene_graph?: MechanismGraph | null;
   };
   model: string;
   created_at: string;
@@ -510,6 +512,7 @@ export type ProcessStep = {
 export type ActorForm =
   | "particles"
   | "strand"
+  | "array"
   | "lattice"
   | "blob"
   | "field"
@@ -530,6 +533,7 @@ export type BehaviorKind =
   | "enter"
   | "travel"
   | "bind"
+  | "correspond"
   | "split"
   | "merge"
   | "spread_along"
@@ -561,6 +565,10 @@ export type SceneActor = {
   count: number;
   at: SceneSlot | string;
   note: string;
+  /** Absent on scenes stored before actors carried unit names. */
+  items?: string[];
+  /** Absent on scenes stored before actors carried real magnitudes. */
+  values?: number[];
 };
 
 export type SceneBeat = {
@@ -572,6 +580,8 @@ export type SceneBeat = {
   to: SceneSlot | string;
   magnitude: number;
   caption: string;
+  /** Absent on scenes stored before `correspond`; [] means uniform. */
+  weights?: number[];
 };
 
 export type MechanismScene = {
@@ -581,6 +591,79 @@ export type MechanismScene = {
   beats: SceneBeat[];
   evidence: string;
   described: boolean;
+};
+
+/**
+ * The fully dynamic tier: a parametric scene graph composed freely by the
+ * model from geometry primitives and keyframe tracks. `SceneGraphStage`
+ * interprets any of these; nothing in it is executable.
+ */
+export type GraphGeometry =
+  | "box"
+  | "sphere"
+  | "cylinder"
+  | "cone"
+  | "torus"
+  | "plane"
+  | "ring"
+  | "capsule";
+
+export type GraphLayout =
+  | "single"
+  | "row"
+  | "column"
+  | "ring"
+  | "grid"
+  | "arc";
+
+export type GraphTrackProp =
+  | "position_x"
+  | "position_y"
+  | "position_z"
+  | "rotation_y"
+  | "rotation_z"
+  | "scale"
+  | "opacity"
+  | "emissive"
+  | "progress";
+
+export type GraphEasing = "linear" | "ease_in_out" | "pulse";
+
+export type SceneGraphNode = {
+  node_id: string;
+  parent_id: string;
+  label: string;
+  geometry: GraphGeometry | string;
+  size?: number[];
+  tone: ActorTone | string;
+  opacity: number;
+  emissive: number;
+  position?: number[];
+  rotation_deg?: number[];
+  count: number;
+  layout: GraphLayout | string;
+  spacing: number;
+  values?: number[];
+  items?: string[];
+};
+
+export type SceneGraphTrack = {
+  node_id: string;
+  prop: GraphTrackProp | string;
+  times?: number[];
+  keys?: number[];
+  easing: GraphEasing | string;
+};
+
+export type MechanismGraph = {
+  title: string;
+  summary: string;
+  caption: string;
+  nodes: SceneGraphNode[];
+  tracks: SceneGraphTrack[];
+  evidence: string;
+  described: boolean;
+  graph_schema_version?: number;
 };
 
 export type WorkedExample = {
