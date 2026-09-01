@@ -126,6 +126,9 @@ def test_describe_model_tolerates_a_bare_stub():
 def test_get_llm_keeps_its_historical_behaviour(monkeypatch):
     """The 12 existing call sites must be unaffected by the refactor."""
     monkeypatch.setenv("OPENAI_API_KEY", "test-key-not-real")
+    # Hermetic against deployment config: a developer's OPENAI_MODEL override
+    # in the shell must not change what the historical default resolves to.
+    monkeypatch.delenv("OPENAI_MODEL", raising=False)
     from app.rag.generator import DEFAULT_MODEL, get_llm
 
     client = get_llm()

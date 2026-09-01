@@ -40,9 +40,7 @@ def test_get_llm_signature_is_unchanged():
         "app.rag.variant_lab",
         "app.rag.variant_verifier",
         "app.rag.variant_chat",
-        "app.rag.scene_ir",
-        "app.rag.scene_planner",
-        "app.rag.scene_verifier",
+        "app.rag.scene_coder",
         "app.rag.scene_service",
         "app.rag.document_structure",
         "app.rag.llm_provider",
@@ -159,54 +157,16 @@ def test_scene_table_creation_does_not_disturb_existing_tables(monkeypatch, tmp_
     assert {"paper_visualizations", "node_expansions", "algorithm_scenes"} <= tables
 
 
-# --- legacy scene derivation ---------------------------------------------------
+# --- offline scene derivation ---------------------------------------------------
 
 
-def test_a_scene_can_be_derived_from_legacy_process_steps(sample_visualization):
-    """Papers explored before the Scene IR existed still get a playable scene."""
-    from app.rag.scene_planner import scene_from_process_steps
-    from app.rag.scene_verifier import verify_scene
+def test_a_scene_can_be_derived_without_a_model_call(sample_visualization):
+    """The offline path still yields playable code straight from the diagram."""
+    from app.rag.scene_coder import check_scene_code, scene_code_from_diagram
 
-    expansions = [
-        {
-            "node_id": "encoder",
-            "content": {
-                "process_steps": [
-                    # A mix of current and legacy-only primitive names.
-                    {"primitive": "token_stream", "caption": "tokens arrive",
-                     "items": ["a", "b"], "values": [], "count": 2,
-                     "label_in": "", "label_out": "", "detail": ""},
-                    {"primitive": "cascade", "caption": "signal relays",
-                     "items": [], "values": [], "count": 0,
-                     "label_in": "", "label_out": "", "detail": ""},
-                ]
-            },
-        }
-    ]
-    scene = scene_from_process_steps(sample_visualization, expansions)
-    assert [step.primitive for step in scene.steps] == ["token_stream", "data_transfer"]
-    # It is honest about being underivable from quotes.
-    report = verify_scene(scene)
-    assert report.grounded_step_ratio == 0.0
-    assert not report.valid
-
-
-def test_scene_ir_accepts_every_legacy_primitive_via_normalisation():
-    """No stored storyboard can produce a primitive the renderer rejects."""
-    from app.rag.paper_visualizer import (
-        BIOLOGICAL_PRIMITIVES,
-        COMPUTATIONAL_PRIMITIVES,
-        CORE_PRIMITIVES,
-        UNKNOWN_PRIMITIVE,
-    )
-    from app.rag.scene_ir import SUPPORTED_PRIMITIVES, normalize_primitive
-
-    legacy = (
-        tuple(CORE_PRIMITIVES)
-        + tuple(COMPUTATIONAL_PRIMITIVES)
-        + tuple(BIOLOGICAL_PRIMITIVES)
-        + (UNKNOWN_PRIMITIVE,)
-    )
-    for primitive in legacy:
-        mapped = normalize_primitive(primitive)
-        assert mapped in SUPPORTED_PRIMITIVES, f"{primitive} -> {mapped}"
+    scene = scene_code_from_diagram(sample_visualization)
+    assert scene["format"] == "threejs-code@1"
+    # Every diagram node label is embedded in the generated data block.
+    for node in sample_visualization["diagram"]["nodes"]:
+        assert node["label"] in scene["code"]
+    assert check_scene_code(scene["code"]) == []

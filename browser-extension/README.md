@@ -1,6 +1,6 @@
-# ResearchMind Paper Capture
+# Zoetrope Paper Capture
 
-This is a small unpacked browser extension for adding the current arXiv or PDF page to your local ResearchMind backend.
+This is a small unpacked browser extension for adding the current arXiv or PDF page to your local Zoetrope backend.
 
 ## Load It
 
@@ -13,6 +13,6 @@ This is a small unpacked browser extension for adding the current arXiv or PDF p
 
 ## Use It
 
-Open an arXiv abstract page, arXiv PDF page, or direct PDF URL. Click the ResearchMind extension button, review the fields, then click **Add to database**.
+Open an arXiv abstract page, arXiv PDF page, or direct PDF URL. Click the Zoetrope extension button, review the fields, then click **Add to database**.
 
 The paper is indexed immediately for retrieval. Rebuild the topology after adding papers if you want the new articles to appear on the map.

@@ -1,1 +1,1 @@
-"""LangGraph agent workflows for ResearchMind."""
+"""LangGraph agent workflows for Zoetrope."""

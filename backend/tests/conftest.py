@@ -7,7 +7,6 @@ fallback path, so the suite runs offline and deterministically.
 
 from __future__ import annotations
 
-import json
 import os
 
 # The RAG modules are decorated with `@traceable`, which otherwise tries to
@@ -17,44 +16,15 @@ os.environ.setdefault("LANGSMITH_TRACING", "false")
 os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
 os.environ.pop("LANGSMITH_API_KEY", None)
 os.environ.pop("LANGCHAIN_API_KEY", None)
-from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
-
-FIXTURE_DIR = Path(__file__).parent / "fixtures" / "scenes"
-
-
-def load_scene_fixture(name: str) -> Dict[str, Any]:
-    return json.loads((FIXTURE_DIR / name).read_text(encoding="utf-8"))
-
-
-@pytest.fixture
-def transformer_scene() -> Dict[str, Any]:
-    return load_scene_fixture("transformer_self_attention.json")
-
-
-@pytest.fixture
-def cnn_scene() -> Dict[str, Any]:
-    return load_scene_fixture("cnn_convolution.json")
-
-
-@pytest.fixture
-def rag_scene() -> Dict[str, Any]:
-    return load_scene_fixture("rag_pipeline.json")
-
-
-@pytest.fixture
-def all_scene_fixtures() -> List[Dict[str, Any]]:
-    return [
-        load_scene_fixture(path.name) for path in sorted(FIXTURE_DIR.glob("*.json"))
-    ]
 
 
 class StubChatModel:
     """A LangChain-shaped chat model that replays canned responses.
 
-    Mimics enough of the interface that `scene_planner` cannot tell it from a
+    Mimics enough of the interface that `scene_coder` cannot tell it from a
     real client: `with_structured_output` either returns a model instance or
     raises to force the JSON path, and `invoke` returns an object with
     `.content` like both providers do.

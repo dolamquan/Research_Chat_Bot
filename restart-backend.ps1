@@ -1,4 +1,4 @@
-# Restart the ResearchMind backend on :8002 with auto-reload.
+# Restart the Zoetrope backend on :8002 with auto-reload.
 #
 # Run this yourself rather than letting Claude do it: AVG intercepts TLS for
 # processes Claude spawns, so a backend it launches cannot reach OpenAI. A

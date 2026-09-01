@@ -33,6 +33,7 @@ import {
 
 import {
   buildClusters,
+  createNote,
   deleteChatSession,
   getArticleDomains,
   getArticles,
@@ -49,6 +50,7 @@ import {
   sendChat,
 } from "./api";
 import { AgentConsoleView } from "./components/AgentConsoleView";
+import ZoetropeMark from "./components/ZoetropeMark";
 import { CrawlerView } from "./components/CrawlerView";
 import { DocumentReader } from "./components/DocumentReader";
 import { EvaluationDashboard } from "./components/EvaluationDashboard";
@@ -92,7 +94,7 @@ class AppErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("ResearchMind render error", error, info);
+    console.error("Zoetrope render error", error, info);
     this.setState({ error, info });
   }
 
@@ -119,7 +121,7 @@ class AppErrorBoundary extends Component<
             padding: 24,
           }}
         >
-          <h1 style={{ margin: 0, fontSize: 24 }}>ResearchMind crashed while rendering</h1>
+          <h1 style={{ margin: 0, fontSize: 24 }}>Zoetrope crashed while rendering</h1>
           <p style={{ color: "#a09c92", lineHeight: 1.6 }}>
             The app is loaded, but a frontend runtime error stopped React from drawing the UI.
             This message is here so we can see the real issue instead of a black screen.
@@ -166,7 +168,7 @@ function initialMessage(cluster?: Cluster): Message {
     role: "assistant",
     content: cluster
       ? `You are now exploring **${cluster.cluster_label}**. I will retrieve answers only from this cluster. Select an article on the right to read it, or ask a question across the cluster.`
-      : "Welcome to **ResearchMind**. Explore the paper topology to focus on a research cluster, or ask a question across all indexed papers. Every response is grounded in retrieved passages from your collection.",
+      : "Welcome to **Zoetrope**. Explore the paper topology to focus on a research cluster, or ask a question across all indexed papers. Every response is grounded in retrieved passages from your collection.",
     timestamp: new Date(),
   };
 }
@@ -523,11 +525,27 @@ function MessagePaperCards({
 function MessageBubble({
   message,
   onOpenSource,
+  onSaveNote,
 }: {
   message: Message;
   onOpenSource: (source: Source) => void;
+  onSaveNote?: (message: Message) => Promise<void>;
 }) {
   const isUser = message.role === "user";
+  const [noteState, setNoteState] = useState<"idle" | "saving" | "saved" | "error">(
+    "idle",
+  );
+
+  async function saveAsNote() {
+    if (!onSaveNote || noteState === "saving") return;
+    setNoteState("saving");
+    try {
+      await onSaveNote(message);
+      setNoteState("saved");
+    } catch {
+      setNoteState("error");
+    }
+  }
   const pinnedSources = Array.isArray(message.pinnedSources) ? message.pinnedSources : [];
   const messageSources = Array.isArray(message.sources) ? message.sources : [];
   const citationSources = messageSources.filter(
@@ -612,12 +630,32 @@ function MessageBubble({
             ))}
           </div>
         )}
-        <span className="font-mono text-[10px] text-muted-foreground px-1">
-          {message.timestamp.toLocaleTimeString([], {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}
-        </span>
+        <div className="flex items-center gap-2 px-1">
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {message.timestamp.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+          {!isUser && onSaveNote && (
+            <button
+              type="button"
+              title="Save this answer as a research note"
+              disabled={noteState === "saving" || noteState === "saved"}
+              onClick={() => void saveAsNote()}
+              className="h-5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50 inline-flex items-center gap-1"
+            >
+              <NotebookPen size={10} />
+              {noteState === "saving"
+                ? "Saving..."
+                : noteState === "saved"
+                  ? "Saved to notes"
+                  : noteState === "error"
+                    ? "Retry save"
+                    : "Save as note"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -1373,6 +1411,23 @@ function AppContent() {
     setSidebarOpen(false);
   }
 
+  async function saveMessageAsNote(message: Message) {
+    const heading = message.content
+      .split("\n")
+      .map((line) => line.replace(/^#+\s*/, "").trim())
+      .find((line) => line.length > 0);
+
+    await createNote({
+      note_type: "chat_capture",
+      source_type: "chat_session",
+      source_ref: activeSessionId || "chat",
+      source_title: workspaceNoteScopeTitle,
+      title: (heading || "Chat answer").slice(0, 120),
+      body_md: message.content,
+      tags: ["chat"],
+    });
+  }
+
   function openAnnotation(annotation: Annotation) {
     openSourceCitation({
       source: annotation.source,
@@ -1464,12 +1519,12 @@ function AppContent() {
         style={{ width: sidebarOpen ? sidebarWidth : 0 }}
       >
         <div className="h-20 px-5 border-b border-border/80 flex items-center gap-3 shrink-0">
-          <div className="w-10 h-10 rounded border border-border bg-background flex items-center justify-center text-muted-foreground">
-            <Search size={15} />
+          <div className="shrink-0 text-foreground">
+            <ZoetropeMark size={34} />
           </div>
           <div className="min-w-0">
             <h1 className="text-base font-semibold tracking-tight">
-              ResearchMind
+              Zoetrope
             </h1>
             <p className="text-xs text-muted-foreground">
               Research topology chatbot
@@ -2153,6 +2208,15 @@ function AppContent() {
               onSelectCluster={chooseCluster}
               onClear={clearCluster}
               onClose={() => setTopologyExplorerOpen(false)}
+              onOpenDocument={(document) => {
+                setSelectedCluster(undefined);
+                setSelectedDocument(document);
+                setReaderDocument(document);
+                setReaderInitialPage(undefined);
+                setContextMode("retrieval");
+                setTopologyExplorerOpen(false);
+                setActiveView("chat");
+              }}
             />
           ) : (
             <>
@@ -2167,6 +2231,7 @@ function AppContent() {
                     key={message.id}
                     message={message}
                     onOpenSource={openSourceCitation}
+                    onSaveNote={saveMessageAsNote}
                   />
                 ))}
                 {isTyping && (

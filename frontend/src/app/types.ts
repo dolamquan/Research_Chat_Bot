@@ -247,6 +247,85 @@ export type AnnotationPayload = {
   title?: string;
 };
 
+// ------------------------------------------------------------------ notes
+
+export type NoteType = "freeform" | "highlight" | "chat_capture" | "visualization";
+
+export type NoteAttachmentMeta = {
+  attachment_id: string;
+  kind: "image" | "sketch" | string;
+  name: string;
+  mime_type: string;
+  has_scene: boolean;
+  created_at: string;
+};
+
+export type ResearchNote = {
+  note_id: string;
+  note_type: NoteType | string;
+  source_type: string;
+  source_ref: string;
+  source_title: string;
+  article_id: string;
+  page: number | null;
+  selected_text: string;
+  title: string;
+  body_md: string;
+  tags: string[];
+  folder_id: string;
+  sketch: unknown;
+  attachments: NoteAttachmentMeta[];
+  notion_page_id: string;
+  notion_page_url: string;
+  notion_database_id: string;
+  notion_synced_at: string;
+  content_hash: string;
+  notion_dirty: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NoteFolder = {
+  folder_id: string;
+  name: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type NotionTarget = {
+  target_id: string;
+  name: string;
+  database_id: string;
+  title_property: string;
+  schema: {
+    title?: string;
+    properties?: Record<string, string>;
+  };
+  created_at: string;
+  updated_at: string;
+};
+
+export type NoteExportResult = {
+  note: ResearchNote;
+  page_id: string;
+  url: string;
+  updated: boolean;
+  warnings: string[];
+};
+
+export type NoteSearchHit = {
+  note_id: string;
+  note_type: string;
+  title: string;
+  text: string;
+  source_ref: string;
+  source_title: string;
+  page?: number | null;
+  tags: string[];
+  updated_at: string;
+  score: number;
+};
+
 export type PaperSearchPaper = {
   paper_id?: string;
   arxiv_id: string;
@@ -468,10 +547,6 @@ export type NodeExpansion = {
     substeps: ExpansionStep[];
     example: string;
     process_steps?: ProcessStep[];
-    /** Absent on expansions generated before the scene composer existed. */
-    scene?: MechanismScene | null;
-    /** Absent on expansions generated before the scene-graph tier existed. */
-    scene_graph?: MechanismGraph | null;
   };
   model: string;
   created_at: string;
@@ -503,167 +578,6 @@ export type ProcessStep = {
   label_in: string;
   label_out: string;
   detail: string;
-};
-
-/**
- * A stage animation described as data. The backend composes one of these per
- * paper stage; `SceneStage` interprets any of them without knowing the domain.
- */
-export type ActorForm =
-  | "particles"
-  | "strand"
-  | "array"
-  | "lattice"
-  | "blob"
-  | "field"
-  | "vessel"
-  | "beam"
-  | "marker";
-
-export type ActorTone =
-  | "primary"
-  | "secondary"
-  | "signal"
-  | "inhibitor"
-  | "substrate"
-  | "product"
-  | "neutral";
-
-export type BehaviorKind =
-  | "enter"
-  | "travel"
-  | "bind"
-  | "correspond"
-  | "split"
-  | "merge"
-  | "spread_along"
-  | "accumulate"
-  | "deplete"
-  | "oscillate"
-  | "transform"
-  | "amplify"
-  | "threshold"
-  | "scatter"
-  | "exit";
-
-export type SceneSlot =
-  | "left"
-  | "center"
-  | "right"
-  | "upper"
-  | "lower"
-  | "front"
-  | "back"
-  | "offstage"
-  | "same";
-
-export type SceneActor = {
-  actor_id: string;
-  label: string;
-  form: ActorForm | string;
-  tone: ActorTone | string;
-  count: number;
-  at: SceneSlot | string;
-  note: string;
-  /** Absent on scenes stored before actors carried unit names. */
-  items?: string[];
-  /** Absent on scenes stored before actors carried real magnitudes. */
-  values?: number[];
-};
-
-export type SceneBeat = {
-  start: number;
-  duration: number;
-  kind: BehaviorKind | string;
-  actor_id: string;
-  target_id: string;
-  to: SceneSlot | string;
-  magnitude: number;
-  caption: string;
-  /** Absent on scenes stored before `correspond`; [] means uniform. */
-  weights?: number[];
-};
-
-export type MechanismScene = {
-  title: string;
-  summary: string;
-  actors: SceneActor[];
-  beats: SceneBeat[];
-  evidence: string;
-  described: boolean;
-};
-
-/**
- * The fully dynamic tier: a parametric scene graph composed freely by the
- * model from geometry primitives and keyframe tracks. `SceneGraphStage`
- * interprets any of these; nothing in it is executable.
- */
-export type GraphGeometry =
-  | "box"
-  | "sphere"
-  | "cylinder"
-  | "cone"
-  | "torus"
-  | "plane"
-  | "ring"
-  | "capsule";
-
-export type GraphLayout =
-  | "single"
-  | "row"
-  | "column"
-  | "ring"
-  | "grid"
-  | "arc";
-
-export type GraphTrackProp =
-  | "position_x"
-  | "position_y"
-  | "position_z"
-  | "rotation_y"
-  | "rotation_z"
-  | "scale"
-  | "opacity"
-  | "emissive"
-  | "progress";
-
-export type GraphEasing = "linear" | "ease_in_out" | "pulse";
-
-export type SceneGraphNode = {
-  node_id: string;
-  parent_id: string;
-  label: string;
-  geometry: GraphGeometry | string;
-  size?: number[];
-  tone: ActorTone | string;
-  opacity: number;
-  emissive: number;
-  position?: number[];
-  rotation_deg?: number[];
-  count: number;
-  layout: GraphLayout | string;
-  spacing: number;
-  values?: number[];
-  items?: string[];
-};
-
-export type SceneGraphTrack = {
-  node_id: string;
-  prop: GraphTrackProp | string;
-  times?: number[];
-  keys?: number[];
-  easing: GraphEasing | string;
-};
-
-export type MechanismGraph = {
-  title: string;
-  summary: string;
-  caption: string;
-  nodes: SceneGraphNode[];
-  tracks: SceneGraphTrack[];
-  evidence: string;
-  described: boolean;
-  graph_schema_version?: number;
 };
 
 export type WorkedExample = {

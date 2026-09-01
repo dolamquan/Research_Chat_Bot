@@ -1,3 +1,14 @@
+/**
+ * Legacy localStorage workspace-note store.
+ *
+ * Notes now live on the backend (see the /notes API in api.ts). This module
+ * only keeps the legacy types plus a one-time migration that uploads any
+ * notes still sitting in localStorage, then marks them migrated so the data
+ * survives even if the upload is interrupted (it retries next launch).
+ */
+
+import { migrateWorkspaceNotes } from "./api";
+
 export const DEFAULT_FOLDER_ID = "default";
 
 export type SavedNoteAttachment = {
@@ -31,10 +42,7 @@ export type SavedWorkspaceNote = {
 
 const NOTES_KEY = "researchmind.saved-workspace-notes";
 const FOLDERS_KEY = "researchmind.saved-note-folders";
-
-function now(): string {
-  return new Date().toISOString();
-}
+const MIGRATED_KEY = "researchmind.workspace-notes-migrated";
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -45,71 +53,52 @@ function readJson<T>(key: string, fallback: T): T {
   }
 }
 
-function writeJson<T>(key: string, value: T) {
-  localStorage.setItem(key, JSON.stringify(value));
-}
-
-export function loadNoteFolders(): SavedNoteFolder[] {
-  const folders = readJson<SavedNoteFolder[]>(FOLDERS_KEY, []);
-  return [
-    {
-      id: DEFAULT_FOLDER_ID,
-      name: "All notes",
-      createdAt: "",
-      updatedAt: "",
-    },
-    ...folders.filter((folder) => folder.id !== DEFAULT_FOLDER_ID),
-  ];
-}
-
-export function createNoteFolder(name: string): SavedNoteFolder {
-  const trimmed = name.trim();
-  if (!trimmed) {
-    throw new Error("Folder name is required");
+/**
+ * Upload any legacy localStorage notes to the backend. Safe to call on every
+ * app load: it no-ops once migration has succeeded, and the backend skips
+ * notes it has already imported (they keep their original ids).
+ */
+export async function migrateLocalWorkspaceNotes(): Promise<{
+  migrated: boolean;
+  imported: number;
+}> {
+  if (localStorage.getItem(MIGRATED_KEY) === "done") {
+    return { migrated: false, imported: 0 };
   }
 
-  const folder: SavedNoteFolder = {
-    id: `folder-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    name: trimmed,
-    createdAt: now(),
-    updatedAt: now(),
-  };
+  const legacyNotes = readJson<SavedWorkspaceNote[]>(NOTES_KEY, []);
+  const legacyFolders = readJson<SavedNoteFolder[]>(FOLDERS_KEY, []);
 
-  const folders = loadNoteFolders().filter((item) => item.id !== DEFAULT_FOLDER_ID);
-  writeJson(FOLDERS_KEY, [...folders, folder]);
-  return folder;
-}
+  if (legacyNotes.length === 0 && legacyFolders.length === 0) {
+    localStorage.setItem(MIGRATED_KEY, "done");
+    return { migrated: false, imported: 0 };
+  }
 
-export function loadSavedWorkspaceNotes(): SavedWorkspaceNote[] {
-  return readJson<SavedWorkspaceNote[]>(NOTES_KEY, []).sort((left, right) =>
-    right.updatedAt.localeCompare(left.updatedAt),
-  );
-}
+  const result = await migrateWorkspaceNotes({
+    folders: legacyFolders
+      .filter((folder) => folder.id !== DEFAULT_FOLDER_ID)
+      .map((folder) => ({ id: folder.id, name: folder.name })),
+    notes: legacyNotes.map((note) => ({
+      id: note.id,
+      title: note.title,
+      body: note.body,
+      folder_id: note.folderId || DEFAULT_FOLDER_ID,
+      scope_id: note.scopeId,
+      scope_title: note.scopeTitle,
+      sketch: note.sketch,
+      created_at: note.createdAt,
+      updated_at: note.updatedAt,
+      attachments: (note.attachments || []).map((attachment) => ({
+        kind: attachment.kind,
+        name: attachment.name,
+        data_url: attachment.dataUrl,
+        scene: attachment.scene,
+      })),
+    })),
+  });
 
-export function saveWorkspaceNote(
-  note: Omit<SavedWorkspaceNote, "createdAt" | "updatedAt"> & {
-    createdAt?: string;
-    updatedAt?: string;
-  },
-): SavedWorkspaceNote {
-  const current = loadSavedWorkspaceNotes();
-  const existing = current.find((item) => item.id === note.id);
-  const saved: SavedWorkspaceNote = {
-    ...note,
-    createdAt: existing?.createdAt || note.createdAt || now(),
-    updatedAt: now(),
-  };
-
-  writeJson(
-    NOTES_KEY,
-    [saved, ...current.filter((item) => item.id !== saved.id)],
-  );
-  return saved;
-}
-
-export function deleteWorkspaceNote(noteId: string) {
-  writeJson(
-    NOTES_KEY,
-    loadSavedWorkspaceNotes().filter((note) => note.id !== noteId),
-  );
+  // Only mark done after the server confirmed the import; the legacy data is
+  // kept in place as a backup until the user clears their browser storage.
+  localStorage.setItem(MIGRATED_KEY, "done");
+  return { migrated: true, imported: result.imported };
 }

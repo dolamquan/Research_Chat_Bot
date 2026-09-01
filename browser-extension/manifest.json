@@ -1,15 +1,25 @@
 {
   "manifest_version": 3,
-  "name": "ResearchMind Paper Capture",
+  "name": "Zoetrope Paper Capture",
   "version": "0.1.0",
-  "description": "Send the current arXiv or PDF page to a local ResearchMind database.",
+  "description": "Send the current arXiv or PDF page to a local Zoetrope database.",
   "permissions": ["activeTab", "storage", "tabs"],
   "host_permissions": [
     "http://127.0.0.1:8002/*",
     "http://localhost:8002/*"
   ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
-    "default_title": "Add paper to ResearchMind",
-    "default_popup": "popup.html"
+    "default_title": "Add paper to Zoetrope",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   }
 }

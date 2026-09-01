@@ -1,4 +1,4 @@
-# Restart the ResearchMind frontend on :5173 with a clean dependency cache.
+# Restart the Zoetrope frontend on :5173 with a clean dependency cache.
 #
 # Use this after dependencies change. Vite pre-bundles node_modules into
 # node_modules/.vite with hashed chunk names; when the dependency set changes

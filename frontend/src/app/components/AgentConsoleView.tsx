@@ -66,7 +66,7 @@ function loadMermaid(): Promise<void> {
 
   mermaidLoader = new Promise((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>(
-      "script[data-researchmind-mermaid]",
+      "script[data-zoetrope-mermaid]",
     );
     if (existing) {
       existing.addEventListener("load", () => resolve(), { once: true });
@@ -79,7 +79,7 @@ function loadMermaid(): Promise<void> {
     const script = document.createElement("script");
     script.src = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js";
     script.async = true;
-    script.dataset.researchmindMermaid = "true";
+    script.dataset.zoetropeMermaid = "true";
     script.onload = () => resolve();
     script.onerror = () => reject(new Error("Mermaid failed to load"));
     document.head.appendChild(script);
@@ -166,6 +166,18 @@ const SLASH_COMMANDS: SlashCommand[] = [
     label: "Export Notion",
     description: "Create a Notion page from the current paper, selection, or recent answer.",
     template: "export this research context to Notion",
+  },
+  {
+    name: "/notion-note",
+    label: "Note to Notion",
+    description: "Save a note and publish it to Notion in one step.",
+    template: "save this note and export it to Notion: ",
+  },
+  {
+    name: "/my-notes",
+    label: "Search notes",
+    description: "Semantically search your own saved notes and highlights.",
+    template: "search my notes about ",
   },
   {
     name: "/github-issue",
@@ -367,7 +379,7 @@ function TerminalBootHeader({ isRunning }: { isRunning: boolean }) {
       <div className="min-w-0 font-mono">
         <div className="flex flex-wrap items-baseline gap-2">
           <span className="text-lg font-semibold text-foreground">
-            ResearchMind Agent
+            Zoetrope Agent
           </span>
           <span className="text-muted-foreground">v0.1.0</span>
         </div>
@@ -392,7 +404,7 @@ function MermaidDiagram({ definition }: { definition: string }) {
 
   useEffect(() => {
     let active = true;
-    const renderId = `researchmind_mermaid_${Date.now()}_${Math.random()
+    const renderId = `zoetrope_mermaid_${Date.now()}_${Math.random()
       .toString(36)
       .slice(2)}`;
 

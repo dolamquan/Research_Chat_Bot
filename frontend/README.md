@@ -1,7 +1,7 @@
 
-  # ResearchMind
+  # Zoetrope
 
-  ResearchMind is a research topology chatbot for exploring, reading, and discussing indexed papers.
+  Zoetrope is a research topology chatbot for exploring, reading, and discussing indexed papers.
 
   ## Running the code
 

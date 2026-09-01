@@ -1,4 +1,7 @@
-import type { SceneRecord } from "./components/visualization/sceneTypes";
+import type {
+  SceneRecord,
+  StageSceneRecord,
+} from "./components/visualization/sceneTypes";
 import type {
   AgentSession,
   AgentSessionDetail,
@@ -33,6 +36,11 @@ import type {
   McpToolsResponse,
   ModificationPatch,
   NodeExpansion,
+  NoteExportResult,
+  NoteFolder,
+  NoteSearchHit,
+  NotionTarget,
+  ResearchNote,
   PatchResultData,
   RetrievalStrategy,
   Source,
@@ -362,6 +370,184 @@ export function deleteAnnotation(
   });
 }
 
+// ------------------------------------------------------------------ notes
+
+export type NoteCreatePayload = {
+  note_type?: string;
+  source_type?: string;
+  source_ref?: string;
+  source_title?: string;
+  article_id?: string;
+  page?: number;
+  selected_text?: string;
+  title?: string;
+  body_md?: string;
+  tags?: string[];
+  folder_id?: string;
+  sketch?: unknown;
+};
+
+export type NoteUpdatePayload = Partial<
+  Pick<
+    NoteCreatePayload,
+    "title" | "body_md" | "selected_text" | "source_title" | "page" | "tags" | "folder_id" | "sketch"
+  >
+>;
+
+export function listNotes(params: {
+  noteType?: string;
+  sourceRef?: string;
+  folderId?: string;
+  query?: string;
+  limit?: number;
+} = {}): Promise<{ notes: ResearchNote[] }> {
+  const search = new URLSearchParams();
+  if (params.noteType) search.set("note_type", params.noteType);
+  if (params.sourceRef) search.set("source_ref", params.sourceRef);
+  if (params.folderId) search.set("folder_id", params.folderId);
+  if (params.query) search.set("q", params.query);
+  search.set("limit", String(params.limit ?? 500));
+  return requestJson(`/notes?${search.toString()}`);
+}
+
+export function createNote(payload: NoteCreatePayload): Promise<{ note: ResearchNote }> {
+  return requestJson("/notes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateNote(
+  noteId: string,
+  payload: NoteUpdatePayload,
+): Promise<{ note: ResearchNote }> {
+  return requestJson(`/notes/${encodeURIComponent(noteId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteNote(noteId: string): Promise<{ status: string }> {
+  return requestJson(`/notes/${encodeURIComponent(noteId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function addNoteAttachment(
+  noteId: string,
+  payload: { kind: string; name: string; data_url: string; scene?: unknown },
+): Promise<{ attachment: { attachment_id: string } }> {
+  return requestJson(`/notes/${encodeURIComponent(noteId)}/attachments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteNoteAttachment(attachmentId: string): Promise<{ status: string }> {
+  return requestJson(`/notes/attachments/${encodeURIComponent(attachmentId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function noteAttachmentUrl(attachmentId: string): string {
+  return `${API_URL}/notes/attachments/${encodeURIComponent(attachmentId)}`;
+}
+
+export function getNoteAttachmentScene(
+  attachmentId: string,
+): Promise<{ scene: unknown }> {
+  return requestJson(`/notes/attachments/${encodeURIComponent(attachmentId)}/scene`);
+}
+
+export function listNoteFolders(): Promise<{ folders: NoteFolder[] }> {
+  return requestJson("/notes/folders");
+}
+
+export function createServerNoteFolder(name: string): Promise<{ folder: NoteFolder }> {
+  return requestJson("/notes/folders", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function deleteNoteFolder(folderId: string): Promise<{ status: string }> {
+  return requestJson(`/notes/folders/${encodeURIComponent(folderId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function listNotionTargets(): Promise<{ targets: NotionTarget[] }> {
+  return requestJson("/notes/notion/targets");
+}
+
+export function createNotionTarget(payload: {
+  name: string;
+  database_id: string;
+}): Promise<{ target: NotionTarget }> {
+  return requestJson("/notes/notion/targets", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteNotionTarget(targetId: string): Promise<{ status: string }> {
+  return requestJson(`/notes/notion/targets/${encodeURIComponent(targetId)}`, {
+    method: "DELETE",
+  });
+}
+
+export function exportNoteToNotion(
+  noteId: string,
+  payload: { target_id?: string; database_id?: string } = {},
+): Promise<NoteExportResult> {
+  return requestJson(`/notes/${encodeURIComponent(noteId)}/export-notion`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      target_id: payload.target_id || "",
+      database_id: payload.database_id || "",
+    }),
+  });
+}
+
+export function searchNotes(
+  query: string,
+  limit = 8,
+): Promise<{ results: NoteSearchHit[] }> {
+  return requestJson("/notes/search", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query, limit }),
+  });
+}
+
+export function migrateWorkspaceNotes(payload: {
+  folders: { id: string; name: string }[];
+  notes: {
+    id: string;
+    title: string;
+    body: string;
+    folder_id: string;
+    scope_id: string;
+    scope_title: string;
+    sketch?: unknown;
+    created_at: string;
+    updated_at: string;
+    attachments: { kind: string; name: string; data_url: string; scene?: unknown }[];
+  }[];
+}): Promise<{ status: string; imported: number; skipped: number }> {
+  return requestJson("/notes/migrate-workspace", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function searchArxivPapers(
   payload: PaperSearchPayload,
 ): Promise<PaperSearchResponse> {
@@ -615,8 +801,9 @@ export function getPreparedStages(
 
 // --- algorithm scenes --------------------------------------------------------
 //
-// A scene is the validated, evidence-carrying description of an animation. It
-// contains no executable content; see backend/app/rag/scene_ir.py.
+// A scene is a model-written Three.js program (see backend/app/rag/
+// scene_coder.py). It executes only inside the sandboxed iframe built by
+// components/visualization/sceneRuntime.ts, never in the app's own realm.
 
 export function generateAlgorithmScene({
   vizId,
@@ -663,6 +850,43 @@ export function verifyAlgorithmScene(
 
 export function listSceneProviders(): Promise<{ providers: string[] }> {
   return requestJson("/visualizer/providers");
+}
+
+// Per-node stage scenes: the same generated-code pipeline, scoped to one
+// diagram node. Rendered by the stage overlay in the visualizer.
+
+export function generateStageScene({
+  vizId,
+  nodeId,
+  force = false,
+  provider,
+  model,
+}: {
+  vizId: string;
+  nodeId: string;
+  force?: boolean;
+  provider?: string;
+  model?: string;
+}): Promise<{ stage_scene: StageSceneRecord }> {
+  return requestJson("/visualizer/generate-stage-scene", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      viz_id: vizId,
+      node_id: nodeId,
+      force,
+      provider: provider ?? null,
+      model: model ?? null,
+    }),
+  });
+}
+
+export function getStageScenes(
+  vizId: string,
+): Promise<{ stage_scenes: StageSceneRecord[] }> {
+  return requestJson(
+    `/visualizer/item/${encodeURIComponent(vizId)}/stage-scenes`,
+  );
 }
 
 export function proposeModification({

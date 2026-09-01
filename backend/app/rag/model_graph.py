@@ -159,20 +159,3 @@ def compare_topology(scene_graph: ModelGraph, model_graph: ModelGraph) -> Dict[s
             "align exactly. Read this as supporting evidence, not a verdict."
         ),
     }
-
-
-def scene_to_model_graph(scene: Any) -> ModelGraph:
-    """Project an `AlgorithmScene` into the common graph shape for comparison."""
-    return {
-        "format": "algorithm_scene",
-        "nodes": [
-            {"id": entity.id, "op": entity.kind, "label": entity.label}
-            for entity in scene.entities
-        ],
-        "edges": [
-            {"source": source, "target": target}
-            for step in scene.steps
-            for source in step.input_ids
-            for target in step.output_ids
-        ],
-    }

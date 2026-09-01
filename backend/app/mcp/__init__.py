@@ -1,1 +1,1 @@
-"""MCP-style tool bridge for ResearchMind."""
+"""MCP-style tool bridge for Zoetrope."""

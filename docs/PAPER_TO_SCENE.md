@@ -1,34 +1,55 @@
 # Paper to Scene
 
-How ResearchMind turns an indexed research paper into an interactive, evidence-grounded
-2D/3D animation of its proposed method.
+How Zoetrope turns an indexed research paper into an interactive Three.js
+animation of its proposed method.
 
-## The central constraint
+## The central design decision
 
-**The language model never generates executable content.** No React, no JavaScript,
-no Three.js, no HTML, no shaders, no code of any kind. It emits a validated data
-document — an `AlgorithmScene` — whose every field is an enum from a closed
-whitelist, an identifier that must resolve inside the same document, a number in a
-checked range, or display text.
+**The language model writes the animation code directly.** One LLM call
+produces a self-contained Three.js program — plain JavaScript defining
+`function init(ctx)` and `function update(ctx, t)` — that the frontend
+executes inside a locked-down sandboxed iframe.
 
-The frontend maps the one free-form-looking field, `primitive`, through a fixed
-registry of React components. That string is only ever used as a lookup key.
+This replaces the earlier declarative pipeline (`scene_ir` / `scene_planner` /
+`scene_verifier`), in which the model emitted a validated data document that a
+fixed registry of sixteen React primitives rendered. That pipeline could prove
+every step against a quote from the paper, but its visual vocabulary was
+capped at whatever the sixteen primitives could draw. The trade was made
+knowingly, in both directions, and this section is the record of it:
 
-This matters because an earlier iteration of this feature *did* have the model write
-Three.js, run inside a sandboxed iframe. The isolation worked, but two problems did
-not go away: the output could not be checked against the paper, and it failed at
-runtime in ways no schema could catch. Emitting data instead converts both into
-validation errors at generation time.
+| | Declarative (retired) | Code generation (current) |
+|---|---|---|
+| Visual vocabulary | 16 fixed primitives | unbounded |
+| Verifiable against the paper | yes, per step | **no** |
+| Failure surface | validation errors at generation time | runtime errors in the sandbox |
+| Security model | nothing executable ever emitted | browser iframe sandbox |
 
-That path has been **removed**, not merely bypassed: `scene_coder.py`,
-`sceneSandbox.ts`, `SceneFrame.tsx` and the vendored `three-sandbox.js` are gone,
-along with the `StageAnimation` type and the `animation` field on node expansions.
-`tests/test_no_code_generation.py` asserts it stays gone, and scans the shipped
-visualization package for `eval`, `new Function`, `dangerouslySetInnerHTML`,
-`srcDoc` and dynamic imports of variables.
+Because scenes can no longer be verified, the UI labels every scene as
+model-written and illustrative, and nothing in the product may present one as
+evidence about the paper.
 
-The declarative scene DSL (`scene_composer` / `SceneStage`) is untouched and stays
-as the middle fallback tier: it is data-only, so it satisfies the same constraint.
+## Security model
+
+The boundary is the browser, not our checks.
+
+1. **The iframe sandbox.** `SceneFrame.tsx` mounts the code with
+   `sandbox="allow-scripts"` and no other capability. The document gets an
+   opaque origin: no cookies, no storage, no same-origin access to the app,
+   no navigation of the parent, no popups, no forms. The only channel out is
+   `postMessage`, and the parent listens solely for `scene-ready` /
+   `scene-error` events filtered by source window.
+2. **Static contract checks** (`check_scene_code` in `scene_coder.py`,
+   mirrored in `sceneRuntime.ts`): required entry points, a size cap, and a
+   forbidden-construct list (network APIs, `import`/`require`, `eval`,
+   `new Function`, storage, `window.parent`/`top`/`open`/`location`,
+   `postMessage`, script markup, direct DOM mutation). These run at generation
+   time — failures become a named repair prompt — and again client-side before
+   the frame mounts. They are honesty checks that catch contract violations
+   early; the sandbox is what makes violations harmless.
+3. **Injection-safe embedding.** The code is serialized into the iframe's
+   `srcDoc` as JSON with every angle bracket escaped, so a closing script tag
+   inside the code cannot terminate the harness script.
+4. API errors name missing environment variables, never their values.
 
 ## Pipeline
 
@@ -41,178 +62,170 @@ PDF (indexed)
   │     records `extraction_strategy` either way
   │
   ├─ document_structure.select_architecture_evidence
-  │     abstract + proposed method + architecture + training + inference +
-  │     implementation + architecture figure captions, in PRIORITY order
-  │     related work, baselines, references, conclusions are excluded
+  │     abstract + proposed method + architecture + training + inference,
+  │     in PRIORITY order; related work and baselines are excluded
   │
-  ├─ scene_planner.generate_algorithm_scene            [one LLM call]
-  │     structured output when the provider supports it
-  │     JSON fallback + one repair attempt naming the validation error
-  │     existing DiagramIR supplied as structural context
-  │     entity ids reuse diagram node ids
-  │
-  ├─ scene_ir.AlgorithmScene                           [strict validation]
-  │     unique ids, no dangling references, ranges, budgets
-  │     construction fails rather than producing an invalid scene
-  │
-  ├─ scene_verifier.verify_scene                        [deterministic, no LLM]
-  │     grounding ratios, dataflow order, connectivity, loops, complexity
+  ├─ scene_coder.generate_scene_code                   [one LLM call]
+  │     prompt = runtime contract + diagram nodes/edges + method excerpts
+  │     static checks; one repair attempt naming each violation
   │
   ├─ scene_store.upsert_scene
-  │     scene JSON + verification report + provider + model + strategy
+  │     code document + check report + provider + model + strategy
+  │     schema_version "code-1.0"
   │
-  └─ frontend: sanitizeScene → SceneCompiler → ScenePlayer
-        2D (SVG) / 2.5D / 3D (r3f) from the SAME scene object
+  └─ frontend: checkSceneCode → SceneCodePlayer → SceneFrame (sandboxed iframe)
+        harness provides ctx: THREE, scene, camera, controls, renderer,
+        makeLabel(), setCaption(); play / pause / restart via postMessage
 ```
 
-## Scene IR
+## The runtime contract
 
-Defined in `backend/app/rag/scene_ir.py`, mirrored in
-`frontend/src/app/components/visualization/sceneTypes.ts`. Schema version `1.0`.
+Generated code sees exactly one object, `ctx`, built by the harness in
+`sceneRuntime.ts`:
 
-| Model | Purpose |
+| Field | Meaning |
 |---|---|
-| `EvidenceRef` | A quote from the paper, with section and page. |
-| `SceneEntity` | A participant: tensor, module, document set, population. |
-| `SceneStep` | One animated beat, rendered by exactly one primitive. |
-| `CameraCue` | Framing for a step. |
-| `AlgorithmScene` | The whole document. |
+| `THREE` | the three.js module (pinned r170, loaded from jsDelivr inside the frame) |
+| `scene` | a `THREE.Scene` with background and lights prepared |
+| `camera` | a `PerspectiveCamera` with OrbitControls attached |
+| `controls`, `renderer` | the OrbitControls and WebGLRenderer instances |
+| `width`, `height` | live canvas size in pixels |
+| `makeLabel(text, opts)` | a crisp text sprite, so code never needs the DOM |
+| `setCaption(text)` | the caption bar under the canvas, for narrating phases |
 
-Enforced at construction:
+The code must define `function init(ctx)` (build once) and
+`function update(ctx, t)` (animate; `t` is seconds since start). The harness
+owns the render loop, resizing, damping, error capture and restarts. A frame
+that throws stops the loop, shows the error inside the frame, and reports it
+to the player, which offers Restart.
 
-- All entity, step and evidence ids unique
-- Every referenced entity, evidence id and step id resolves
-- `confidence` in `0..1`; `duration_ms` in `200..20000`; `transition_ms` in `0..10000`
-- At most 40 entities, 40 steps, 80 evidence refs
-- `primitive` must be in the whitelist — an unknown value is rejected
+## Scene document
 
-Layered on top by `scene_verifier` as findings rather than exceptions: grounding
-ratios, inputs consumed before production, orphan entities, impossible loops,
-overconfident uncited steps, illustrative-versus-reported values.
+Stored per `(viz_id, schema_version)` in the existing `algorithm_scenes`
+table (the store is format-agnostic):
 
-## Supported primitives
+```json
+{
+  "format": "threejs-code@1",
+  "language": "javascript",
+  "runtime": "three@0.170",
+  "title": "…", "algorithm_name": "…",
+  "summary": "taken from the code's leading comment",
+  "code": "function init(ctx) { … } function update(ctx, t) { … }"
+}
+```
 
-Sixteen, and only sixteen. Adding a seventeenth requires touching four places
-(see below).
+The verification report is now the static check result:
+`{"valid": bool, "findings": [string], "checks": "static"}`.
 
-| Primitive | Meaning |
-|---|---|
-| `token_stream` | A sequence of discrete items flowing in order |
-| `vector_array` | A 1-D array of numbers |
-| `matrix_transform` | A 2-D array being multiplied or projected |
-| `attention_links` | Weighted connections between two sets |
-| `split_parallel` | One input fanning into parallel branches |
-| `merge_parallel` | Parallel branches combining |
-| `elementwise_combine` | Two aligned collections combined position by position |
-| `nonlinearity` | A pointwise function |
-| `normalize` | Values rescaled to a common range |
-| `distribution` | A probability or score distribution |
-| `filter_select` | A subset chosen from candidates |
-| `compare` | Two quantities scored against each other |
-| `loop_repeat` | A block repeated a stated number of times |
-| `data_transfer` | Something moving between components |
-| `state_transition` | A component changing state |
-| `note` | No mechanism asserted; also the fallback |
+## Per-stage scenes (the dynamic stage theater)
 
-## Grounding and uncertainty
+The same pipeline, scoped to one diagram node: `generate_stage_code` in
+`scene_coder.py` gets the node, its immediate neighbours, and the stored
+expansion text as source material, under the identical contract and checks.
+Records live in `stage_scene_store` keyed `(viz_id, node_id, schema_version)`.
 
-Every entity and step carries `evidence_ids` pointing at `EvidenceRef` entries.
-The planner is given a **fixed menu** of citable ids built from the structured
-paper; ids outside that menu are stripped after generation, and quote text is
-filled in from our candidates rather than from the model, so a paraphrase cannot
-be presented as a quotation.
+| Method | Path | Notes |
+|---|---|---|
+| `POST` | `/visualizer/generate-stage-scene` | `{viz_id, node_id, force, provider, model}` |
+| `GET` | `/visualizer/item/{viz_id}/stage-scenes` | All stored stage scenes; empty list, never 404 |
 
-Anything uncited is displayed as uncertain — dashed borders in both 2D and 3D, an
-`uncertain` badge in the controls, and an explicit statement in the evidence panel.
-`scene_verifier` fails a scene outright when fewer than 60% of steps are grounded.
-
-Worked-example numbers are allowed and expected, but a step carrying `values` or
-`items` without a citation is reported as `illustrative_values`, so invented
-numbers are never shown with the authority of reported ones.
+In the UI, **Prepare all stages** generates each node's dynamic scene right
+after its expansion (the fresh mechanism text plus stage-targeted paper
+excerpts are the scene's source material). The dynamic scene IS the stage:
+it fills the canvas, and the playback bar drives it — pause pauses it, replay
+restarts it from t=0, ✨ toggles it (Shift-click regenerates). Focusing a
+stage that has no scene writes one on the spot; until it arrives the bar
+shows progress over the bare machine room. There is no declarative fallback
+any more: the actor-scene and scene-graph tiers (`scene_composer`,
+`scene_graph`, `ProcessTheater`, `SceneStage`, `SceneGraphStage`) were
+retired outright, and `expand-node` now stores only text — no composed
+visuals.
 
 ## Provider configuration
 
 ```env
 LLM_PROVIDER=openai        # or anthropic; unset means openai
 OPENAI_API_KEY=
-OPENAI_MODEL=              # default gpt-4o-mini
+OPENAI_MODEL=              # app-wide default model (gpt-4o-mini if unset)
+SCENE_MODEL=               # scene/stage CODE generation only; overrides the
+                           # chain for this one task (weak models write
+                           # Three.js that crashes at runtime)
+STAGE_SCENE_MODEL=         # per-STAGE scenes only; falls back to SCENE_MODEL.
+                           # Stages are smaller tasks — a mini model is
+                           # several times faster there
+SCENE_REASONING_EFFORT=    # deliberation cap for reasoning models writing
+                           # scene code; default "low" (the big latency
+                           # lever), "off" restores the model default
 ANTHROPIC_API_KEY=
 ANTHROPIC_MODEL=           # default claude-sonnet-4-5
 ```
 
-`app/rag/llm_provider.py` centralises construction. `generator.get_llm()` delegates
-to it and keeps its original signature and default, so all existing call sites are
-unaffected. Both providers return the same Pydantic models; the planner uses
-structured output where available and the JSON path otherwise.
-
-Anthropic support needs `pip install langchain-anthropic`. Without it,
-`available_providers()` simply omits it and `GET /visualizer/providers` reports
-what the deployment can actually reach.
-
-## Docling setup
-
-```bash
-pip install docling
-```
-
-Optional. With it, `extract_structured_paper` recovers sections, figure captions,
-equations and page numbers in reading order. Without it — or when it fails on a
-particular PDF — the function returns a coarse structure rebuilt from existing
-Qdrant chunks and sets `extraction_strategy` to `legacy_chunks`. Ingestion is
-unaffected either way.
+`app/rag/llm_provider.py` centralises construction, exactly as before.
+Anthropic support needs `pip install langchain-anthropic`.
 
 ## API endpoints
 
 | Method | Path | Notes |
 |---|---|---|
 | `POST` | `/visualizer/generate-scene` | `{viz_id, force, provider, model, allow_offline_fallback}` |
-| `GET` | `/visualizer/item/{viz_id}/scene` | Stored scene + verification report |
-| `POST` | `/visualizer/item/{viz_id}/verify-scene` | Re-runs deterministic checks; no LLM call |
+| `GET` | `/visualizer/item/{viz_id}/scene` | Stored code document + check report |
+| `POST` | `/visualizer/item/{viz_id}/verify-scene` | Re-runs static checks; no LLM call |
 | `GET` | `/visualizer/providers` | Which providers are configured. Never returns keys |
 
-Error mapping: `404` unknown visualization or no scene; `422` bad provider name or
-a generated scene that fails validation; `502` provider not configured or planning
-failed. Error text names a missing environment variable but never its value.
+Error mapping: `404` unknown visualization or no scene; `422` bad provider
+name; `502` provider not configured, or code that still fails the checks after
+one repair. Error text names a missing environment variable but never its
+value.
 
 ## Fallback behaviour
 
 | Failure | Behaviour |
 |---|---|
 | Docling missing or failing | Coarse structure from chunks; `extraction_strategy` records it |
-| Structured output unsupported | JSON prompt with the schema appended |
-| Invalid JSON or invalid scene | One repair attempt quoting the exact error |
-| Repair also fails | `ScenePlanningError` → `502`; nothing is persisted |
+| Code fails the static checks | One repair attempt quoting each violation |
+| Repair also fails | `SceneCodingError` → `502`; nothing is persisted |
 | No provider configured | `502`, or the offline path with `allow_offline_fallback` |
-| Offline path | Scene derived from stored `process_steps`, uncited, marked low-confidence |
-| Unknown primitive reaches the client | `NoteScene` fallback; the step still plays |
-| Malformed scene reaches the client | `sanitizeScene` repairs it and reports what it changed |
+| Offline path | A fixed template animating the stored diagram's nodes and edges; no model call (`fallback: "diagram_template"`) |
+| Stored code no longer passes the checks | The client refuses to run it and lists the reasons |
+| Code throws at runtime | Error overlay in the frame + banner in the player; Restart recovers |
 
-## Security constraints
+## Requirements at view time
 
-1. The model emits data only. Nothing it returns is executed, imported, or rendered
-   as markup.
-2. `primitive` is used solely as a key into `primitiveRegistry`, which is built with
-   `Object.create(null)` and read through a `hasOwnProperty` guard — so a string like
-   `"toString"` or `"constructor"` cannot reach an inherited function.
-3. No `eval`, no `new Function`, no generated JSX, no dynamic imports of
-   model-supplied paths, no model-supplied shaders, no `dangerouslySetInnerHTML`.
-4. `sanitizeScene` coerces every field to a known primitive type before render.
-5. API errors name missing environment variables, never their values.
+The iframe loads three.js from jsDelivr (pinned to the version in
+`package.json`), because a sandboxed opaque origin needs a CORS-enabled host
+for module fetches. Viewing a scene therefore needs internet access; generating
+one already did.
 
-## How to add a primitive
+## What was retired
 
-Four edits, in this order:
+First wave: `scene_ir.py`, `scene_planner.py`, `scene_verifier.py`,
+`evaluate_scene_generation.py`, the sixteen primitive components,
+`SceneCompiler`, `Scene2DView`, `ScenePlayer`, `sceneValidation`, the scene
+JSON fixtures, and `test_no_code_generation.py` — the suite whose entire
+purpose was to keep model-written code out of this feature.
 
-1. `backend/app/rag/scene_ir.py` — add to the `ProcessPrimitive` Literal **and** to
-   `SUPPORTED_PRIMITIVES`.
-2. `frontend/.../visualization/sceneTypes.ts` — add to `SUPPORTED_PRIMITIVES`.
-3. `frontend/.../visualization/primitives/YourScene.tsx` — a component taking
-   `PrimitiveSceneProps`.
-4. `frontend/.../visualization/SceneCompiler.tsx` — add the registry entry.
+Second wave: the declarative stage-playback tiers — `scene_composer.py`,
+`scene_graph.py`, `ProcessTheater`, `SceneStage`, `SceneGraphStage`, the
+primitive library under `visualization/primitives/`, and their tests. Node
+expansions still store text (overview, mechanism, storyboard captions): it
+feeds the stage-scene prompt and the idle machinery inside each 3D chassis,
+but nothing declarative is rendered as a stage animation any more.
 
-Then add a line to `PRIMITIVE_GUIDE` in `scene_planner.py` so the model knows when
-to choose it. `sceneCompiler.test.tsx` asserts the whitelist and the registry agree,
-so a missed step fails the suite rather than silently degrading to `note`.
+If verifiability becomes a requirement again, the old architecture is fully
+described in this file's git history.
+
+## Current limitations
+
+- **Nothing checks the animation against the paper.** A scene can be fluent
+  and wrong; treat it as a sketch, not a source.
+- **Quality varies with the model.** There is no eval harness for generated
+  code beyond the contract checks; judging fidelity needs a human eye.
+- **The offline template is deliberately plain** — labelled boxes and edge
+  pulses derived from the diagram.
+- **jsdom cannot execute the iframe**, so automated coverage stops at contract
+  checks, srcDoc construction and player states; real WebGL behaviour needs a
+  browser.
 
 ## How to run tests
 
@@ -226,76 +239,8 @@ python -m pytest
 cd frontend
 pnpm install
 pnpm run test
-pnpm run typecheck
 pnpm run build
 ```
 
-Every test runs offline. No test calls a provider, a vector store, or the network.
-
-## Evaluation methodology
-
-```bash
-cd backend
-python scripts/evaluate_scene_generation.py \
-  --references tests/fixtures/scenes \
-  --generated  path/to/generated \
-  --json-out   eval_report.json
-```
-
-Reports node and edge precision/recall/F1, grounded entity and step ratios,
-hallucinated entity and relationship counts, disconnected component counts, schema
-validity, render readiness, provider, model and latency. Graph analysis uses
-NetworkX.
-
-Entities are compared on **normalised labels**, not ids: two correct scenes will not
-agree on identifiers, so id comparison would report a total mismatch for a good
-scene. A reference with no matching generated file counts as a total miss, so partial
-coverage cannot flatter a score.
-
-**No LLM judge**, by design. The failures this feature actually exhibited —
-entities absent from the paper, steps consuming data before it exists,
-disconnected architectures — are all decidable from the graph. An LLM judge could
-be added for qualitative questions later, but must not be the only evaluator.
-
-## Model-graph verification (optional scaffolding)
-
-`backend/app/rag/model_graph.py` defines a `ModelGraphAdapter` protocol and a
-common graph shape:
-
-```python
-{"format": "onnx", "nodes": [{"id", "op", "label"}], "edges": [{"source", "target"}]}
-```
-
-`OnnxGraphAdapter` is implemented behind an optional `onnx` import;
-`TorchScriptGraphAdapter` and `SavedModelGraphAdapter` are seams that raise
-`NotImplementedError` with a pointer here.
-
-Where a paper ships an artifact, `compare_topology` reports overlap between the
-paper-derived graph and the real one. **Netron** and **Google Model Explorer** are
-the natural viewers for the artifact side: both consume ONNX/TFLite/SavedModel
-directly, so the intended workflow is to export the released model, open it in
-either tool to read the true topology, and use `compare_topology` to quantify where
-the paper-derived scene and the shipped graph diverge.
-
-This is supporting evidence, never a gate. Names in a paper diagram and operators in
-a compiled graph rarely align one-for-one, and most papers ship no artifact at all.
-
-## Current limitations
-
-- **Scene quality is unverified against real papers at scale.** The pipeline,
-  schema, verifier and renderers are tested; the *usefulness* of what a given
-  model produces for a given paper is not, and needs a labelled reference set.
-- **The 2D view uses a built-in longest-path layout**, not ELK or React Flow.
-  Scenes are small and acyclic by construction, so this suffices; `layoutEntities`
-  is the single function to replace if scenes grow.
-- **`camera_cues` are carried and validated but not yet driven** by the player;
-  the 3D view uses a fixed camera with orbit controls.
-- **The Playwright browser smoke test is not present.** Playwright was not
-  configured in this repository, and the equivalent coverage runs in jsdom
-  (`scenePlayer.smoke.test.tsx`) with the r3f `Canvas` stubbed. A browser run
-  would additionally cover real WebGL, actual 3D entity clicks, and genuine
-  uncaught-error capture.
-- **Docling is untested against a real PDF here** — the Docling mapping is covered
-  by a stub document, and the fallback path is covered directly.
-- **Token usage is reported only when the provider supplies it**; the LangChain
-  callback plumbing to capture it consistently is not wired.
+Every test runs offline. No test calls a provider, a vector store, or the
+network.

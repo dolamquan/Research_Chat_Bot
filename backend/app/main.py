@@ -14,6 +14,7 @@ from app.routes import (
     graph_rag,
     ingest,
     mcp_bridge,
+    notes,
     upload,
     variants,
     visualizer,
@@ -48,6 +49,7 @@ app.include_router(evaluate.router)
 app.include_router(graph_rag.router)
 app.include_router(ingest.router)
 app.include_router(mcp_bridge.router)
+app.include_router(notes.router)
 app.include_router(upload.router)
 app.include_router(variants.router)
 app.include_router(visualizer.router)

@@ -24,13 +24,9 @@ from app.rag.paper_visualizer import (
     NodeExpansionContent,
     WorkedExample,
 )
-from app.rag.scene_composer import MechanismScene
-from app.rag.scene_graph import MechanismGraph
 from app.rag.variant_chat import DiscussionReply
 
 STRICT_MODELS = [
-    MechanismScene,
-    MechanismGraph,
     NodeExpansionContent,
     WorkedExample,
     MechanismDomainGuess,
