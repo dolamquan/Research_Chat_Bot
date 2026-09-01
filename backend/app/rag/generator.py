@@ -213,7 +213,12 @@ def get_llm(
     # `model` carries an OpenAI default, so passing it verbatim to another
     # provider would request a model that does not exist there. Only forward it
     # when the caller actually meant this provider.
-    requested_model = model if (resolved == "openai" or model != DEFAULT_MODEL) else None
+    # Passing the default through verbatim would shadow OPENAI_MODEL, because
+    # `resolve_model` only consults the environment when given nothing. A caller
+    # that named a model still wins; one that just took the default defers to
+    # the environment, which is what .env.example documents.
+    explicit = model != DEFAULT_MODEL
+    requested_model = model if explicit else None
 
     return build_chat_model(
         provider=resolved, model=requested_model, temperature=temperature

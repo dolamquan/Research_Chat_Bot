@@ -10,6 +10,7 @@ import {
   PanelLeftOpen,
   PenTool,
   Save,
+  Send,
 } from "lucide-react";
 import {
   Excalidraw,
@@ -27,9 +28,13 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 
 import type { Source } from "../types";
 import {
-  DEFAULT_FOLDER_ID,
-  saveWorkspaceNote,
-} from "../workspaceNoteStore";
+  addNoteAttachment,
+  createNote,
+  exportNoteToNotion,
+  listNotes,
+  listNotionTargets,
+  updateNote,
+} from "../api";
 
 type NoteMode = "notes" | "sketch";
 
@@ -188,10 +193,14 @@ export function WorkspaceNotesPane({
   const [savedAt, setSavedAt] = useState("");
   const [librarySavedAt, setLibrarySavedAt] = useState("");
   const [sketchStatus, setSketchStatus] = useState("");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
   const sketchRef = useRef<ExcalidrawScene>(emptyScene());
   const sketchSaveTimeoutRef = useRef<number>();
+  const serverNoteIdRef = useRef<string>("");
+  const uploadedAttachmentIdsRef = useRef<Set<string>>(new Set());
   const noteKey = useMemo(() => storageKey(scopeId), [scopeId]);
   const initialSketchData = useMemo(
     () => ({
@@ -218,6 +227,9 @@ export function WorkspaceNotesPane({
     setSavedAt("");
     setLibrarySavedAt("");
     setSketchStatus("");
+    setSyncStatus("");
+    serverNoteIdRef.current = "";
+    uploadedAttachmentIdsRef.current = new Set();
   }, [noteKey]);
 
   useEffect(() => {
@@ -258,28 +270,105 @@ export function WorkspaceNotesPane({
     });
   }
 
-  function saveCurrentNoteToLibrary() {
-    if (!note.trim() && attachments.length === 0 && sketchRef.current.elements.length === 0) {
-      return;
+  async function resolveServerNoteId(): Promise<string> {
+    if (serverNoteIdRef.current) return serverNoteIdRef.current;
+
+    // Notes migrated from localStorage kept their legacy scoped id, so a
+    // lookup by scope reattaches to them instead of creating duplicates.
+    const existing = await listNotes({
+      noteType: "freeform",
+      sourceRef: scopeId || "global",
+      limit: 1,
+    });
+    if (existing.notes.length > 0) {
+      serverNoteIdRef.current = existing.notes[0].note_id;
+      uploadedAttachmentIdsRef.current = new Set(attachments.map((item) => item.id));
+      return serverNoteIdRef.current;
     }
 
-    const saved = saveWorkspaceNote({
-      id: `workspace-note:${scopeId || "global"}`,
+    const created = await createNote({
+      note_type: "freeform",
+      source_type: "scope",
+      source_ref: scopeId || "global",
+      source_title: scopeTitle,
       title: scopeTitle || "Workspace note",
-      body: note,
-      attachments,
-      folderId: DEFAULT_FOLDER_ID,
-      scopeId,
-      scopeTitle,
+      body_md: note,
       sketch: sketchRef.current,
     });
+    serverNoteIdRef.current = created.note.note_id;
+    return serverNoteIdRef.current;
+  }
 
-    setLibrarySavedAt(
-      new Date(saved.updatedAt).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      }),
-    );
+  async function saveCurrentNoteToLibrary(): Promise<string> {
+    if (!note.trim() && attachments.length === 0 && sketchRef.current.elements.length === 0) {
+      return "";
+    }
+
+    setIsSyncing(true);
+    setSyncStatus("");
+    try {
+      const noteId = await resolveServerNoteId();
+      await updateNote(noteId, {
+        title: scopeTitle || "Workspace note",
+        source_title: scopeTitle,
+        body_md: note,
+        sketch: sketchRef.current,
+      });
+
+      for (const attachment of attachments) {
+        if (uploadedAttachmentIdsRef.current.has(attachment.id)) continue;
+        await addNoteAttachment(noteId, {
+          kind: attachment.kind,
+          name: attachment.name,
+          data_url: attachment.dataUrl,
+          scene: attachment.scene,
+        });
+        uploadedAttachmentIdsRef.current.add(attachment.id);
+      }
+
+      setLibrarySavedAt(
+        new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      );
+      return noteId;
+    } catch (error) {
+      setSyncStatus(
+        error instanceof Error
+          ? `Could not save to the database: ${error.message}`
+          : "Could not save to the database.",
+      );
+      return "";
+    } finally {
+      setIsSyncing(false);
+    }
+  }
+
+  async function exportCurrentNoteToNotion() {
+    const noteId = await saveCurrentNoteToLibrary();
+    if (!noteId) return;
+
+    setIsSyncing(true);
+    setSyncStatus("Exporting to Notion...");
+    try {
+      const targets = await listNotionTargets();
+      const result = await exportNoteToNotion(noteId, {
+        target_id: targets.targets[0]?.target_id || "",
+      });
+      const warning = result.warnings.length ? ` (${result.warnings[0]})` : "";
+      setSyncStatus(
+        `${result.updated ? "Updated the" : "Created a"} Notion page${warning}.`,
+      );
+    } catch (error) {
+      setSyncStatus(
+        error instanceof Error
+          ? `Notion export failed: ${error.message}`
+          : "Notion export failed.",
+      );
+    } finally {
+      setIsSyncing(false);
+    }
   }
 
   function addAttachment(attachment: Omit<NoteAttachment, "id" | "createdAt">) {
@@ -530,9 +619,25 @@ export function WorkspaceNotesPane({
               </button>
               <button
                 type="button"
-                title="Save to Notes tab"
-                disabled={!note.trim() && attachments.length === 0 && sketchElementCount === 0}
-                onClick={saveCurrentNoteToLibrary}
+                title="Export this note to Notion (saves first)"
+                disabled={
+                  isSyncing ||
+                  (!note.trim() && attachments.length === 0 && sketchElementCount === 0)
+                }
+                onClick={() => void exportCurrentNoteToNotion()}
+                className="h-8 rounded border border-border px-2 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35 inline-flex items-center gap-1.5"
+              >
+                <Send size={13} />
+                Notion
+              </button>
+              <button
+                type="button"
+                title="Save to the research database (Notes tab)"
+                disabled={
+                  isSyncing ||
+                  (!note.trim() && attachments.length === 0 && sketchElementCount === 0)
+                }
+                onClick={() => void saveCurrentNoteToLibrary()}
                 className="ml-auto h-8 rounded border border-border px-2 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-35 inline-flex items-center gap-1.5"
               >
                 <Save size={13} />
@@ -540,10 +645,21 @@ export function WorkspaceNotesPane({
               </button>
             </div>
             <p className="font-mono text-[10px] text-muted-foreground">
-              {savedAt ? `Saved locally ${savedAt}` : "Autosaved locally"} -{" "}
+              {savedAt ? `Draft ${savedAt}` : "Draft autosaved locally"} -{" "}
               {attachments.length} image{attachments.length === 1 ? "" : "s"}
-              {librarySavedAt ? ` - Notes tab ${librarySavedAt}` : ""}
+              {librarySavedAt ? ` - saved to Notes ${librarySavedAt}` : ""}
             </p>
+            {syncStatus && (
+              <p
+                className={`font-mono text-[10px] ${
+                  syncStatus.includes("failed") || syncStatus.includes("Could not")
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+                }`}
+              >
+                {syncStatus}
+              </p>
+            )}
           </div>
           {attachments.length > 0 && (
             <div className="max-h-52 shrink-0 overflow-y-auto border-t border-border bg-card p-3">

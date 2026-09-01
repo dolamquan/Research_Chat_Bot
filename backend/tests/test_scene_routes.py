@@ -9,9 +9,12 @@ from fastapi.testclient import TestClient
 
 from app.rag import scene_service
 from app.rag.llm_provider import ProviderNotConfigured
-from app.rag.scene_ir import parse_scene
-from app.rag.scene_planner import ScenePlanningError
-from app.rag.scene_verifier import verify_scene
+from app.rag.scene_coder import (
+    SCHEMA_VERSION,
+    SceneCodingError,
+    check_scene_code,
+    scene_code_from_diagram,
+)
 from app.storage import scene_store, visualization_store
 
 
@@ -32,28 +35,30 @@ def client() -> TestClient:
     return TestClient(app)
 
 
-def _seed(transformer_scene, viz_id="viz_1"):
-    scene = parse_scene(transformer_scene)
-    report = verify_scene(scene)
+def _seed(sample_visualization, viz_id="viz_1"):
+    scene = scene_code_from_diagram(sample_visualization)
+    findings = check_scene_code(scene["code"])
     return scene_store.upsert_scene(
         viz_id=viz_id,
         article_id="article_1",
-        scene=scene.model_dump(mode="json"),
-        verification=report.model_dump(mode="json"),
+        scene=scene,
+        verification={"valid": not findings, "findings": findings, "checks": "static"},
         provider="openai",
         model="gpt-4o-mini",
+        schema_version=SCHEMA_VERSION,
     )
 
 
 # --- GET /visualizer/item/{viz_id}/scene --------------------------------------
 
 
-def test_get_scene_returns_the_record(client, transformer_scene):
-    _seed(transformer_scene)
+def test_get_scene_returns_the_record(client, sample_visualization):
+    _seed(sample_visualization)
     response = client.get("/visualizer/item/viz_1/scene")
     assert response.status_code == 200
     payload = response.json()["scene"]
-    assert payload["scene"]["algorithm_name"] == "Transformer self-attention"
+    assert payload["scene"]["format"] == "threejs-code@1"
+    assert "function init" in payload["scene"]["code"]
     assert payload["verification"]["valid"] is True
 
 
@@ -66,8 +71,8 @@ def test_get_missing_scene_is_404(client):
 # --- POST /visualizer/item/{viz_id}/verify-scene ------------------------------
 
 
-def test_verify_scene_reruns_checks(client, transformer_scene):
-    _seed(transformer_scene)
+def test_verify_scene_reruns_checks(client, sample_visualization):
+    _seed(sample_visualization)
     response = client.post("/visualizer/item/viz_1/verify-scene")
     assert response.status_code == 200
     assert response.json()["scene"]["verification"]["valid"] is True
@@ -77,38 +82,35 @@ def test_verify_missing_scene_is_404(client):
     assert client.post("/visualizer/item/ghost/verify-scene").status_code == 404
 
 
-def test_verify_reports_a_stored_scene_that_no_longer_parses(
-    client, transformer_scene, monkeypatch
+def test_verify_flags_stored_code_that_breaks_the_contract(
+    client, sample_visualization
 ):
-    _seed(transformer_scene)
-    # Corrupt the stored payload the way a schema change might.
-    broken = dict(transformer_scene)
-    broken["steps"] = [{"id": "s1", "primitive": "gone_rogue"}]
+    _seed(sample_visualization)
+    # Corrupt the stored payload the way a contract change might.
+    broken = scene_code_from_diagram(sample_visualization)
+    broken["code"] = "fetch('https://example.com'); function init(ctx) {}"
     scene_store.upsert_scene(
         viz_id="viz_1",
         article_id="article_1",
         scene=broken,
-        verification={"valid": True, "findings": [], "entity_count": 0,
-                      "step_count": 0, "grounded_entity_ratio": 0.0,
-                      "grounded_step_ratio": 0.0},
+        verification={"valid": True, "findings": [], "checks": "static"},
+        schema_version=SCHEMA_VERSION,
     )
     response = client.post("/visualizer/item/viz_1/verify-scene")
     assert response.status_code == 200
     verification = response.json()["scene"]["verification"]
     assert verification["valid"] is False
-    assert verification["findings"][0]["code"] == "scene_parse_failed"
+    assert any("fetch" in finding for finding in verification["findings"])
 
 
 # --- POST /visualizer/generate-scene -----------------------------------------
 
 
-def test_generate_scene_returns_the_cached_record(client, transformer_scene):
-    _seed(transformer_scene)
+def test_generate_scene_returns_the_cached_record(client, sample_visualization):
+    _seed(sample_visualization)
     response = client.post("/visualizer/generate-scene", json={"viz_id": "viz_1"})
     assert response.status_code == 200
-    assert response.json()["scene"]["scene"]["algorithm_name"] == (
-        "Transformer self-attention"
-    )
+    assert response.json()["scene"]["scene"]["format"] == "threejs-code@1"
 
 
 def test_generate_scene_unknown_visualization_is_404(client, monkeypatch):
@@ -151,9 +153,11 @@ def test_provider_failure_is_502_and_leaks_no_key(client, monkeypatch):
     assert "sk-" not in detail and "Bearer" not in detail
 
 
-def test_planning_failure_is_502(client, monkeypatch):
+def test_coding_failure_is_502(client, monkeypatch):
     def _fail(**_kwargs):
-        raise ScenePlanningError("The model could not produce a valid scene: nope")
+        raise SceneCodingError(
+            "The model could not produce acceptable scene code: nope"
+        )
 
     import app.routes.visualizer as routes
 
@@ -164,7 +168,7 @@ def test_planning_failure_is_502(client, monkeypatch):
     assert response.status_code == 502
 
 
-def test_offline_fallback_is_opt_in(client, monkeypatch, transformer_scene):
+def test_offline_fallback_is_opt_in(client, monkeypatch, sample_visualization):
     """With no provider, the fallback only runs when explicitly requested."""
     def _unconfigured(**_kwargs):
         raise ProviderNotConfigured("OPENAI_API_KEY is not set.")
@@ -173,16 +177,16 @@ def test_offline_fallback_is_opt_in(client, monkeypatch, transformer_scene):
 
     called: dict[str, bool] = {}
 
-    def _from_expansions(viz_id: str):
+    def _from_diagram(viz_id: str):
         called["yes"] = True
-        return _seed(transformer_scene, viz_id=viz_id)
+        return _seed(sample_visualization, viz_id=viz_id)
 
-    monkeypatch.setattr(scene_service, "build_scene_from_expansions", _from_expansions)
+    monkeypatch.setattr(scene_service, "build_scene_from_expansions", _from_diagram)
     # Patch the names the route module bound at import time.
     import app.routes.visualizer as routes
 
     monkeypatch.setattr(routes, "build_scene", _unconfigured)
-    monkeypatch.setattr(routes, "build_scene_from_expansions", _from_expansions)
+    monkeypatch.setattr(routes, "build_scene_from_expansions", _from_diagram)
 
     without = client.post(
         "/visualizer/generate-scene", json={"viz_id": "viz_1", "force": True}
@@ -195,7 +199,7 @@ def test_offline_fallback_is_opt_in(client, monkeypatch, transformer_scene):
         json={"viz_id": "viz_1", "force": True, "allow_offline_fallback": True},
     )
     assert with_fallback.status_code == 200
-    assert with_fallback.json()["fallback"] == "process_steps"
+    assert with_fallback.json()["fallback"] == "diagram_template"
     assert called["yes"] is True
 
 

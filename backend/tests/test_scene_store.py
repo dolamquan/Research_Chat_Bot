@@ -1,8 +1,9 @@
-"""Scene persistence, against a temporary database.
+"""Persistence for generated scene-code records.
 
 `scene_store` reads `DB_PATH` from `visualization_store` at call time, so both
-modules are repointed at a tmp file for the duration of each test. Nothing here
-touches the developer's real database.
+are patched onto one temp database. The store is format-agnostic (it persists
+whatever dict it is given); these tests exercise it with the code documents the
+current pipeline produces.
 """
 
 from __future__ import annotations
@@ -11,103 +12,94 @@ from pathlib import Path
 
 import pytest
 
-from app.rag.scene_ir import parse_scene
-from app.rag.scene_verifier import verify_scene
+from app.rag.scene_coder import SCHEMA_VERSION, scene_code_from_diagram
 from app.storage import scene_store, visualization_store
 
 
 @pytest.fixture(autouse=True)
 def temp_db(monkeypatch, tmp_path: Path):
-    db = tmp_path / "test.sqlite3"
-    monkeypatch.setattr(visualization_store, "DB_PATH", db)
-    monkeypatch.setattr(visualization_store, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(scene_store, "DB_PATH", db)
-    monkeypatch.setattr(scene_store, "DATA_DIR", tmp_path)
+    db = tmp_path / "scenes.sqlite3"
+    for module in (visualization_store, scene_store):
+        monkeypatch.setattr(module, "DB_PATH", db)
+        monkeypatch.setattr(module, "DATA_DIR", tmp_path)
     scene_store.init_db()
     return db
 
 
-def _store(transformer_scene, viz_id="viz_1"):
-    scene = parse_scene(transformer_scene)
-    report = verify_scene(scene)
+def _store(sample_visualization, viz_id="viz_1", article_id="article_1", title=None):
+    scene = scene_code_from_diagram(sample_visualization)
+    if title:
+        scene["title"] = title
+        scene["algorithm_name"] = title
     return scene_store.upsert_scene(
         viz_id=viz_id,
-        article_id="article_1",
-        scene=scene.model_dump(mode="json"),
-        verification=report.model_dump(mode="json"),
+        article_id=article_id,
+        scene=scene,
+        verification={"valid": True, "findings": [], "checks": "static"},
         provider="openai",
         model="gpt-4o-mini",
-        extraction_strategy="docling",
+        schema_version=SCHEMA_VERSION,
     )
 
 
-def test_insert_and_read_back(transformer_scene):
-    record = _store(transformer_scene)
-    assert record["viz_id"] == "viz_1"
-    assert record["provider"] == "openai"
-    assert record["extraction_strategy"] == "docling"
-    assert record["valid"] is True
-    assert record["created_at"] and record["updated_at"]
-
-    fetched = scene_store.get_scene("viz_1")
+def test_roundtrip_preserves_the_scene_document(sample_visualization):
+    stored = _store(sample_visualization)
+    fetched = scene_store.get_scene("viz_1", SCHEMA_VERSION)
     assert fetched is not None
-    assert fetched["scene"]["algorithm_name"] == "Transformer self-attention"
-    # The stored payload must survive a round trip through the IR unchanged.
-    assert parse_scene(fetched["scene"]).steps[0].id == "s1"
+    assert fetched["scene"] == stored["scene"]
+    assert fetched["scene"]["format"] == "threejs-code@1"
+    assert "function init" in fetched["scene"]["code"]
+    assert fetched["valid"] is True
 
 
-def test_missing_scene_returns_none():
-    assert scene_store.get_scene("nope") is None
+def test_get_scene_respects_schema_version(sample_visualization):
+    _store(sample_visualization)
+    assert scene_store.get_scene("viz_1", "1.0") is None
+    assert scene_store.get_scene("viz_1", SCHEMA_VERSION) is not None
 
 
-def test_upsert_replaces_rather_than_duplicating(transformer_scene, cnn_scene):
-    _store(transformer_scene)
-    _store(cnn_scene)
-    record = scene_store.get_scene("viz_1")
-    assert record is not None
-    assert record["scene"]["algorithm_name"] == "CNN convolution pipeline"
+def test_missing_scene_is_none():
+    assert scene_store.get_scene("nope", SCHEMA_VERSION) is None
+
+
+def test_regenerating_replaces_rather_than_accumulates(sample_visualization):
+    _store(sample_visualization, title="First")
+    _store(sample_visualization, title="Second")
+    record = scene_store.get_scene("viz_1", SCHEMA_VERSION)
+    assert record["scene"]["title"] == "Second"
     assert len(scene_store.list_scenes_for_article("article_1")) == 1
 
 
-def test_scene_identity_is_per_visualization(transformer_scene, cnn_scene):
-    _store(transformer_scene, viz_id="viz_a")
-    _store(cnn_scene, viz_id="viz_b")
-    assert scene_store.get_scene("viz_a")["scene"]["algorithm_name"].startswith("Transformer")
-    assert scene_store.get_scene("viz_b")["scene"]["algorithm_name"].startswith("CNN")
+def test_scenes_are_listed_per_article(sample_visualization):
+    _store(sample_visualization, viz_id="viz_a", title="Transformer")
+    _store(sample_visualization, viz_id="viz_b", title="CNN")
+    assert scene_store.get_scene("viz_a", SCHEMA_VERSION)["scene"]["title"] == "Transformer"
+    assert scene_store.get_scene("viz_b", SCHEMA_VERSION)["scene"]["title"] == "CNN"
     assert len(scene_store.list_scenes_for_article("article_1")) == 2
 
 
-def test_update_verification_without_regenerating(transformer_scene):
-    _store(transformer_scene)
+def test_update_verification_flips_the_valid_flag(sample_visualization):
+    _store(sample_visualization)
     failing = {
         "valid": False,
-        "findings": [
-            {"code": "made_up", "severity": "error", "message": "m",
-             "entity_ids": [], "step_ids": [], "evidence_ids": []}
-        ],
-        "entity_count": 6,
-        "step_count": 5,
-        "grounded_entity_ratio": 1.0,
-        "grounded_step_ratio": 1.0,
+        "findings": ["forbidden construct: network access via fetch()"],
+        "checks": "static",
     }
-    updated = scene_store.update_verification("viz_1", failing)
-    assert updated is not None
+    updated = scene_store.update_verification("viz_1", failing, SCHEMA_VERSION)
     assert updated["valid"] is False
-    assert updated["verification"]["findings"][0]["code"] == "made_up"
-    # The scene itself is untouched.
-    assert updated["scene"]["algorithm_name"] == "Transformer self-attention"
+    assert updated["verification"]["findings"] == failing["findings"]
 
 
-def test_delete_cascade_by_visualization(transformer_scene):
-    _store(transformer_scene, viz_id="viz_a")
-    _store(transformer_scene, viz_id="viz_b")
+def test_delete_scenes_for_visualization(sample_visualization):
+    _store(sample_visualization, viz_id="viz_a")
+    _store(sample_visualization, viz_id="viz_b")
     assert scene_store.delete_scenes_for_visualization("viz_a") == 1
-    assert scene_store.get_scene("viz_a") is None
-    assert scene_store.get_scene("viz_b") is not None
+    assert scene_store.get_scene("viz_a", SCHEMA_VERSION) is None
+    assert scene_store.get_scene("viz_b", SCHEMA_VERSION) is not None
 
 
-def test_init_db_is_idempotent(transformer_scene):
+def test_init_db_is_idempotent(sample_visualization):
     scene_store.init_db()
     scene_store.init_db()
-    _store(transformer_scene)
-    assert scene_store.get_scene("viz_1") is not None
+    _store(sample_visualization)
+    assert scene_store.get_scene("viz_1", SCHEMA_VERSION) is not None

@@ -9,17 +9,20 @@ from app.rag.llm_provider import (
     available_providers,
 )
 from app.rag.paper_visualizer import expand_node, generate_paper_visualization
-from app.rag.scene_ir import SceneIRError
-from app.rag.scene_planner import ScenePlanningError
+from app.rag.scene_coder import SceneCodingError
 from app.rag.scene_service import (
+    NodeNotFound,
     SceneNotFound,
     VisualizationNotFound,
     build_scene,
     build_scene_from_expansions,
+    build_stage_scene,
     fetch_scene,
+    fetch_stage_scenes,
     reverify_scene,
 )
 from app.storage.scene_store import delete_scenes_for_visualization
+from app.storage.stage_scene_store import delete_stage_scenes_for_visualization
 from app.storage.variant_store import delete_variants_for_visualization
 from app.storage.visualization_store import (
     delete_node_expansions,
@@ -109,7 +112,7 @@ class GenerateSceneRequest(BaseModel):
 
 @router.post("/generate-scene")
 def generate_scene_endpoint(request: GenerateSceneRequest) -> Dict[str, Any]:
-    """Plan, verify and persist an AlgorithmScene for one visualization."""
+    """Generate, check and persist Three.js scene code for one visualization."""
     try:
         record = build_scene(
             viz_id=request.viz_id,
@@ -121,17 +124,13 @@ def generate_scene_endpoint(request: GenerateSceneRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except UnknownProvider as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-    except SceneIRError as error:
-        raise HTTPException(
-            status_code=422, detail=f"Generated scene failed validation: {error}"
-        ) from error
     except ProviderNotConfigured as error:
         if request.allow_offline_fallback:
             record = build_scene_from_expansions(request.viz_id)
-            return {"scene": record, "fallback": "process_steps"}
+            return {"scene": record, "fallback": "diagram_template"}
         # The message names the missing variable, never its value.
         raise HTTPException(status_code=502, detail=str(error)) from error
-    except ScenePlanningError as error:
+    except SceneCodingError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
 
     return {"scene": record}
@@ -154,6 +153,46 @@ def verify_scene_endpoint(viz_id: str) -> Dict[str, Any]:
         raise HTTPException(status_code=404, detail=str(error)) from error
 
 
+class GenerateStageSceneRequest(BaseModel):
+    viz_id: str
+    node_id: str
+    force: bool = False
+    provider: str | None = None
+    model: str | None = None
+
+
+@router.post("/generate-stage-scene")
+def generate_stage_scene_endpoint(request: GenerateStageSceneRequest) -> Dict[str, Any]:
+    """Generate, check and persist Three.js code for ONE diagram node."""
+    try:
+        record = build_stage_scene(
+            viz_id=request.viz_id,
+            node_id=request.node_id,
+            force=request.force,
+            provider=request.provider,
+            model=request.model,
+        )
+    except (VisualizationNotFound, NodeNotFound) as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except UnknownProvider as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except ProviderNotConfigured as error:
+        # No offline template here: the classic stage theater is the fallback
+        # tier and already renders without a model.
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    except SceneCodingError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    return {"stage_scene": record}
+
+
+@router.get("/item/{viz_id}/stage-scenes")
+def list_stage_scenes_endpoint(viz_id: str) -> Dict[str, Any]:
+    """Every stored stage scene for a visualization. Empty list, never 404:
+    the frontend polls this to decide which nodes can play dynamically."""
+    return {"stage_scenes": fetch_stage_scenes(viz_id)}
+
+
 @router.get("/providers")
 def list_providers_endpoint() -> Dict[str, Any]:
     """Which providers this deployment can actually reach. Never returns keys."""
@@ -173,6 +212,8 @@ def delete_visualization_endpoint(viz_id: str) -> Dict[str, Any]:
     for variant_id in variant_ids:
         delete_node_expansions(variant_id)
         delete_scenes_for_visualization(variant_id)
+        delete_stage_scenes_for_visualization(variant_id)
+    delete_stage_scenes_for_visualization(viz_id)
     scenes_deleted = delete_scenes_for_visualization(viz_id)
     if not delete_visualization(viz_id):
         raise HTTPException(status_code=404, detail="Visualization not found")

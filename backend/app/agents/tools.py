@@ -6,6 +6,8 @@ from fastapi import HTTPException
 from langsmith import traceable
 
 from app.agents.state import AgentState
+from app.integrations import notion_sync
+from app.integrations.notion import NotionError
 from app.mcp.bridge import call_mcp_tool
 from app.rag.generator import generate_answer
 
@@ -555,9 +557,57 @@ def rebuild_topology_tool(state: AgentState) -> Dict[str, Any]:
     }
 
 
+def _pinned_note_id(state: AgentState) -> str:
+    """The stored note id behind the first pinned source, when there is one."""
+    pinned_sources = state.get("pinned_sources", [])
+    pinned = pinned_sources[0] if pinned_sources else {}
+    raw_id = str(pinned.get("id") or "")
+    for prefix in ("annotation:", "saved-workspace-note:", "note:"):
+        if raw_id.startswith(prefix):
+            return raw_id[len(prefix):]
+    return str(pinned.get("annotation_id") or pinned.get("note_id") or "")
+
+
+def _notion_failure(state: AgentState, exc: Exception) -> Dict[str, Any]:
+    detail = exc.message if isinstance(exc, NotionError) else str(exc)
+    return {
+        "answer": f"I could not export to Notion: {detail}",
+        "sources": [],
+        "tool_trace": state.get("tool_trace", [])
+        + [_trace("notion.export", detail, "error")],
+        "error": "notion_export_failed",
+    }
+
+
+def _export_note_answer(result: Dict[str, Any]) -> str:
+    verb = "Updated the existing Notion page for" if result.get("updated") else "Exported"
+    note = result.get("note", {})
+    title = note.get("title") or note.get("source_title") or "the note"
+    answer = f"{verb} **{title}** in Notion: {result.get('url') or result.get('page_id')}"
+    warnings = result.get("warnings") or []
+    if warnings:
+        answer += "\n\n" + "\n".join(f"- {warning}" for warning in warnings)
+    return answer
+
+
 @traceable(name="agent_export_notion_tool", run_type="tool")
 def export_notion_tool(state: AgentState) -> Dict[str, Any]:
-    title = _context_title(state, "ResearchMind export")
+    # A pinned stored note is exported through the sync service so it keeps
+    # its Notion page across re-exports and carries its attachments along.
+    note_id = _pinned_note_id(state)
+    if note_id:
+        try:
+            result = notion_sync.export_note(note_id)
+        except (NotionError, ValueError) as exc:
+            return _notion_failure(state, exc)
+        return {
+            "answer": _export_note_answer(result),
+            "sources": [],
+            "tool_trace": state.get("tool_trace", [])
+            + [_trace("notion.export_note", f"Synced note {note_id} to Notion.")],
+        }
+
+    title = _context_title(state, "Zoetrope export")
     body = _context_body(state)
     pinned_sources = state.get("pinned_sources", [])
     source_url = ""
@@ -571,26 +621,106 @@ def export_notion_tool(state: AgentState) -> Dict[str, Any]:
                 "title": title,
                 "summary": body,
                 "source_url": source_url,
-                "tags": ["researchmind", "research"],
+                "tags": ["zoetrope", "research"],
             },
         )
     except Exception as exc:
-        return {
-            "answer": (
-                "I could not export to Notion yet. Make sure `NOTION_API_KEY` "
-                "and `NOTION_DATABASE_ID` are set in `backend/.env`, then restart the backend."
-            ),
-            "sources": [],
-            "tool_trace": state.get("tool_trace", [])
-            + [_trace("notion.create_research_page", str(exc), "error")],
-            "error": "notion_export_failed",
-        }
+        return _notion_failure(state, exc)
 
     return {
         "answer": f"Exported **{title}** to Notion: {result.get('url') or result.get('page_id')}",
         "sources": [],
         "tool_trace": state.get("tool_trace", [])
         + [_trace("notion.create_research_page", result.get("summary", "Created Notion page."))],
+    }
+
+
+@traceable(name="agent_save_note_export_notion_tool", run_type="tool")
+def save_note_export_notion_tool(state: AgentState) -> Dict[str, Any]:
+    """Chain: save the note first, then push it straight to Notion."""
+    save_result = save_note_tool(state)
+    if save_result.get("error"):
+        return save_result
+
+    saved_source = (save_result.get("sources") or [{}])[0]
+    note_id = str(saved_source.get("id") or "").removeprefix("annotation:")
+    trace = save_result.get("tool_trace", [])
+
+    try:
+        export_result = notion_sync.export_note(note_id)
+    except (NotionError, ValueError) as exc:
+        detail = exc.message if isinstance(exc, NotionError) else str(exc)
+        return {
+            **save_result,
+            "answer": (
+                f"{save_result['answer']}\n\nSaving worked, but the Notion export "
+                f"failed: {detail}"
+            ),
+            "tool_trace": trace + [_trace("notion.export_note", detail, "error")],
+            "error": "notion_export_failed",
+        }
+
+    return {
+        **save_result,
+        "answer": f"{save_result['answer']}\n\n{_export_note_answer(export_result)}",
+        "tool_trace": trace
+        + [_trace("notion.export_note", f"Synced note {note_id} to Notion.")],
+        "error": None,
+    }
+
+
+@traceable(name="agent_search_notes_tool", run_type="tool")
+def search_notes_tool(state: AgentState) -> Dict[str, Any]:
+    try:
+        result = call_mcp_tool(
+            "research.search_notes",
+            {"query": _clean_search_query(state["question"]), "limit": 8},
+        )
+    except Exception as exc:
+        return {
+            "answer": f"I could not search your notes: {exc}",
+            "sources": [],
+            "tool_trace": state.get("tool_trace", [])
+            + [_trace("search_notes", str(exc), "error")],
+            "error": "note_search_failed",
+        }
+
+    hits = result.get("results", [])
+    if not hits:
+        return {
+            "answer": (
+                "I did not find any saved notes matching that. Save highlights from "
+                "PDFs or workspace notes first, then ask again."
+            ),
+            "sources": [],
+            "tool_trace": state.get("tool_trace", [])
+            + [_trace("search_notes", "No matching notes.")],
+        }
+
+    lines = ["Here is what you wrote about that:"]
+    sources = []
+    for hit in hits:
+        label = hit.get("title") or hit.get("source_title") or hit.get("source_ref") or "Untitled note"
+        snippet = str(hit.get("text") or "").strip().replace("\n", " ")
+        lines.append(f"- **{label}**: {snippet[:280]}")
+        sources.append(
+            {
+                "id": f"note:{hit.get('note_id')}",
+                "source": hit.get("source_ref") or "",
+                "title": label,
+                "text": hit.get("text") or "",
+                "page": hit.get("page"),
+                "selection": True,
+                "document_type": "note",
+                "score": hit.get("score"),
+            }
+        )
+
+    return {
+        "answer": "\n".join(lines),
+        "sources": sources,
+        "tool_trace": state.get("tool_trace", [])
+        + [_trace("search_notes", f"Found {len(hits)} matching notes.")],
     }
 
 
@@ -603,7 +733,7 @@ def create_github_issue_tool(state: AgentState) -> Dict[str, Any]:
         flags=re.IGNORECASE,
     ).strip()
     if not title:
-        title = _context_title(state, "ResearchMind follow-up")
+        title = _context_title(state, "Zoetrope follow-up")
 
     body = _context_body(state)
     try:
@@ -612,7 +742,7 @@ def create_github_issue_tool(state: AgentState) -> Dict[str, Any]:
             {
                 "title": title[:250],
                 "body": body,
-                "labels": ["researchmind"],
+                "labels": ["zoetrope"],
             },
         )
     except Exception as exc:
@@ -817,7 +947,7 @@ def export_visualization_notion_tool(state: AgentState) -> Dict[str, Any]:
                 "explanation": visual.get("explanation", ""),
                 "source_url": source_url,
                 "visualization_type": visual.get("visualization_type", visualization_type),
-                "tags": ["researchmind", "visualization"],
+                "tags": ["zoetrope", "visualization"],
             },
         )
     except Exception as exc:

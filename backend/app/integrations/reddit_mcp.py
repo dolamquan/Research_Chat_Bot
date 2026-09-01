@@ -82,7 +82,7 @@ def _mcp_messages(method: str, params: Dict[str, Any] | None = None) -> bytes:
                         "protocolVersion": "2024-11-05",
                         "capabilities": {},
                         "clientInfo": {
-                            "name": "researchmind",
+                            "name": "zoetrope",
                             "version": "0.1.0",
                         },
                     },

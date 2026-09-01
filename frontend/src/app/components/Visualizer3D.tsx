@@ -12,10 +12,9 @@ import {
 } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 
-import type { Diagram, DiagramEdge, DiagramGroup, DiagramNode, DiffState, MechanismGraph, MechanismScene, ProcessStep } from "../types";
+import type { Diagram, DiagramEdge, DiagramGroup, DiagramNode, DiffState, ProcessStep } from "../types";
 import { diffTint, edgeStroke, nodeStroke } from "./diagramPalette";
 import { CHASSIS_D, CHASSIS_H, CHASSIS_W, NodeAssembly } from "./NodeAssembly";
-import { ProcessTheater, type TheaterControl } from "./ProcessTheater";
 
 // 2D layout units (COLUMN_GAP=220, LAYER_GAP=130) -> world units.
 // Depth (flow axis) gets more room than width so layers read clearly in 3D.
@@ -130,7 +129,7 @@ function Node3D({
           <div
             className="flex items-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-medium text-zinc-100 backdrop-blur-sm"
             style={{
-              backgroundColor: "rgba(20,20,23,0.82)",
+              backgroundColor: "rgba(16,16,16,0.85)",
               borderColor: diffTint(diffState) ?? (selected ? color : "rgba(63,63,70,0.9)"),
               boxShadow: selected ? `0 0 12px ${color}55` : undefined,
               textDecoration: diffState === "removed" ? "line-through" : undefined,
@@ -434,41 +433,27 @@ function Visualizer3DCanvas({
   diagram,
   selectedNodeId,
   focusNodeId,
-  processSteps,
-  processScene,
-  processGraph,
   storyboards,
   diffStates,
   edgeDiffStates,
   highlightNodeIds,
   dimUnchanged,
-  loopPlayback,
-  theaterControl,
   onNodeClick,
   onCanvasReady,
   onPointerMissed,
-  onStepChange,
-  onPlaybackComplete,
 }: {
   diagram: Diagram;
   selectedNodeId: string | null;
   focusNodeId?: string | null;
-  processSteps?: ProcessStep[] | null;
-  processScene?: MechanismScene | null;
-  processGraph?: MechanismGraph | null;
   /** Per-node storyboards, used to build each chassis's internal machinery. */
   storyboards?: Record<string, ProcessStep[]>;
   diffStates?: Record<string, DiffState>;
   edgeDiffStates?: Record<string, DiffState>;
   highlightNodeIds?: string[];
   dimUnchanged?: boolean;
-  loopPlayback?: boolean;
-  theaterControl?: { current: TheaterControl };
   onNodeClick: (node: DiagramNode) => void;
   onCanvasReady?: (canvas: HTMLCanvasElement) => void;
   onPointerMissed?: () => void;
-  onStepChange?: (index: number) => void;
-  onPlaybackComplete?: () => void;
 }) {
   const focusNode = focusNodeId
     ? diagram.nodes.find((node) => node.id === focusNodeId) ?? null
@@ -540,7 +525,7 @@ function Visualizer3DCanvas({
       onCreated={(state) => onCanvasReady?.(state.gl.domElement)}
       onPointerMissed={() => onPointerMissed?.()}
     >
-      <color attach="background" args={["#0c0c0e"]} />
+      <color attach="background" args={["#0b0b0b"]} />
       <fog attach="fog" args={["#0c0c0e", radius * 1.9, radius * 5.5]} />
 
       <ambientLight intensity={0.28} />
@@ -687,19 +672,9 @@ function Visualizer3DCanvas({
         <Vignette darkness={0.55} offset={0.28} />
       </EffectComposer>
 
-      {focusNode && focusPosition && processSteps && processSteps.length > 0 && (
-        <ProcessTheater
-          key={focusNode.id}
-          position={focusPosition}
-          steps={processSteps}
-          scene={processScene}
-          graph={processGraph}
-          loop={loopPlayback ?? true}
-          control={theaterControl}
-          onStepChange={onStepChange}
-          onComplete={onPlaybackComplete}
-        />
-      )}
+      {/* Stage playback is no longer rendered in-canvas: the focused stage
+          plays as a model-written scene in the sandboxed frame that overlays
+          this view (see VisualizerView + visualization/SceneFrame). */}
     </Canvas>
   );
 }

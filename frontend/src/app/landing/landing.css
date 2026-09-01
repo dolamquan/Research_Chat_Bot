@@ -1,0 +1,30 @@
+/* Landing-only styles: ambient drifting grid behind the hero, smooth anchor scrolling. */
+
+html:has(.landing-root) {
+  scroll-behavior: smooth;
+}
+
+.landing-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 52px 52px;
+  mask-image: radial-gradient(ellipse 95% 85% at 50% 0%, black 25%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse 95% 85% at 50% 0%, black 25%, transparent 72%);
+  animation: landing-grid-drift 110s linear infinite;
+}
+
+@keyframes landing-grid-drift {
+  to {
+    background-position: 520px 260px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:has(.landing-root) {
+    scroll-behavior: auto;
+  }
+  .landing-grid {
+    animation: none;
+  }
+}

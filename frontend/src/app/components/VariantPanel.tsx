@@ -1,12 +1,4 @@
 import { useState } from "react";
-import {
-  Check,
-  GitBranch,
-  Loader2,
-  Sparkles,
-  Trash2,
-  X,
-} from "lucide-react";
 
 import type {
   AlgorithmVariant,
@@ -14,7 +6,7 @@ import type {
   VariantProposal,
   VariantTreeRow,
 } from "../types";
-import { diffTint, severityTone, verdictLabel, verdictTone } from "./diagramPalette";
+import { verdictLabel } from "./diagramPalette";
 
 /**
  * The Modify tab: describe a change, review the operations it would apply,
@@ -29,16 +21,22 @@ const PRESETS = [
   "make the pipeline iterative with a feedback loop",
 ];
 
-const OP_GLYPH: Record<string, { mark: string; tone: string }> = {
-  add_node: { mark: "+", tone: "text-emerald-300 border-emerald-800" },
-  add_edge: { mark: "+", tone: "text-emerald-300 border-emerald-800" },
-  remove_node: { mark: "−", tone: "text-rose-300 border-rose-800" },
-  remove_edge: { mark: "−", tone: "text-rose-300 border-rose-800" },
-  update_node: { mark: "~", tone: "text-amber-300 border-amber-800" },
-  update_group: { mark: "~", tone: "text-amber-300 border-amber-800" },
-  update_meta: { mark: "~", tone: "text-amber-300 border-amber-800" },
-  rewire_edge: { mark: "⇄", tone: "text-sky-300 border-sky-800" },
+const OP_GLYPH: Record<string, { mark: string; ink: string }> = {
+  add_node: { mark: "+", ink: "text-pen-moss" },
+  add_edge: { mark: "+", ink: "text-pen-moss" },
+  remove_node: { mark: "−", ink: "text-pen-red" },
+  remove_edge: { mark: "−", ink: "text-pen-red" },
+  update_node: { mark: "~", ink: "text-pen-amber" },
+  update_group: { mark: "~", ink: "text-pen-amber" },
+  update_meta: { mark: "~", ink: "text-pen-amber" },
+  rewire_edge: { mark: "⇄", ink: "text-pen-blue" },
 };
+
+function verdictInk(verdict: string): string {
+  if (verdict === "likely_broken") return "text-pen-red";
+  if (verdict === "concerns") return "text-pen-amber";
+  return "text-pen-moss";
+}
 
 function opTarget(op: RawOp): string {
   if (op.node_id) return op.node_id;
@@ -53,12 +51,8 @@ function opTarget(op: RawOp): string {
   return op.algorithm_name || "metadata";
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-      {children}
-    </div>
-  );
+function Heading({ children }: { children: React.ReactNode }) {
+  return <h4 className="text-xs font-medium text-ivory-500">{children}</h4>;
 }
 
 function OpRow({
@@ -70,41 +64,39 @@ function OpRow({
   index: number;
   onHover: (nodeId: string | null) => void;
 }) {
-  const glyph = OP_GLYPH[op.op] ?? { mark: "?", tone: "text-zinc-300 border-zinc-700" };
+  const glyph = OP_GLYPH[op.op] ?? { mark: "?", ink: "text-ivory-300" };
   return (
     <div
       onMouseEnter={() => onHover(op.node_id || op.source || null)}
       onMouseLeave={() => onHover(null)}
-      className="flex gap-2 rounded px-1 py-1.5 transition-colors hover:bg-zinc-800/40"
+      className="flex gap-2 rounded px-2 py-1.5 hover:bg-desk-850"
     >
       <span
-        className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border font-mono text-[10px] ${glyph.tone}`}
+        className={`w-3 shrink-0 text-center font-mono text-xs ${glyph.ink}`}
       >
         {glyph.mark}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate font-mono text-[11px] text-zinc-200">
+          <span className="truncate font-mono text-[11px] text-ivory-100">
             {opTarget(op)}
           </span>
-          <span className="shrink-0 font-mono text-[9px] uppercase tracking-wide text-zinc-500">
+          <span className="shrink-0 text-[10px] text-ivory-700">
             {op.op.replace(/_/g, " ")}
           </span>
         </div>
         {op.op === "update_node" && op.label && (
-          <div className="font-mono text-[10px] text-zinc-400">
-            label → <span className="text-emerald-300">{op.label}</span>
+          <div className="text-[11px] text-ivory-500">
+            label → <span className="text-pen-moss">{op.label}</span>
           </div>
         )}
         {op.intent && (
-          <p className="mt-0.5 text-[11px] leading-snug text-zinc-400">
+          <p className="mt-0.5 text-[11px] leading-snug text-ivory-500">
             {op.intent}
           </p>
         )}
       </div>
-      <span className="shrink-0 font-mono text-[9px] text-zinc-600">
-        {index + 1}
-      </span>
+      <span className="shrink-0 text-[10px] text-ivory-700">{index + 1}</span>
     </div>
   );
 }
@@ -158,17 +150,12 @@ export function VariantPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="border-b border-zinc-800 p-4">
-        <div className="mb-2 flex items-center gap-2.5">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded border border-teal-900/60 bg-teal-500/10 text-teal-300">
-            <GitBranch className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <SectionLabel>Modify algorithm</SectionLabel>
-            <div className="truncate text-[11px] text-zinc-400">
-              from <span className="text-zinc-200">{baseLabel}</span>
-            </div>
-          </div>
+      <div className="p-4 pb-5">
+        <div className="mb-1 flex items-baseline justify-between gap-2">
+          <Heading>Modify algorithm</Heading>
+        </div>
+        <div className="mb-3 truncate text-xs text-ivory-500">
+          from <span className="text-ivory-300">{baseLabel}</span>
         </div>
 
         <textarea
@@ -184,38 +171,33 @@ export function VariantPanel({
           }}
           rows={3}
           placeholder="What would you change? e.g. replace softmax attention with a linear kernel"
-          className="w-full resize-none rounded-md border border-zinc-800 bg-zinc-900 px-2.5 py-2 text-xs text-zinc-200 placeholder:text-zinc-600 focus:border-teal-600/60 focus:outline-none"
+          className="w-full resize-none rounded bg-desk-850 px-3 py-2 text-xs leading-relaxed text-ivory-100 placeholder:text-ivory-700 focus:outline-none"
         />
 
-        <div className="mt-1.5 flex flex-wrap gap-1">
+        <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-0.5">
           {PRESETS.map((preset) => (
             <button
               key={preset}
               onClick={() => onIntentChange(preset)}
-              className="rounded border border-zinc-800 px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:border-teal-700 hover:text-teal-200"
+              className="rounded px-1 py-0.5 text-[11px] text-ivory-500 hover:bg-desk-850 hover:text-accent-300"
             >
               {preset}
             </button>
           ))}
         </div>
 
-        <div className="mt-2 flex gap-2">
+        <div className="mt-3 flex items-center gap-3">
           <button
             onClick={onPropose}
             disabled={!intent.trim() || proposing}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-40"
+            className="flex-1 rounded bg-accent-400 px-3 py-1.5 text-xs font-medium text-desk-950 hover:bg-accent-300 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {proposing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="h-3.5 w-3.5" />
-            )}
             {proposing ? `Reading the paper… ${proposeElapsed}s` : "Propose change"}
           </button>
           {proposing && (
             <button
               onClick={onCancelPropose}
-              className="rounded-md border border-zinc-700 px-2.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800"
+              className="rounded px-2 py-1.5 text-xs text-ivory-500 hover:bg-desk-850 hover:text-ivory-100"
             >
               Cancel
             </button>
@@ -223,40 +205,40 @@ export function VariantPanel({
         </div>
 
         {proposeError && (
-          <div className="mt-2 rounded-md border border-red-900/60 bg-red-950/80 px-2.5 py-1.5 text-[11px] text-red-300">
+          <p className="mt-2 text-[11px] leading-relaxed text-pen-red">
             {proposeError}
-          </div>
+          </p>
         )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {proposal && (
-          <div className="border-b border-zinc-800 p-4">
-            <SectionLabel>Proposed patch</SectionLabel>
-            <div className="mb-2 text-xs font-semibold text-zinc-100">
+          <div className="bg-desk-900 p-4 pt-5">
+            <Heading>Proposed patch</Heading>
+            <div className="mb-2 mt-1 text-[13px] font-semibold leading-snug text-ivory-100">
               {proposal.patch.variant_title}
             </div>
 
             <button
               onClick={() => setShowRationale((current) => !current)}
-              className="mb-2 text-[10px] text-teal-300 hover:underline"
+              className="mb-2 text-[11px] text-accent-400 hover:text-accent-300"
             >
-              {showRationale ? "hide" : "show"} rationale &amp; risks
+              {showRationale ? "Hide" : "Show"} rationale &amp; risks
             </button>
             {showRationale && (
               <div className="mb-2 space-y-1.5">
-                <p className="text-[11px] leading-relaxed text-zinc-400">
+                <p className="text-[11px] leading-relaxed text-ivory-300">
                   {proposal.patch.rationale}
                 </p>
                 {proposal.patch.risks && (
-                  <p className="rounded border border-amber-900/50 bg-amber-950/30 px-2 py-1 text-[11px] text-amber-200/80">
+                  <p className="text-[11px] leading-relaxed text-pen-amber">
                     Its own stated risk: {proposal.patch.risks}
                   </p>
                 )}
               </div>
             )}
 
-            <div className="mb-2 divide-y divide-zinc-800/60">
+            <div className="mb-2">
               {proposal.patch.ops.map((op, index) => (
                 <OpRow
                   key={index}
@@ -267,18 +249,18 @@ export function VariantPanel({
               ))}
             </div>
 
-            <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[10px]">
-              <span className="text-emerald-300">
+            <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 px-2 text-[11px]">
+              <span className="text-pen-moss">
                 {proposal.applied.length} applied
               </span>
               {proposal.rejected.filter((op) => !op.redundant).length > 0 && (
-                <span className="text-rose-300">
+                <span className="text-pen-red">
                   {proposal.rejected.filter((op) => !op.redundant).length} rejected
                 </span>
               )}
               {proposal.rejected.filter((op) => op.redundant).length > 0 && (
                 <span
-                  className="text-zinc-500"
+                  className="text-ivory-700"
                   title="Already achieved by another operation in this patch."
                 >
                   {proposal.rejected.filter((op) => op.redundant).length} redundant
@@ -289,71 +271,65 @@ export function VariantPanel({
             {proposal.rejected
               .filter((op) => !op.redundant)
               .map((op) => (
-                <div
+                <p
                   key={op.index}
-                  className="mb-1 rounded border border-rose-900/50 bg-rose-950/30 px-2 py-1 text-[10px] text-rose-200/80"
+                  className="mb-1 px-2 text-[11px] leading-relaxed text-pen-red"
                 >
-                  <span className="font-mono">{op.op.op}</span>: {op.reason}
-                </div>
+                  <span className="font-mono text-[10px]">{op.op.op}</span>:{" "}
+                  {op.reason}
+                </p>
               ))}
 
-            <div
-              className={`mb-2 rounded-md border px-2 py-1.5 text-[11px] ${verdictTone(
-                proposal.report.verdict,
-              )}`}
-            >
-              {verdictLabel(proposal.report.verdict)}
-              {causedCount > 0 && worst ? (
-                <span className={`ml-1 ${severityTone(worst.severity)}`}>
-                  · {worst.title}
-                </span>
-              ) : (
-                <span className="ml-1 text-zinc-400">
-                  · no new structural problems
-                </span>
-              )}
-            </div>
+            <p className="mb-3 mt-3 px-2 text-xs leading-relaxed text-ivory-100">
+              <span className={`font-medium ${verdictInk(proposal.report.verdict)}`}>
+                {(() => {
+                  const label = verdictLabel(proposal.report.verdict);
+                  return label.charAt(0).toUpperCase() + label.slice(1);
+                })()}
+                .
+              </span>{" "}
+              {causedCount > 0 && worst
+                ? worst.title
+                : "No new structural problems."}
+            </p>
 
-            <div className="flex gap-2">
+            <div className="flex items-center gap-3">
               <button
                 onClick={onApply}
                 disabled={applying || proposal.applied.length === 0}
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-teal-500 disabled:opacity-40"
+                className="flex-1 rounded bg-accent-400 px-3 py-1.5 text-xs font-medium text-desk-950 hover:bg-accent-300 disabled:opacity-40"
               >
-                {applying ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Check className="h-3.5 w-3.5" />
-                )}
-                Apply
+                {applying ? "Applying…" : "Apply"}
               </button>
               <button
                 onClick={onDiscard}
                 disabled={applying}
-                className="rounded-md border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-zinc-800"
+                className="rounded px-2 py-1.5 text-xs text-ivory-500 hover:bg-desk-850 hover:text-ivory-100"
               >
-                <X className="h-3.5 w-3.5" />
+                Discard
               </button>
             </div>
           </div>
         )}
 
-        <div className="p-4">
-          <SectionLabel>Variants · {tree.length}</SectionLabel>
+        <div className="p-4 pt-5">
+          <div className="mb-1.5">
+            <Heading>Variants ({tree.length})</Heading>
+          </div>
           <button
             onClick={() => onSelectVariant(null)}
-            className={`mb-1 flex w-full items-center justify-between rounded-md border px-2 py-1.5 text-left text-xs transition-colors ${
+            className={`mb-0.5 flex w-full items-baseline justify-between rounded px-2 py-1.5 text-left text-xs ${
               activeVariantId === null
-                ? "border-teal-700 bg-teal-500/10 text-teal-100"
-                : "border-zinc-800 text-zinc-300 hover:bg-zinc-800/60"
+                ? "bg-desk-800 text-ivory-100"
+                : "text-ivory-300 hover:bg-desk-850"
             }`}
           >
             <span>Original</span>
-            <span className="font-mono text-[9px] text-zinc-500">baseline</span>
+            <span className="text-[10px] text-ivory-700">baseline</span>
           </button>
 
           {tree.length === 0 && (
-            <p className="text-[11px] text-zinc-500">
+            <p className="px-2 text-[11px] leading-relaxed text-ivory-500">
               No variants yet. Describe a change above to create one.
             </p>
           )}
@@ -367,34 +343,36 @@ export function VariantPanel({
             return (
               <div
                 key={row.variant_id}
-                className={`mb-1 rounded-md border px-2 py-1.5 ${
-                  active
-                    ? "border-teal-700 bg-teal-500/10"
-                    : "border-zinc-800 hover:bg-zinc-800/60"
+                className={`group mb-0.5 rounded px-2 py-1.5 ${
+                  active ? "bg-desk-800" : "hover:bg-desk-850"
                 }`}
                 style={{ marginLeft: `${(row.depth - 1) * 12}px` }}
               >
-                <div className="flex items-start justify-between gap-1.5">
+                <div className="flex items-start justify-between gap-2">
                   <button
                     onClick={() => onSelectVariant(row.variant_id)}
                     className="min-w-0 flex-1 text-left"
                   >
-                    <div className="truncate text-xs text-zinc-200">
+                    <div
+                      className={`truncate text-xs ${
+                        active ? "text-ivory-100" : "text-ivory-300"
+                      }`}
+                    >
                       {row.variant_title}
                     </div>
-                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-[9px]">
-                      <span className={verdictTone(row.verdict).split(" ")[0]}>
+                    <div className="mt-0.5 flex flex-wrap items-baseline gap-1.5 text-[10px]">
+                      <span className={verdictInk(row.verdict)}>
                         {verdictLabel(row.verdict)}
                       </span>
                       {delta && (
                         <>
                           {delta.changed_node_ids.length > 0 && (
-                            <span style={{ color: diffTint("changed") ?? undefined }}>
+                            <span className="text-pen-amber">
                               ~{delta.changed_node_ids.length}
                             </span>
                           )}
                           {delta.removed_node_ids.length > 0 && (
-                            <span style={{ color: diffTint("removed") ?? undefined }}>
+                            <span className="text-pen-red">
                               −{delta.removed_node_ids.length}
                             </span>
                           )}
@@ -402,20 +380,20 @@ export function VariantPanel({
                       )}
                     </div>
                   </button>
-                  <div className="flex shrink-0 gap-0.5">
+                  <div className="flex shrink-0 gap-2 opacity-0 transition-opacity group-hover:opacity-100">
                     <button
                       onClick={() => onBranchFrom(row.variant_id)}
                       title="Modify from here"
-                      className="rounded p-0.5 text-zinc-500 transition-colors hover:text-teal-300"
+                      className="text-[10px] text-ivory-500 hover:text-accent-300"
                     >
-                      <GitBranch className="h-3 w-3" />
+                      branch
                     </button>
                     <button
                       onClick={() => onDeleteVariant(row.variant_id)}
                       title="Delete this variant and anything branched from it"
-                      className="rounded p-0.5 text-zinc-500 transition-colors hover:text-red-400"
+                      className="text-[10px] text-ivory-500 hover:text-pen-red"
                     >
-                      <Trash2 className="h-3 w-3" />
+                      delete
                     </button>
                   </div>
                 </div>

@@ -1,6 +1,6 @@
-# ResearchMind
+# Zoetrope
 
-ResearchMind is a research-paper chatbot with document retrieval, paper topology clustering, PDF reading, selectable PDF context, whole-paper chat mode, and persistent chat history.
+Zoetrope is a research-paper chatbot with document retrieval, paper topology clustering, PDF reading, selectable PDF context, whole-paper chat mode, and persistent chat history.
 
 ## Features
 
@@ -11,8 +11,8 @@ ResearchMind is a research-paper chatbot with document retrieval, paper topology
 - PDF sidebar reader with selectable text context
 - Local SQLite chat history
 - React/Vite frontend and FastAPI backend
-- Algorithm visualizer: paper -> validated Scene IR -> interactive 2D/2.5D/3D
-  animation, with every entity and step traced to a quote from the paper
+- Algorithm visualizer: paper -> model-written Three.js animation, executed
+  in a locked-down sandboxed iframe
   (see [docs/PAPER_TO_SCENE.md](docs/PAPER_TO_SCENE.md))
 - Provider-independent LLM layer (OpenAI or Anthropic) behind one interface
 
@@ -78,7 +78,7 @@ REDDIT_USERNAME=your_reddit_username
 REDDIT_CLIENT_ID=your_reddit_app_client_id
 REDDIT_CLIENT_SECRET=your_reddit_app_client_secret
 REDDIT_PASSWORD=your_reddit_password
-REDDIT_USER_AGENT=ResearchMind/0.1
+REDDIT_USER_AGENT=Zoetrope/0.1
 ```
 
 Then pull the image once:
@@ -100,20 +100,22 @@ bridge command `/mcp-call reddit.search_posts {"query":"graph rag","limit":5}`.
 
 Turns an indexed paper into an interactive animation of its proposed method.
 
-The language model never generates executable code. It emits a validated
-`AlgorithmScene` -- a data document whose fields are enums from a closed
-whitelist, identifiers that must resolve within the document, numbers in checked
-ranges, and display text. The frontend maps the primitive name through a fixed
-registry of React components; an unknown value renders a safe fallback.
+The language model writes a self-contained Three.js program for each paper.
+The code executes only inside an iframe sandboxed to `allow-scripts` — an
+opaque origin with no cookies, storage, network shortcuts to this app, or
+handle on the parent page. Static contract checks (no imports, no network, no
+DOM escape hatches, required `init`/`update` entry points) run at generation
+time with one repair attempt, and again client-side before the frame mounts.
 
-Every entity and step carries evidence ids pointing at quotes from the paper.
-Anything uncited is displayed as uncertain rather than presented as fact, and a
-scene with fewer than 60% grounded steps fails deterministic verification.
+Scenes are model-written and illustrative: unlike the retired declarative
+Scene IR pipeline, they are **not** verified against the paper's text, and the
+UI says so. See [docs/PAPER_TO_SCENE.md](docs/PAPER_TO_SCENE.md) for the
+trade-off and the full architecture.
 
 ```text
-POST /visualizer/generate-scene           plan, verify and persist a scene
-GET  /visualizer/item/{viz_id}/scene      the stored scene + report
-POST /visualizer/item/{viz_id}/verify-scene   re-run checks, no LLM call
+POST /visualizer/generate-scene           generate, check and persist scene code
+GET  /visualizer/item/{viz_id}/scene      the stored code + check report
+POST /visualizer/item/{viz_id}/verify-scene   re-run static checks, no LLM call
 GET  /visualizer/providers                which providers are configured
 ```
 
@@ -152,15 +154,3 @@ pnpm run build
 ```
 
 All tests run offline; none calls a model provider or a vector store.
-
-## Research evaluation
-
-```bash
-cd backend
-python scripts/evaluate_scene_generation.py --references tests/fixtures/scenes
-```
-
-Reports node/edge precision, recall and F1, grounding ratios, hallucination
-counts, connectivity, schema validity and render readiness. Deterministic --
-NetworkX and set arithmetic, not an LLM judge. See
-[docs/PAPER_TO_SCENE.md](docs/PAPER_TO_SCENE.md#evaluation-methodology).

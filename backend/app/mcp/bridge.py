@@ -7,17 +7,18 @@ from fastapi import HTTPException
 import requests
 
 from app.ingestion.url_ingester import ingest_article_url
+from app.integrations import notion as notion_api
 from app.integrations.reddit_mcp import list_reddit_tools, search_reddit_posts
+from app.rag import notes_index
 from app.rag.clusterer import build_cluster_graph
 from app.rag.graph_rag import build_graph_rag, query_graph_rag
 from app.rag.research_tools import generate_visualization, summarize_paper
 from app.routes.crawler import ArxivSearchRequest, PaperSearchRequest, search_arxiv, search_multi_source
-from app.storage.annotations import create_annotation
+from app.storage import notes as notes_store
 from app.storage.article_store import list_articles
 
 
-MCP_SERVER_NAME = "researchmind.internal"
-NOTION_VERSION = "2022-06-28"
+MCP_SERVER_NAME = "zoetrope.internal"
 
 
 @dataclass(frozen=True)
@@ -93,198 +94,32 @@ def _request_json(
     return response.json()
 
 
-def _notion_text_blocks(text: str) -> List[Dict[str, Any]]:
-    chunks = [text[index : index + 1800] for index in range(0, len(text), 1800)]
-    return [
-        {
-            "object": "block",
-            "type": "paragraph",
-            "paragraph": {
-                "rich_text": [
-                    {
-                        "type": "text",
-                        "text": {"content": chunk},
-                    }
-                ]
-            },
-        }
-        for chunk in chunks[:20]
-        if chunk.strip()
-    ]
-
-
-def _notion_heading_block(text: str) -> Dict[str, Any]:
-    return {
-        "object": "block",
-        "type": "heading_2",
-        "heading_2": {
-            "rich_text": [
-                {
-                    "type": "text",
-                    "text": {"content": text[:2000]},
-                }
-            ]
-        },
-    }
-
-
-def _notion_code_block(code: str, language: str = "mermaid") -> Dict[str, Any]:
-    return {
-        "object": "block",
-        "type": "code",
-        "code": {
-            "language": language,
-            "rich_text": [
-                {
-                    "type": "text",
-                    "text": {"content": code[:2000]},
-                }
-            ],
-        },
-    }
-
-
-def _notion_page_payload(
-    database_id: str,
-    title: str,
-    children: List[Dict[str, Any]],
-) -> Dict[str, Any]:
-    title_property = _env("NOTION_TITLE_PROPERTY") or "Name"
-    return {
-        "parent": {"database_id": database_id},
-        "properties": {
-            title_property: {
-                "title": [
-                    {
-                        "type": "text",
-                        "text": {"content": title[:2000]},
-                    }
-                ]
-            }
-        },
-        "children": children,
-    }
-
-
 def _notion_create_research_page(args: Dict[str, Any]) -> Dict[str, Any]:
-    token = _require_env("NOTION_API_KEY")
-    database_id = _string(args.get("database_id") or _env("NOTION_DATABASE_ID")).strip()
-    if not database_id:
-        raise ValueError("database_id is required or NOTION_DATABASE_ID must be configured")
-
-    title = _string(args.get("title"), "Research note").strip() or "Research note"
-    summary = _string(args.get("summary") or args.get("content")).strip()
-    source_url = _string(args.get("source_url") or args.get("url")).strip()
-    tags = _string_list(args.get("tags"))
-
-    body_parts = []
-    if summary:
-        body_parts.append(summary)
-    if source_url:
-        body_parts.append(f"Source: {source_url}")
-    if tags:
-        body_parts.append(f"Tags: {', '.join(tags)}")
-    body_parts.append(f"Exported from ResearchMind at {_now()}")
-
-    payload = _notion_page_payload(
-        database_id=database_id,
-        title=title,
-        children=_notion_text_blocks("\n\n".join(body_parts)),
-    )
-
-    page = _request_json(
-        "POST",
-        "https://api.notion.com/v1/pages",
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Notion-Version": NOTION_VERSION,
-            "Content-Type": "application/json",
-        },
-        json_body=payload,
-    )
-
+    result = notion_api.create_research_page(args)
+    verb = "Updated" if result.get("updated") else "Created"
     return _tool_result(
         "notion.create_research_page",
         {
-            "page_id": page.get("id"),
-            "url": page.get("url"),
-            "title": title,
-            "summary": f"Created Notion page for {title}.",
+            "page_id": result.get("page_id"),
+            "url": result.get("url"),
+            "title": result.get("title"),
+            "warnings": result.get("warnings", []),
+            "summary": f"{verb} Notion page for {result.get('title')}.",
         },
     )
 
 
 def _notion_create_visualization_page(args: Dict[str, Any]) -> Dict[str, Any]:
-    token = _require_env("NOTION_API_KEY")
-    database_id = _string(args.get("database_id") or _env("NOTION_DATABASE_ID")).strip()
-    if not database_id:
-        raise ValueError("database_id is required or NOTION_DATABASE_ID must be configured")
-
-    title = _string(args.get("title"), "Research visualization").strip()
-    mermaid = _string(args.get("mermaid") or args.get("diagram")).strip()
-    explanation = _string(args.get("explanation") or args.get("summary")).strip()
-    source_url = _string(args.get("source_url") or args.get("url")).strip()
-    visualization_type = _string(args.get("visualization_type"), "mermaid").strip()
-    tags = _string_list(args.get("tags"))
-
-    if not mermaid:
-        raise ValueError("mermaid is required")
-
-    body_parts = []
-    if explanation:
-        body_parts.append(explanation)
-    if source_url:
-        body_parts.append(f"Source: {source_url}")
-    if visualization_type:
-        body_parts.append(f"Visualization type: {visualization_type}")
-    if tags:
-        body_parts.append(f"Tags: {', '.join(tags)}")
-    body_parts.append(f"Exported from ResearchMind at {_now()}")
-
-    children = [
-        _notion_heading_block("Visualization"),
-        _notion_code_block(mermaid, language="mermaid"),
-        _notion_heading_block("Explanation"),
-        *_notion_text_blocks("\n\n".join(body_parts)),
-    ]
-    payload = _notion_page_payload(
-        database_id=database_id,
-        title=title,
-        children=children,
-    )
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Notion-Version": NOTION_VERSION,
-        "Content-Type": "application/json",
-    }
-
-    try:
-        page = _request_json(
-            "POST",
-            "https://api.notion.com/v1/pages",
-            headers=headers,
-            json_body=payload,
-        )
-    except RuntimeError as exc:
-        if "mermaid" not in str(exc).lower():
-            raise
-        payload["children"][1] = _notion_code_block(mermaid, language="plain text")
-        page = _request_json(
-            "POST",
-            "https://api.notion.com/v1/pages",
-            headers=headers,
-            json_body=payload,
-        )
-
+    result = notion_api.create_visualization_page(args)
+    verb = "Updated" if result.get("updated") else "Created"
     return _tool_result(
         "notion.create_visualization_page",
         {
-            "page_id": page.get("id"),
-            "url": page.get("url"),
-            "title": title,
+            "page_id": result.get("page_id"),
+            "url": result.get("url"),
+            "title": result.get("title"),
             "diagram_format": "mermaid",
-            "summary": f"Created Notion visualization page for {title}.",
+            "summary": f"{verb} Notion visualization page for {result.get('title')}.",
         },
     )
 
@@ -321,7 +156,7 @@ def _github_create_issue(args: Dict[str, Any]) -> Dict[str, Any]:
         headers=_github_headers(),
         json_body={
             "title": title,
-            "body": body or "Created from ResearchMind.",
+            "body": body or "Created from Zoetrope.",
             "labels": labels,
         },
     )
@@ -526,19 +361,57 @@ def _save_note(args: Dict[str, Any]) -> Dict[str, Any]:
     if not selected_text:
         raise ValueError("selected_text is required")
 
-    annotation = create_annotation(
-        source=source,
+    note_type = _string(args.get("note_type"), "highlight").strip() or "highlight"
+    source_type = "pdf" if source.lower().endswith(".pdf") else _string(
+        args.get("source_type"), "chat_session"
+    )
+    saved = notes_store.create_note(
+        note_type=note_type if note_type in notes_store.NOTE_TYPES else "highlight",
+        source_type=source_type,
+        source_ref=source,
+        source_title=_string(args.get("title")),
+        article_id=_string(args.get("article_id")),
         page=int(args.get("page") or 1),
         selected_text=selected_text,
-        note=note,
-        article_id=_string(args.get("article_id")),
         title=_string(args.get("title")),
+        body_md=note,
+        tags=_string_list(args.get("tags")),
     )
+    notes_index.index_note_safe(saved)
+
+    # Historic annotation shape, kept for existing agent/console consumers.
+    annotation = {
+        "annotation_id": saved["note_id"],
+        "source": saved["source_ref"],
+        "article_id": saved.get("article_id") or "",
+        "title": saved.get("source_title") or "",
+        "page": saved.get("page") or 1,
+        "selected_text": saved.get("selected_text", ""),
+        "note": saved.get("body_md", ""),
+        "created_at": saved["created_at"],
+        "updated_at": saved["updated_at"],
+    }
     return _tool_result(
         "research.save_note",
         {
             "annotation": annotation,
-            "summary": f"Saved note {annotation['annotation_id']}.",
+            "note": saved,
+            "summary": f"Saved note {saved['note_id']}.",
+        },
+    )
+
+
+def _search_notes(args: Dict[str, Any]) -> Dict[str, Any]:
+    query = _string(args.get("query")).strip()
+    if not query:
+        raise ValueError("query is required")
+
+    hits = notes_index.search_notes(query, limit=int(args.get("limit") or 8))
+    return _tool_result(
+        "research.search_notes",
+        {
+            "results": hits,
+            "summary": f"Found {len(hits)} matching notes.",
         },
     )
 
@@ -710,7 +583,7 @@ TOOLS: Dict[str, McpTool] = {
     ),
     "research.save_note": McpTool(
         name="research.save_note",
-        description="Save a note attached to a selected PDF passage.",
+        description="Save a note attached to a PDF passage, chat answer, or research context.",
         input_schema={
             "type": "object",
             "required": ["source", "selected_text"],
@@ -721,9 +594,27 @@ TOOLS: Dict[str, McpTool] = {
                 "note": {"type": "string"},
                 "article_id": {"type": "string"},
                 "title": {"type": "string"},
+                "note_type": {
+                    "type": "string",
+                    "enum": ["highlight", "freeform", "chat_capture", "visualization"],
+                },
+                "tags": {"type": "array", "items": {"type": "string"}},
             },
         },
         handler=_save_note,
+    ),
+    "research.search_notes": McpTool(
+        name="research.search_notes",
+        description="Semantically search the user's own saved notes and highlights.",
+        input_schema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 25},
+            },
+        },
+        handler=_search_notes,
     ),
     "research.rebuild_topology": McpTool(
         name="research.rebuild_topology",

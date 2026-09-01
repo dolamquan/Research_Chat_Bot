@@ -1,4 +1,4 @@
-"""Persistence for generated `AlgorithmScene` records.
+"""Persistence for generated scene records (currently Three.js code documents).
 
 Follows the conventions already used by `visualization_store`: the same
 `DB_PATH`, a `_connect()` that runs an idempotent `init_db()`, `sqlite3.Row`

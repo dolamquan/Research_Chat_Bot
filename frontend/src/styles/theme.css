@@ -87,6 +87,34 @@
   --sidebar-ring: #ffffff;
 }
 
+/*
+ * Visualizer palette, aliased to the app's monochrome theme so the tab reads
+ * as part of Zoetrope rather than a standalone product. Surfaces step up
+ * from the shared near-black ground (elevation instead of borders), text runs
+ * the shared white-to-gray ramp, and the accent is the app's white primary.
+ * Pen colours are reserved for meaning only: red flags, amber cautions,
+ * green approvals, blue asides.
+ */
+@theme {
+  --color-desk-950: #0b0b0b;
+  --color-desk-900: #101010;
+  --color-desk-850: #161616;
+  --color-desk-800: #1e1e1e;
+  --color-desk-700: #2a2a2a;
+  --color-desk-600: #3a3a3a;
+  --color-ivory-100: #f5f5f5;
+  --color-ivory-300: #cfcfcf;
+  --color-ivory-500: #969696;
+  --color-ivory-700: #6a6a6a;
+  --color-accent-300: #ffffff;
+  --color-accent-400: #ededed;
+  --color-accent-500: #bdbdbd;
+  --color-pen-red: #e05243;
+  --color-pen-amber: #cf9f45;
+  --color-pen-moss: #86b380;
+  --color-pen-blue: #85a3bd;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

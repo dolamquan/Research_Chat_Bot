@@ -3,8 +3,12 @@
 The predicate decides when a stored node expansion regenerates. Its two
 callers must agree -- `_expansion_is_current` gates per-click regeneration
 while `list_expanded_node_ids` feeds the UI's "prepared" state -- and a row
-must never be permanently stale: that would re-run the full expansion (2+ LLM
-calls) on every click, forever.
+must never be permanently stale: that would re-run the full expansion on
+every click, forever.
+
+The composed-scene and schema-version cases that used to live here were
+retired with the declarative theater: stored `scene` / `scene_graph` /
+`scene_schema_version` keys are ignored by the predicate now.
 """
 
 from __future__ import annotations
@@ -12,7 +16,6 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from app.rag.paper_visualizer import _expansion_is_current, primitives_for_domain
-from app.rag.scene_composer import SCENE_SCHEMA_VERSION
 from app.storage.visualization_store import expansion_content_is_current
 
 GENERAL = set(primitives_for_domain("general"))
@@ -25,8 +28,6 @@ def content(**overrides: Any) -> Dict[str, Any]:
             {"primitive": "transport", "caption": "", "values": [0.1], "items": []}
         ],
         "stage_grounded": True,
-        "scene": {"title": "", "actors": [], "beats": [], "described": False},
-        "scene_schema_version": SCENE_SCHEMA_VERSION,
     }
     base.update(overrides)
     return base
@@ -40,21 +41,15 @@ CASES = {
         False,
     ),
     "row predating stage grounding": (content(stage_grounded=False), False),
-    "row predating the composed scene": (
-        {k: v for k, v in content().items() if k != "scene"},
-        False,
-    ),
-    # The convergence guarantee: a failed compose stores scene=None but stays
-    # current, because the version stamp records the attempt.
-    "recorded compose failure": (content(scene=None), True),
-    "row from a future schema": (
-        content(scene_schema_version=SCENE_SCHEMA_VERSION + 1),
+    # Rows written while the retired composer tiers existed still parse; their
+    # legacy keys are simply ignored rather than forcing a regeneration.
+    "row with retired composer keys": (
+        content(
+            scene={"title": "", "actors": [], "beats": [], "described": False},
+            scene_graph=None,
+            scene_schema_version=3,
+        ),
         True,
-    ),
-    # An unparseable stamp counts as version 1: regenerate once, restamp clean.
-    "unparseable version stamp": (
-        content(scene_schema_version="junk"),
-        SCENE_SCHEMA_VERSION <= 1,
     ),
 }
 
@@ -89,10 +84,3 @@ def test_vocabulary_check_only_applies_when_a_domain_is_known():
     assert expansion_content_is_current(
         row, set(primitives_for_domain("computational"))
     ) is True
-
-
-def test_old_rows_without_a_stamp_count_as_version_one():
-    row = {k: v for k, v in content().items() if k != "scene_schema_version"}
-    # Stays current while SCENE_SCHEMA_VERSION is 1; the first bump to 2 is
-    # what invalidates every pre-stamp row, exactly once.
-    assert expansion_content_is_current(row, GENERAL) is (SCENE_SCHEMA_VERSION <= 1)

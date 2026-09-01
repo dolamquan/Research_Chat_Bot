@@ -13,8 +13,6 @@ from typing import Any, Dict, List, Literal, Optional
 
 from langsmith import traceable
 
-from .scene_composer import SCENE_SCHEMA_VERSION, compose_mechanism_scene, scene_to_dict
-from .scene_graph import compose_scene_graph, graph_to_dict
 from pydantic import BaseModel, ValidationError
 
 from app.rag.generator import DEFAULT_MODEL, get_llm
@@ -339,11 +337,14 @@ First identify the paper's own core method (algorithm_name), then decompose it i
 
 Rules:
 - Nodes are components/steps of the paper's OWN proposed method, not related work or baselines.
-- Use 8-20 nodes. Node ids are short snake_case and unique. Labels are at most 60 characters.
+- Aim for 14-24 nodes when the paper defines that much structure (never fewer than 10 unless the method is genuinely that small, never more than {MAX_NODES}). Node ids are short snake_case and unique. Labels are at most 60 characters.
+- Decompose composite blocks into the operations the paper itself defines. A named layer or module is NOT one node if the paper describes its internals: e.g. a transformer encoder layer decomposes into multi-head self-attention, add & layer-norm, position-wise feed-forward, and the second add & layer-norm. Collapsing a described mechanism into a single box loses the paper's contribution. Do NOT pad with components the paper never describes.
+- Include the auxiliary inputs the method consumes where the paper names them (masks, learned embedding tables, retrieved context, condition signals) as "data" or "input" nodes feeding the stage that uses them.
 - Each node's detail is 1-3 sentences grounded ONLY in the provided context. Do not invent claims.
-- For repeated blocks (e.g. stacked layers), create ONE group with repeat set (e.g. "x N layers") containing the block's nodes once - never duplicate the nodes.
+- For repeated blocks (e.g. stacked layers), create ONE group with repeat set (e.g. "x N layers") containing the block's nodes once - never duplicate the nodes. Also group the major subsystems the paper names (e.g. encoder, decoder, retriever, verifier) so the diagram shows its coarse anatomy as well as its steps.
 - A node's group must be null or the id of a defined group. Only use groups when they clarify structure.
-- Every edge's source and target must be defined node ids. Use edge kind "flow" for main data/control flow, "residual" for skip connections, "attention" for attention links, "feedback" for loops back to earlier steps, "data" for auxiliary data inputs, "reference" for weak/annotation links.
+- Every edge's source and target must be defined node ids. Use edge kind "flow" for main data/control flow, "residual" for skip connections, "attention" for attention links (including cross-attention from one subsystem into another), "feedback" for loops back to earlier steps, "data" for auxiliary data inputs, "reference" for weak/annotation links. If the paper has skip connections or cross-subsystem attention, those edges MUST appear with the right kind - a diagram of a residual architecture without residual edges is wrong.
+- Label each edge with the quantity that flows along it, using the paper's own notation and dimensions when stated (e.g. "Q, K, V (d_k=64)", "z ~ q(z|x)", "top-k passages"), not a generic phrase like "output".
 - summary is 2-4 sentences describing the method. key_insight is the single idea that makes the method work.
 
 Paper metadata:
@@ -482,7 +483,21 @@ def layout_ir(ir: DiagramIR) -> Dict[str, Any]:
             if remaining[target] == 0:
                 queue.append(target)
 
-    # Within-layer ordering: stable sort by (group, predecessor barycenter, id), 2 sweeps.
+    # Tighten sources: a node with no incoming forward edges sits just above
+    # its earliest successor rather than pinned to the top row. This keeps
+    # auxiliary inputs — and stages whose incoming edges a modification
+    # removed — next to the stages that consume them.
+    for node_id in node_ids:
+        if in_degree[node_id] == 0 and successors[node_id]:
+            layer[node_id] = min(layer[t] for t in successors[node_id]) - 1
+
+    # Compact layer indices so tightening cannot leave an empty row behind.
+    remap = {old: new for new, old in enumerate(sorted(set(layer.values())))}
+    for node_id in node_ids:
+        layer[node_id] = remap[layer[node_id]]
+
+    # Within-layer ordering: stable sort by (group, barycenter, id), with
+    # alternating downward (predecessor) and upward (successor) sweeps.
     predecessors: Dict[str, List[str]] = defaultdict(list)
     for edge in forward_edges:
         predecessors[edge.target].append(edge.source)
@@ -498,15 +513,18 @@ def layout_ir(ir: DiagramIR) -> Dict[str, Any]:
         for order, node_id in enumerate(layers[layer_index]):
             position[node_id] = order
 
-    for _ in range(2):
-        for layer_index in sorted(layers):
+    for sweep in range(4):
+        downward = sweep % 2 == 0
+        for layer_index in sorted(layers, reverse=not downward):
             members = layers[layer_index]
 
             def sort_key(node_id: str) -> tuple:
-                preds = predecessors[node_id]
+                anchors = (
+                    predecessors[node_id] if downward else successors[node_id]
+                )
                 barycenter = (
-                    sum(position.get(pred, 0) for pred in preds) / len(preds)
-                    if preds
+                    sum(position.get(a, 0) for a in anchors) / len(anchors)
+                    if anchors
                     else position.get(node_id, 0)
                 )
                 group_id = node_group.get(node_id)
@@ -1112,62 +1130,10 @@ def expand_node(
     # Marks this expansion as grounded in stage-specific excerpts; older rows
     # lack it and regenerate.
     payload["stage_grounded"] = True
-    # Stamped before the composition attempt, deliberately: a compose failure
-    # below stores scene=None but still records that this schema version was
-    # tried, so a stage that keeps failing regenerates once per schema bump
-    # rather than once per click.
-    payload["scene_schema_version"] = SCENE_SCHEMA_VERSION
-
-    # Choreograph this stage from scratch rather than mapping it onto one of a
-    # fixed set of hand-written scenes. A failure here must not cost the user
-    # the explanation they already paid for, so the scene is best-effort and
-    # the renderer falls back to the primitive library when it is absent.
-    # Both generators below describe this one stage, so both get excerpts
-    # chosen for this stage rather than the front of the paper.
-    stage_context = _stage_context(record, node, chunks)
-
-    # The fully dynamic tier: a parametric scene graph the model composes
-    # freely from geometry primitives and keyframe tracks. Best-effort like
-    # the actor scene below; the renderer prefers it and falls back tier by
-    # tier (graph -> actor scene -> primitive library) when absent.
-    try:
-        payload["scene_graph"] = graph_to_dict(
-            compose_scene_graph(
-                stage_label=node.get("label", ""),
-                stage_detail=_string(node.get("detail")) or content.mechanism,
-                algorithm_name=_string(record.get("diagram", {}).get("title"))
-                or _string(record.get("algorithm_name")),
-                domain=domain,
-                context=stage_context,
-                process_steps=payload["process_steps"],
-                worked_example=worked_example,
-                llm=llm,
-            )
-        )
-    except Exception:
-        payload["scene_graph"] = None
-
-    composed_scene = None
-    try:
-        payload["scene"] = scene_to_dict(
-            compose_mechanism_scene(
-                stage_label=node.get("label", ""),
-                stage_detail=_string(node.get("detail")) or content.mechanism,
-                algorithm_name=_string(record.get("diagram", {}).get("title"))
-                or _string(record.get("algorithm_name")),
-                domain=domain,
-                context=stage_context,
-                # The storyboard's own units and numbers, already clamped
-                # above; without them the composer invents a second worked
-                # example and its actors render as featureless shapes.
-                process_steps=payload["process_steps"],
-                worked_example=worked_example,
-                llm=llm,
-            )
-        )
-        composed_scene = payload["scene"]
-    except Exception:
-        payload["scene"] = None
+    # The declarative stage compositions (actor scene, parametric scene graph)
+    # were retired with the theater: stages animate as model-written Three.js
+    # generated by scene_coder from this expansion's text. Nothing visual is
+    # composed here any more.
 
     return upsert_node_expansion(
         viz_id=viz_id,

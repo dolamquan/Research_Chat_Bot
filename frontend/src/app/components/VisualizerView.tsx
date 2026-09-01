@@ -4,26 +4,13 @@ import type {
   WheelEvent as ReactWheelEvent,
 } from "react";
 import {
-  AlertTriangle,
   BookOpen,
   ChevronLeft,
   ChevronRight,
-  Download,
-  GitBranch,
-  Image as ImageIcon,
-  Layers,
-  Loader2,
-  Maximize2,
-  MessagesSquare,
   Pause,
   Play,
-  RefreshCw,
   RotateCcw,
-  Search,
-  ShieldCheck,
   Sparkles,
-  Trash2,
-  Workflow,
   X,
 } from "lucide-react";
 
@@ -35,9 +22,11 @@ import {
   discussChange,
   expandVisualizationNode,
   generateAlgorithmScene,
+  generateStageScene,
   generateVisualization,
   getAlgorithmScene,
   getArticles,
+  getStageScenes,
   getDiscussion,
   getMissingBackendRoutes,
   getPreparedStages,
@@ -68,9 +57,13 @@ import {
   primitiveColor,
 } from "./diagramPalette";
 import { buildDiagramDiff, edgeKey } from "./diagramDiff";
-import type { TheaterControl } from "./ProcessTheater";
-import ScenePlayer from "./visualization/ScenePlayer";
-import type { SceneRecord } from "./visualization/sceneTypes";
+import SceneCodePlayer from "./visualization/SceneCodePlayer";
+import SceneFrame from "./visualization/SceneFrame";
+import { checkSceneCode } from "./visualization/sceneRuntime";
+import type {
+  SceneRecord,
+  StageSceneRecord,
+} from "./visualization/sceneTypes";
 import { VariantChat } from "./VariantChat";
 import { VariantPanel } from "./VariantPanel";
 import { VerificationReport } from "./VerificationReport";
@@ -80,6 +73,22 @@ const NODE_W = 180;
 const NODE_H = 48;
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 2.5;
+
+const EDGE_KIND_LIST = [
+  "flow",
+  "data",
+  "residual",
+  "attention",
+  "feedback",
+  "reference",
+] as const;
+
+function edgeWidth(kind: string): number {
+  if (kind === "reference") return 1.1;
+  if (kind === "feedback") return 1.4;
+  if (kind === "flow") return 1.9;
+  return 1.6;
+}
 
 const KIND_OPTIONS: { value: "auto" | DiagramKind; label: string }[] = [
   { value: "auto", label: "Auto-detect" },
@@ -119,10 +128,10 @@ function ExpansionSection({
   if (!children) return null;
   return (
     <div>
-      <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">
+      <div className="mb-1 text-[11px] font-medium text-ivory-500">
         {title}
       </div>
-      <p className="text-xs leading-relaxed text-zinc-300">{children}</p>
+      <p className="text-xs leading-relaxed text-ivory-300">{children}</p>
     </div>
   );
 }
@@ -141,7 +150,6 @@ export function VisualizerView() {
   const [popupOpen, setPopupOpen] = useState(false);
   const [playing3d, setPlaying3d] = useState(false);
   const [tourIndex, setTourIndex] = useState<number | null>(null);
-  const [stepIndex, setStepIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [preparedIds, setPreparedIds] = useState<Set<string>>(new Set());
   // Storyboards for every prepared stage, so each 3D chassis can be built from
@@ -154,6 +162,19 @@ export function VisualizerView() {
   const [expansion, setExpansion] = useState<NodeExpansion | null>(null);
   const [expansionLoading, setExpansionLoading] = useState(false);
   const [expansionError, setExpansionError] = useState<string | null>(null);
+  // Per-node generated stage scenes (model-written Three.js in a sandbox),
+  // keyed by node id. The classic theater below stays as the fallback tier.
+  const [stageScenes, setStageScenes] = useState<
+    Record<string, StageSceneRecord>
+  >({});
+  const [stageSceneOpen, setStageSceneOpen] = useState(false);
+  const [stageSceneLoading, setStageSceneLoading] = useState(false);
+  const [stageSceneError, setStageSceneError] = useState<string | null>(null);
+  // Nodes whose dynamic scene the user explicitly closed: auto-open skips
+  // them so the tour respects a "show me the classic theater" choice.
+  const stageSceneDismissedRef = useRef<Set<string>>(new Set());
+  // Bumping this rebuilds the dynamic scene from t=0 (the bar's replay button).
+  const [stageRestartToken, setStageRestartToken] = useState(0);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
   // --- variant lab -------------------------------------------------------
   const [variants, setVariants] = useState<AlgorithmVariant[]>([]);
@@ -248,12 +269,6 @@ export function VisualizerView() {
   // screen. Storyboards, variants, verdicts and transcripts are all scoped to
   // it, so each async write is checked against this before it lands.
   const diagramRef = useRef<string | null>(null);
-  const theaterControlRef = useRef<TheaterControl>({
-    paused: false,
-    seekStep: null,
-  });
-  // The theater reads this every frame; opening the deep-dive popup pauses playback.
-  theaterControlRef.current.paused = paused || popupOpen;
   const dragRef = useRef<{
     pointerId: number;
     startClientX: number;
@@ -305,13 +320,6 @@ export function VisualizerView() {
     );
   }, [articles, articleQuery]);
 
-  const nodeById = useMemo(() => {
-    const map = new Map<string, DiagramNode>();
-    for (const node of viz?.diagram.nodes ?? []) map.set(node.id, node);
-    return map;
-  }, [viz]);
-
-
   const activeVariant = activeVariantId
     ? variants.find((item) => item.variant_id === activeVariantId) ?? null
     : null;
@@ -333,6 +341,27 @@ export function VisualizerView() {
   diagramRef.current = activeDiagramId;
   const showDiff = overlayMode === "diff" && diff !== null;
   const diagram = showDiff && diff ? diff.merged : variantDiagram;
+  // Endpoint lookup must come from the diagram actually on screen: a variant
+  // is re-laid-out on apply, so baseline coordinates would anchor its edges
+  // to where nodes *used* to be (and drop edges to newly added nodes).
+  const nodeById = useMemo(() => {
+    const map = new Map<string, DiagramNode>();
+    for (const node of diagram?.nodes ?? []) map.set(node.id, node);
+    return map;
+  }, [diagram]);
+  // Fixed side lane per back edge so parallel feedback arcs don't overlap.
+  const backLanes = useMemo(() => {
+    let lane = 0;
+    return (diagram?.edges ?? []).map((edge) => (edge.back ? lane++ : -1));
+  }, [diagram]);
+  // Legend for the 2D canvas, limited to the kinds this diagram actually uses.
+  const legend2d = useMemo(
+    () => ({
+      nodeKinds: [...new Set((diagram?.nodes ?? []).map((node) => node.kind))],
+      edgeKinds: [...new Set((diagram?.edges ?? []).map((edge) => edge.kind))],
+    }),
+    [diagram],
+  );
   const highlightNodeIds = useMemo(
     () => (hoverOpTarget ? [hoverOpTarget] : findingNodeIds),
     [hoverOpTarget, findingNodeIds],
@@ -340,16 +369,18 @@ export function VisualizerView() {
 
   const fitView = useCallback(
     (target?: PaperVisualization | null) => {
-      const diagram = (target ?? viz)?.diagram;
+      // Without an explicit target, fit whatever is on screen — the active
+      // variant (or diff with its ghosts), not the baseline diagram.
+      const view = target?.diagram ?? diagram;
       const svg = svgRef.current;
-      if (!diagram || !svg || diagram.nodes.length === 0) return;
-      const xs = diagram.nodes.map((node) => node.x);
-      const ys = diagram.nodes.map((node) => node.y);
+      if (!view || !svg || view.nodes.length === 0) return;
+      const xs = view.nodes.map((node) => node.x);
+      const ys = view.nodes.map((node) => node.y);
       let minX = Math.min(...xs) - NODE_W / 2;
       let maxX = Math.max(...xs) + NODE_W / 2;
       let minY = Math.min(...ys) - NODE_H / 2;
       let maxY = Math.max(...ys) + NODE_H / 2;
-      for (const group of diagram.groups) {
+      for (const group of view.groups) {
         minX = Math.min(minX, group.x);
         maxX = Math.max(maxX, group.x + group.w);
         minY = Math.min(minY, group.y);
@@ -373,7 +404,7 @@ export function VisualizerView() {
         scale,
       });
     },
-    [viz],
+    [diagram],
   );
 
   const loadSaved = useCallback((article: Article) => {
@@ -436,9 +467,7 @@ export function VisualizerView() {
     setPopupOpen(false);
     setPlaying3d(false);
     setTourIndex(null);
-    setStepIndex(0);
     setPaused(false);
-    theaterControlRef.current.seekStep = null;
     setExpansion(null);
     setExpansionLoading(false);
     setExpansionError(null);
@@ -765,7 +794,13 @@ export function VisualizerView() {
   async function prepareAllStages() {
     if (!viz || prepareDone !== null) return;
     const nodes = activeVariant?.diagram.nodes ?? viz.diagram.nodes;
-    const pending = nodes.filter((node) => !preparedIds.has(node.id));
+    // A stage is fully prepared when it has BOTH its expansion (storyboard +
+    // deep-dive text) and its generated dynamic scene. Preparing writes the
+    // scene right after the expansion, so the scene coder can use the fresh
+    // mechanism text as source material.
+    const pending = nodes.filter(
+      (node) => !preparedIds.has(node.id) || !stageScenes[node.id],
+    );
     if (pending.length === 0) return;
 
     prepareAbortRef.current = false;
@@ -773,7 +808,7 @@ export function VisualizerView() {
     setPrepareTotal(pending.length);
     setPrepareDone(0);
 
-    const CONCURRENCY = 3;
+    const CONCURRENCY = 5;
     let cursor = 0;
     let completed = 0;
 
@@ -781,16 +816,29 @@ export function VisualizerView() {
       while (cursor < pending.length && !prepareAbortRef.current) {
         const node = pending[cursor++];
         try {
-          const response = await expandVisualizationNode({
-            vizId: targetDiagramId ?? viz.viz_id,
-            nodeId: node.id,
-          });
-          // Storyboards are per-diagram; drop late arrivals for an old one.
-          if (diagramRef.current !== targetDiagramId) return;
-          setPreparedIds((current) => new Set(current).add(node.id));
-          const steps = response.expansion.content.process_steps;
-          if (steps && steps.length > 0) {
-            setStoryboards((current) => ({ ...current, [node.id]: steps }));
+          if (!preparedIds.has(node.id)) {
+            const response = await expandVisualizationNode({
+              vizId: targetDiagramId ?? viz.viz_id,
+              nodeId: node.id,
+            });
+            // Storyboards are per-diagram; drop late arrivals for an old one.
+            if (diagramRef.current !== targetDiagramId) return;
+            setPreparedIds((current) => new Set(current).add(node.id));
+            const steps = response.expansion.content.process_steps;
+            if (steps && steps.length > 0) {
+              setStoryboards((current) => ({ ...current, [node.id]: steps }));
+            }
+          }
+          if (!prepareAbortRef.current && !stageScenes[node.id]) {
+            const sceneResponse = await generateStageScene({
+              vizId: targetDiagramId ?? viz.viz_id,
+              nodeId: node.id,
+            });
+            if (diagramRef.current !== targetDiagramId) return;
+            setStageScenes((current) => ({
+              ...current,
+              [node.id]: sceneResponse.stage_scene,
+            }));
           }
         } catch {
           // A failed stage stays unprepared; it retries on demand when played.
@@ -826,11 +874,17 @@ export function VisualizerView() {
     setSelectedNode(node);
     setPopupOpen(false);
     setPlaying3d(true);
-    setStepIndex(0);
     setPaused(false);
-    theaterControlRef.current.seekStep = null;
     setTourIndex(viaTourIndex);
     loadExpansion(node);
+    // The stage IS its dynamic scene now: write one on focus if none exists.
+    if (
+      !stageScenes[node.id] &&
+      !stageSceneLoading &&
+      !stageSceneDismissedRef.current.has(node.id)
+    ) {
+      void requestStageScene(node);
+    }
     // Warm the server cache for the next stage while this one plays.
     if (viaTourIndex !== null && viaTourIndex + 1 < tourOrder.length) {
       expandVisualizationNode({
@@ -858,16 +912,6 @@ export function VisualizerView() {
     focusAndPlay(tourOrder[next], tourIndex !== null ? next : null);
   }
 
-  function handlePlaybackComplete() {
-    if (tourIndex === null) return;
-    const next = tourIndex + 1;
-    if (next < tourOrder.length) {
-      focusAndPlay(tourOrder[next], next);
-    } else {
-      closeNodePopup(); // tour finished
-    }
-  }
-
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
@@ -883,41 +927,89 @@ export function VisualizerView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [popupOpen, playing3d]);
 
-  // The paper-specific animation for the focused node, when one was composed.
-  const processScene = useMemo(() => {
-    if (!expansion || !selectedNode || expansion.node_id !== selectedNode.id) {
-      return null;
-    }
-    return expansion.content.scene ?? null;
-  }, [expansion, selectedNode]);
+  // Stored stage scenes for the active diagram, so the Sparkles toggle knows
+  // instantly which nodes can already play dynamically.
+  useEffect(() => {
+    const vizId = activeDiagramId ?? viz?.viz_id;
+    setStageScenes({});
+    setStageSceneOpen(false);
+    setStageSceneError(null);
+    stageSceneDismissedRef.current = new Set();
+    if (!vizId) return;
+    let live = true;
+    getStageScenes(vizId)
+      .then((response) => {
+        if (!live) return;
+        setStageScenes(
+          Object.fromEntries(
+            response.stage_scenes.map((record) => [record.node_id, record]),
+          ),
+        );
+      })
+      .catch(() => {
+        // Non-fatal: the theater still plays; generation can rebuild the map.
+      });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDiagramId, viz?.viz_id]);
 
-  // The fully dynamic tier: a parametric scene graph, preferred over the
-  // actor scene by the renderer when present.
-  const processGraph = useMemo(() => {
-    if (!expansion || !selectedNode || expansion.node_id !== selectedNode.id) {
-      return null;
-    }
-    return expansion.content.scene_graph ?? null;
-  }, [expansion, selectedNode]);
+  // The dynamic scene is the primary stage experience: it opens by itself
+  // whenever the focused stage has one — including the moment prepare
+  // finishes writing it — unless the user closed it for that node. Stages
+  // without a scene fall back to the classic theater quietly.
+  useEffect(() => {
+    setStageSceneError(null);
+    setStageSceneOpen(
+      selectedNode !== null &&
+        Boolean(stageScenes[selectedNode.id]) &&
+        !stageSceneDismissedRef.current.has(selectedNode.id),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNode?.id, stageScenes]);
 
-  // Storyboard for the focused node; falls back to narrated substeps.
-  const processSteps = useMemo(() => {
-    if (!expansion || !selectedNode || expansion.node_id !== selectedNode.id) {
-      return null;
+  function dismissStageScene(nodeId: string) {
+    stageSceneDismissedRef.current.add(nodeId);
+    setStageSceneOpen(false);
+  }
+
+  // The scene playing on stage, re-checked against the code contract before
+  // it is ever mounted; a record that fails falls back to the theater.
+  const activeStageScene = useMemo(() => {
+    if (!selectedNode) return null;
+    const record = stageScenes[selectedNode.id];
+    if (!record) return null;
+    return checkSceneCode(record.scene.code).length === 0 ? record : null;
+  }, [selectedNode, stageScenes]);
+  const stageSceneShowing =
+    playing3d && viewMode === "3d" && stageSceneOpen && activeStageScene !== null;
+
+  async function requestStageScene(node: DiagramNode, force = false) {
+    const vizId = activeDiagramId ?? viz?.viz_id;
+    if (!vizId) return;
+    setStageSceneLoading(true);
+    setStageSceneError(null);
+    try {
+      const response = await generateStageScene({
+        vizId,
+        nodeId: node.id,
+        force,
+      });
+      setStageScenes((current) => ({
+        ...current,
+        [node.id]: response.stage_scene,
+      }));
+      stageSceneDismissedRef.current.delete(node.id);
+      setStageSceneOpen(true);
+    } catch (error) {
+      setStageSceneError(
+        error instanceof Error ? error.message : "Stage generation failed.",
+      );
+    } finally {
+      setStageSceneLoading(false);
     }
-    const steps = expansion.content.process_steps ?? [];
-    if (steps.length > 0) return steps;
-    return expansion.content.substeps.map((substep) => ({
-      primitive: "note",
-      caption: `${substep.label}: ${substep.detail}`,
-      items: [],
-      values: [],
-      count: 0,
-      label_in: "",
-      label_out: "",
-      detail: "",
-    }));
-  }, [expansion, selectedNode]);
+  }
 
   // The SVG is unmounted while in 3D mode, so re-fit it when switching back.
   useEffect(() => {
@@ -1014,22 +1106,39 @@ export function VisualizerView() {
     source: DiagramNode,
     target: DiagramNode,
     back: boolean,
-  ): string {
+    lane = 0,
+  ): { d: string; labelX: number; labelY: number } {
     if (back) {
-      // Route feedback edges around the side.
+      // Route feedback edges around the side, one lane per edge so parallel
+      // feedback arcs stay distinguishable.
       const startX = source.x + NODE_W / 2;
       const startY = source.y;
       const endX = target.x + NODE_W / 2;
       const endY = target.y;
-      const bulge = Math.max(startX, endX) + 90;
-      return `M ${startX} ${startY} C ${bulge} ${startY}, ${bulge} ${endY}, ${endX} ${endY}`;
+      const bulge = Math.max(startX, endX) + 90 + Math.max(0, lane) * 40;
+      return {
+        d: `M ${startX} ${startY} C ${bulge} ${startY}, ${bulge} ${endY}, ${endX} ${endY}`,
+        labelX: bulge + 6,
+        labelY: (startY + endY) / 2,
+      };
     }
     const startX = source.x;
     const startY = source.y + NODE_H / 2;
     const endX = target.x;
     const endY = target.y - NODE_H / 2;
     const bend = Math.max(24, (endY - startY) / 2);
-    return `M ${startX} ${startY} C ${startX} ${startY + bend}, ${endX} ${endY - bend}, ${endX} ${endY}`;
+    // An edge that skips rows within the same column would run straight
+    // through the nodes between; bow it sideways instead.
+    const span = Math.abs((target.layer ?? 0) - (source.layer ?? 0));
+    const bow =
+      span > 1 && Math.abs(endX - startX) < NODE_W
+        ? (NODE_W / 2 + 46) * (source.x <= target.x ? 1 : -1)
+        : 0;
+    return {
+      d: `M ${startX} ${startY} C ${startX + bow} ${startY + bend}, ${endX + bow} ${endY - bend}, ${endX} ${endY}`,
+      labelX: (startX + endX) / 2 + (bow ? bow * 0.75 : 0) + 8,
+      labelY: (startY + endY) / 2,
+    };
   }
 
   function exportSvg() {
@@ -1070,7 +1179,7 @@ export function VisualizerView() {
       canvas.height = Math.round(rect.height * 2);
       const context = canvas.getContext("2d");
       if (!context) return;
-      context.fillStyle = "#191919";
+      context.fillStyle = "#0b0b0b";
       context.fillRect(0, 0, canvas.width, canvas.height);
       context.drawImage(image, 0, 0, canvas.width, canvas.height);
       canvas.toBlob((blob) => {
@@ -1098,24 +1207,23 @@ export function VisualizerView() {
 
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#191919] text-zinc-200">
+    <div className="flex h-full min-h-0 flex-col bg-desk-950 text-ivory-100">
       {staleRoutes.length > 0 && (
-        <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-amber-800/70 bg-amber-950/60 px-4 py-2">
-          <span className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-widest text-amber-300">
-            <AlertTriangle className="h-3.5 w-3.5" />
+        <div className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1 bg-desk-900 px-4 py-2">
+          <span className="text-xs font-medium text-pen-amber">
             Backend is running older code
           </span>
-          <span className="text-xs text-amber-100/90">
+          <span className="text-xs text-ivory-300">
             {staleRoutes.length} endpoint
             {staleRoutes.length === 1 ? "" : "s"} this view needs
             {staleRoutes.length === 1 ? " is" : " are"} missing, so those
             actions fail with <span className="font-mono">Not Found</span>.
           </span>
-          <code className="rounded bg-black/50 px-2 py-0.5 font-mono text-[10px] text-amber-200">
+          <code className="rounded bg-desk-850 px-2 py-0.5 font-mono text-[10px] text-ivory-300">
             .\restart-backend.ps1
           </code>
           <span
-            className="font-mono text-[9px] text-amber-200/50"
+            className="font-mono text-[9px] text-ivory-700"
             title={staleRoutes.join("\n")}
           >
             {staleRoutes.join("  ")}
@@ -1124,31 +1232,29 @@ export function VisualizerView() {
       )}
       <div className="flex min-h-0 flex-1">
       {/* Left rail: paper picker + controls */}
-      <div className="flex w-72 shrink-0 flex-col border-r border-zinc-800">
-        <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
-          <Workflow className="h-4 w-4 text-teal-300" />
-          <span className="text-sm font-medium">Algorithm Visualizer</span>
+      <div className="flex w-72 shrink-0 flex-col bg-desk-900">
+        <div className="px-4 pb-2 pt-4">
+          <span className="text-sm font-semibold text-ivory-100">
+            Algorithm Visualizer
+          </span>
         </div>
 
-        <div className="border-b border-zinc-800 p-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-3.5 w-3.5 text-zinc-500" />
-            <input
-              value={articleQuery}
-              onChange={(event) => setArticleQuery(event.target.value)}
-              placeholder="Search papers…"
-              className="w-full rounded-md border border-zinc-800 bg-zinc-900 py-1.5 pl-8 pr-2 text-xs text-zinc-200 placeholder:text-zinc-500 focus:border-teal-500/60 focus:outline-none"
-            />
-          </div>
+        <div className="px-3 pb-3">
+          <input
+            value={articleQuery}
+            onChange={(event) => setArticleQuery(event.target.value)}
+            placeholder="Search papers…"
+            className="w-full rounded bg-desk-850 px-2.5 py-1.5 text-xs text-ivory-100 placeholder:text-ivory-700 focus:outline-none"
+          />
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {articlesLoading ? (
-            <div className="flex items-center gap-2 px-4 py-3 text-xs text-zinc-500">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading papers…
+            <div className="animate-pulse px-4 py-3 text-xs text-ivory-500">
+              Loading papers…
             </div>
           ) : filteredArticles.length === 0 ? (
-            <div className="px-4 py-3 text-xs text-zinc-500">
+            <div className="px-4 py-3 text-xs text-ivory-500">
               No indexed papers found.
             </div>
           ) : (
@@ -1156,14 +1262,14 @@ export function VisualizerView() {
               <button
                 key={article.article_id}
                 onClick={() => selectArticle(article)}
-                className={`block w-full border-b border-zinc-800/60 px-4 py-2.5 text-left text-xs leading-snug transition-colors ${
+                className={`block w-full px-4 py-2.5 text-left text-xs leading-snug ${
                   selectedArticle?.article_id === article.article_id
-                    ? "bg-teal-500/10 text-teal-100"
-                    : "text-zinc-300 hover:bg-zinc-800/60"
+                    ? "bg-desk-800 text-ivory-100"
+                    : "text-ivory-300 hover:bg-desk-850"
                 }`}
               >
                 <span className="line-clamp-2">{article.title}</span>
-                <span className="mt-0.5 block text-[10px] uppercase tracking-wide text-zinc-500">
+                <span className="mt-0.5 block text-[10px] text-ivory-700">
                   {article.domain}
                 </span>
               </button>
@@ -1171,8 +1277,8 @@ export function VisualizerView() {
           )}
         </div>
 
-        <div className="border-t border-zinc-800 p-3">
-          <label className="mb-1 block text-[10px] uppercase tracking-wide text-zinc-500">
+        <div className="p-3">
+          <label className="mb-1 block text-[11px] font-medium text-ivory-500">
             Diagram kind
           </label>
           <select
@@ -1180,7 +1286,7 @@ export function VisualizerView() {
             onChange={(event) =>
               setKind(event.target.value as "auto" | DiagramKind)
             }
-            className="mb-2 w-full rounded-md border border-zinc-800 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 focus:border-teal-500/60 focus:outline-none"
+            className="mb-2 w-full rounded bg-desk-850 px-2 py-1.5 text-xs text-ivory-100 focus:outline-none"
           >
             {KIND_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
@@ -1192,51 +1298,46 @@ export function VisualizerView() {
             <button
               onClick={() => handleGenerate(false)}
               disabled={!selectedArticle || generating}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-teal-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-40"
+              className="flex-1 rounded bg-accent-400 px-3 py-1.5 text-xs font-medium text-desk-950 hover:bg-accent-300 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {generating ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Workflow className="h-3.5 w-3.5" />
-              )}
-              Generate
+              {generating ? "Generating…" : "Generate"}
             </button>
             <button
               onClick={() => handleGenerate(true)}
               disabled={!selectedArticle || generating || !viz}
               title="Regenerate (discard saved diagram)"
-              className="flex items-center justify-center rounded-md border border-zinc-700 px-2.5 py-1.5 text-zinc-300 transition-colors hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+              className="rounded px-2.5 py-1.5 text-xs text-ivory-500 hover:bg-desk-850 hover:text-ivory-100 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              Redo
             </button>
           </div>
 
           {saved.length > 0 && (
             <div className="mt-3">
-              <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">
+              <div className="mb-1 text-[11px] font-medium text-ivory-500">
                 Saved diagrams
               </div>
               {saved.map((record) => (
                 <div
                   key={record.viz_id}
-                  className={`mb-1 flex items-center gap-1 rounded-md border px-2 py-1 text-xs ${
+                  className={`mb-0.5 flex items-center gap-1 rounded px-2 py-1 text-xs ${
                     viz?.viz_id === record.viz_id
-                      ? "border-teal-500/50 bg-teal-500/10"
-                      : "border-zinc-800 hover:bg-zinc-800/60"
+                      ? "bg-desk-800 text-ivory-100"
+                      : "text-ivory-300 hover:bg-desk-850"
                   }`}
                 >
                   <button
                     onClick={() => showVisualization(record)}
-                    className="flex-1 truncate text-left capitalize text-zinc-300"
+                    className="flex-1 truncate text-left capitalize"
                   >
                     {formatKind(record.diagram_kind)}
                   </button>
                   <button
                     onClick={() => handleDelete(record)}
                     title="Delete"
-                    className="text-zinc-500 transition-colors hover:text-red-400"
+                    className="px-1 text-ivory-700 hover:text-pen-red"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    ✕
                   </button>
                 </div>
               ))}
@@ -1254,16 +1355,11 @@ export function VisualizerView() {
               diagram={diagram}
               selectedNodeId={selectedNode?.id ?? null}
               focusNodeId={playing3d ? selectedNode?.id ?? null : null}
-              processSteps={playing3d ? processSteps : null}
-              processScene={playing3d ? processScene : null}
-              processGraph={playing3d ? processGraph : null}
               storyboards={storyboards}
               diffStates={showDiff ? (diff?.nodeState as Record<string, DiffState>) : undefined}
               edgeDiffStates={showDiff ? (diff?.edgeState as Record<string, DiffState>) : undefined}
               highlightNodeIds={highlightNodeIds}
               dimUnchanged={showDiff && dimUnchanged}
-              loopPlayback={tourIndex === null}
-              theaterControl={theaterControlRef}
               onNodeClick={handle3dNodeClick}
               onCanvasReady={(canvas) => {
                 canvas3dRef.current = canvas;
@@ -1271,8 +1367,6 @@ export function VisualizerView() {
               onPointerMissed={() => {
                 if (playing3d && !popupOpen) closeNodePopup();
               }}
-              onStepChange={setStepIndex}
-              onPlaybackComplete={handlePlaybackComplete}
             />
           </div>
         ) : (
@@ -1287,15 +1381,46 @@ export function VisualizerView() {
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
         >
-          <rect width="100%" height="100%" fill="#191919" />
+          <rect width="100%" height="100%" fill="#0b0b0b" />
           <defs>
+            {/* Blueprint dot grid, anchored to graph space so it pans and zooms with the diagram. */}
+            <pattern
+              id="viz-grid"
+              width={28}
+              height={28}
+              patternUnits="userSpaceOnUse"
+              patternTransform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}
+            >
+              <circle cx={1.4} cy={1.4} r={1.1} fill="#202024" />
+            </pattern>
+            <linearGradient id="viz-node-fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#26262b" />
+              <stop offset="1" stopColor="#19191c" />
+            </linearGradient>
+            <linearGradient id="viz-node-fill-selected" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#134e4a" />
+              <stop offset="1" stopColor="#0f3733" />
+            </linearGradient>
+            <filter id="viz-node-shadow" x="-30%" y="-30%" width="160%" height="180%">
+              <feDropShadow
+                dx="0"
+                dy="2.5"
+                stdDeviation="4"
+                floodColor="#000000"
+                floodOpacity="0.5"
+              />
+            </filter>
             {(
               [
                 ["viz-arrow", "#8b8b93"],
                 ["viz-arrow-added", "#34d399"],
                 ["viz-arrow-removed", "#fb7185"],
                 ["viz-arrow-changed", "#fbbf24"],
-              ] as const
+                // One arrowhead per edge kind, matching its stroke.
+                ...EDGE_KIND_LIST.map(
+                  (kind) => [`viz-arrow-k-${kind}`, edgeStroke(kind)] as const,
+                ),
+              ] as readonly (readonly [string, string])[]
             ).map(([id, fill]) => (
               <marker
                 key={id}
@@ -1311,6 +1436,7 @@ export function VisualizerView() {
               </marker>
             ))}
           </defs>
+          <rect width="100%" height="100%" fill="url(#viz-grid)" />
           <g
             transform={`translate(${viewport.x} ${viewport.y}) scale(${viewport.scale})`}
           >
@@ -1321,22 +1447,44 @@ export function VisualizerView() {
                   y={group.y}
                   width={group.w}
                   height={group.h}
-                  rx={12}
-                  fill="#27272a"
-                  fillOpacity={0.45}
-                  stroke="#3f3f46"
+                  rx={14}
+                  fill="#141417"
+                  fillOpacity={0.55}
+                  stroke="#35353c"
                   strokeDasharray="6 4"
                 />
                 <text
-                  x={group.x + 12}
-                  y={group.y + 19}
-                  fontSize={12}
-                  fill="#a1a1aa"
+                  x={group.x + 14}
+                  y={group.y + 20}
+                  fontSize={11.5}
+                  letterSpacing={0.6}
+                  fill="#b6b6be"
                   fontWeight={600}
                 >
-                  {group.label}
-                  {group.repeat ? `  ·  ${group.repeat}` : ""}
+                  {group.label.toUpperCase()}
                 </text>
+                {group.repeat && (
+                  <>
+                    <rect
+                      x={group.x + group.w - 14 - group.repeat.length * 6.4 - 14}
+                      y={group.y + 8}
+                      width={group.repeat.length * 6.4 + 14}
+                      height={17}
+                      rx={8.5}
+                      fill="#1e1e23"
+                      stroke="#3c3c44"
+                    />
+                    <text
+                      x={group.x + group.w - 14 - (group.repeat.length * 6.4 + 14) / 2}
+                      y={group.y + 20}
+                      fontSize={10}
+                      textAnchor="middle"
+                      fill="#9a9aa4"
+                    >
+                      {group.repeat}
+                    </text>
+                  </>
+                )}
               </g>
             ))}
 
@@ -1353,19 +1501,21 @@ export function VisualizerView() {
                 edge.kind === "reference" ||
                 edge.back ||
                 edgeDiff === "removed";
-              const path = edgePath(source, target, edge.back);
-              const midX = (source.x + target.x) / 2;
-              const midY = (source.y + target.y) / 2;
+              const path = edgePath(source, target, edge.back, backLanes[index]);
               return (
                 <g key={`${edge.source}-${edge.target}-${index}`}>
                   <path
-                    d={path}
+                    d={path.d}
                     fill="none"
                     stroke={stroke}
-                    strokeWidth={1.6}
+                    strokeWidth={edgeWidth(edge.kind)}
                     strokeDasharray={dashed ? "6 4" : undefined}
                     markerEnd={`url(#viz-arrow${
-                      edgeDiff && edgeDiff !== "unchanged" ? `-${edgeDiff}` : ""
+                      edgeDiff && edgeDiff !== "unchanged"
+                        ? `-${edgeDiff}`
+                        : (EDGE_KIND_LIST as readonly string[]).includes(edge.kind)
+                          ? `-k-${edge.kind}`
+                          : ""
                     })`}
                     opacity={
                       edgeDiff === "removed"
@@ -1377,10 +1527,13 @@ export function VisualizerView() {
                   />
                   {edge.label && (
                     <text
-                      x={edge.back ? Math.max(source.x, target.x) + NODE_W / 2 + 96 : midX + 8}
-                      y={midY}
+                      x={path.labelX}
+                      y={path.labelY}
                       fontSize={10.5}
-                      fill="#a1a1aa"
+                      fill="#9a9a9a"
+                      stroke="#0b0b0b"
+                      strokeWidth={3.5}
+                      paintOrder="stroke"
                     >
                       {edge.label}
                     </text>
@@ -1416,7 +1569,7 @@ export function VisualizerView() {
                       height={NODE_H + 8}
                       rx={pill ? NODE_H / 2 + 4 : 12}
                       fill="none"
-                      stroke={highlighted ? "#fbbf24" : (tint as string)}
+                      stroke={highlighted ? "#ffffff" : (tint as string)}
                       strokeWidth={highlighted ? 2.4 : 2}
                       strokeDasharray={ghost ? "5 4" : undefined}
                     />
@@ -1427,18 +1580,49 @@ export function VisualizerView() {
                     width={NODE_W}
                     height={NODE_H}
                     rx={pill ? NODE_H / 2 : 8}
-                    fill={ghost ? "#1f1f22" : isSelected ? "#134e4a" : "#27272a"}
+                    fill={
+                      ghost
+                        ? "#141414"
+                        : isSelected
+                          ? "url(#viz-node-fill-selected)"
+                          : "url(#viz-node-fill)"
+                    }
                     stroke={stroke}
                     strokeWidth={isSelected ? 2.2 : 1.4}
                     strokeDasharray={ghost ? "5 4" : undefined}
+                    filter={ghost ? undefined : "url(#viz-node-shadow)"}
                   />
+                  {!pill && !ghost && (
+                    <rect
+                      x={node.x - NODE_W / 2 + 6}
+                      y={node.y - NODE_H / 2 + 7}
+                      width={3}
+                      height={NODE_H - 14}
+                      rx={1.5}
+                      fill={stroke}
+                      opacity={0.9}
+                    />
+                  )}
+                  <text
+                    x={node.x - NODE_W / 2 + (pill ? 16 : 2)}
+                    y={node.y - NODE_H / 2 - 6}
+                    fontSize={7.5}
+                    letterSpacing={1.2}
+                    fill={stroke}
+                    opacity={0.7}
+                    stroke="#0b0b0b"
+                    strokeWidth={2.5}
+                    paintOrder="stroke"
+                  >
+                    {formatKind(node.kind).toUpperCase()}
+                  </text>
                   {tint && (
                     <>
                       <circle
                         cx={node.x + NODE_W / 2 + 4}
                         cy={node.y - NODE_H / 2 - 4}
                         r={7}
-                        fill="#18181b"
+                        fill="#141414"
                         stroke={tint as string}
                         strokeWidth={1.2}
                       />
@@ -1468,7 +1652,7 @@ export function VisualizerView() {
                       }
                       fontSize={12}
                       textAnchor="middle"
-                      fill={ghost ? "#a1a1aa" : "#e4e4e7"}
+                      fill={ghost ? "#9a9a9a" : "#f2f2f2"}
                       textDecoration={ghost ? "line-through" : undefined}
                     >
                       {line}
@@ -1481,20 +1665,51 @@ export function VisualizerView() {
         </svg>
         )}
 
+        {/* Key for node and edge kinds, limited to what this diagram uses */}
+        {viz && diagram && viewMode === "2d" && (
+          <div className="pointer-events-none absolute bottom-3 left-3 z-10 max-w-sm rounded bg-desk-850/95 px-3 py-2">
+            <div className="flex flex-wrap gap-x-3 gap-y-1">
+              {legend2d.nodeKinds.map((kind) => (
+                <span
+                  key={`node-${kind}`}
+                  className="flex items-center gap-1.5 text-[10px] text-ivory-300"
+                >
+                  <span
+                    className="inline-block h-2 w-2 rounded-sm"
+                    style={{ backgroundColor: nodeStroke(kind) }}
+                  />
+                  {formatKind(kind)}
+                </span>
+              ))}
+              {legend2d.edgeKinds.map((kind) => (
+                <span
+                  key={`edge-${kind}`}
+                  className="flex items-center gap-1.5 text-[10px] text-ivory-300"
+                >
+                  <span
+                    className="inline-block h-0.5 w-3.5 rounded-full"
+                    style={{ backgroundColor: edgeStroke(kind) }}
+                  />
+                  {formatKind(kind)}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Canvas toolbar */}
         {viz && (
           <div className="absolute right-3 top-3 flex gap-1.5">
             {viewMode === "3d" && !playing3d && (
               <>
                 {prepareDone !== null ? (
-                  <div className="flex items-center gap-2 rounded-md border border-zinc-700 bg-zinc-900/90 px-2.5 py-1.5 text-xs text-zinc-300">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-300" />
-                    <span>
+                  <div className="flex items-center gap-2 rounded bg-desk-850/95 px-2.5 py-1.5 text-xs text-ivory-300">
+                    <span className="animate-pulse">
                       Preparing {prepareDone}/{prepareTotal}
                     </span>
-                    <span className="h-1 w-16 overflow-hidden rounded-full bg-zinc-700">
+                    <span className="h-1 w-16 overflow-hidden rounded-full bg-desk-700">
                       <span
-                        className="block h-full rounded-full bg-teal-400 transition-all"
+                        className="block h-full rounded-full bg-accent-400 transition-all"
                         style={{
                           width: `${prepareTotal ? (prepareDone / prepareTotal) * 100 : 0}%`,
                         }}
@@ -1506,11 +1721,10 @@ export function VisualizerView() {
                     <button
                       onClick={() => void prepareAllStages()}
                       title="Generate every stage's storyboard now so the walkthrough never stalls"
-                      className="flex items-center gap-1.5 rounded-md border border-zinc-700 bg-zinc-900/90 px-2.5 py-1.5 text-xs font-medium text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-teal-200"
+                      className="flex items-center gap-1.5 rounded bg-desk-850/95 px-2.5 py-1.5 text-xs font-medium text-ivory-300 hover:bg-desk-800 hover:text-accent-300"
                     >
-                      <Sparkles className="h-3.5 w-3.5" />
                       Prepare all
-                      <span className="text-[10px] text-zinc-500">
+                      <span className="text-[10px] text-ivory-700">
                         {viz.diagram.nodes.length - unpreparedCount}/
                         {viz.diagram.nodes.length}
                       </span>
@@ -1520,7 +1734,7 @@ export function VisualizerView() {
                 <button
                   onClick={startTour}
                   title="Play a guided walkthrough of every stage"
-                  className="flex items-center gap-1.5 rounded-md border border-teal-700 bg-teal-600/20 px-2.5 py-1.5 text-xs font-medium text-teal-200 transition-colors hover:bg-teal-600/40"
+                  className="flex items-center gap-1.5 rounded bg-accent-400 px-2.5 py-1.5 text-xs font-medium text-desk-950 hover:bg-accent-300"
                 >
                   <Play className="h-3.5 w-3.5" />
                   Walkthrough
@@ -1533,17 +1747,16 @@ export function VisualizerView() {
                   setOverlayMode((current) => (current === "diff" ? "none" : "diff"))
                 }
                 title="Highlight what this variant changed"
-                className={`flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors ${
+                className={`rounded px-2.5 py-1.5 text-xs font-medium ${
                   showDiff
-                    ? "border-teal-700 bg-teal-600/20 text-teal-200"
-                    : "border-zinc-700 bg-zinc-900/90 text-zinc-400 hover:text-zinc-200"
+                    ? "bg-desk-800/95 text-accent-300"
+                    : "bg-desk-850/95 text-ivory-500 hover:text-ivory-100"
                 }`}
               >
-                <Layers className="h-3.5 w-3.5" />
                 Diff
               </button>
             )}
-            <div className="flex overflow-hidden rounded-md border border-zinc-700 bg-zinc-900/90">
+            <div className="flex gap-0.5 rounded bg-desk-850/95 p-0.5">
               {(["2d", "3d"] as const).map((mode) => (
                 <button
                   key={mode}
@@ -1553,10 +1766,10 @@ export function VisualizerView() {
                       closeNodePopup();
                     }
                   }}
-                  className={`px-2.5 py-1.5 text-xs font-medium uppercase transition-colors ${
+                  className={`rounded px-2 py-1 text-xs font-medium uppercase ${
                     viewMode === mode
-                      ? "bg-teal-600 text-white"
-                      : "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+                      ? "bg-desk-700 text-ivory-100"
+                      : "text-ivory-500 hover:text-ivory-300"
                   }`}
                 >
                   {mode}
@@ -1570,41 +1783,40 @@ export function VisualizerView() {
                   : fitView()
               }
               title={viewMode === "3d" ? "Reset camera" : "Fit to view"}
-              className="rounded-md border border-zinc-700 bg-zinc-900/90 p-1.5 text-zinc-300 transition-colors hover:bg-zinc-800"
+              className="rounded bg-desk-850/95 px-2.5 py-1.5 text-xs text-ivory-300 hover:bg-desk-800 hover:text-ivory-100"
             >
-              <Maximize2 className="h-4 w-4" />
+              Fit
             </button>
             {viewMode === "2d" && (
               <button
                 onClick={exportSvg}
                 title="Download SVG"
-                className="rounded-md border border-zinc-700 bg-zinc-900/90 p-1.5 text-zinc-300 transition-colors hover:bg-zinc-800"
+                className="rounded bg-desk-850/95 px-2.5 py-1.5 text-xs text-ivory-300 hover:bg-desk-800 hover:text-ivory-100"
               >
-                <Download className="h-4 w-4" />
+                SVG
               </button>
             )}
             <button
               onClick={exportPng}
               title="Download PNG"
-              className="rounded-md border border-zinc-700 bg-zinc-900/90 p-1.5 text-zinc-300 transition-colors hover:bg-zinc-800"
+              className="rounded bg-desk-850/95 px-2.5 py-1.5 text-xs text-ivory-300 hover:bg-desk-800 hover:text-ivory-100"
             >
-              <ImageIcon className="h-4 w-4" />
+              PNG
             </button>
           </div>
         )}
 
         {/* Status overlays */}
         {generating && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#191919]/70">
-            <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3 text-sm text-zinc-300">
-              <Loader2 className="h-4 w-4 animate-spin text-teal-300" />
+          <div className="absolute inset-0 flex items-center justify-center bg-desk-950/70">
+            <div className="animate-pulse rounded bg-desk-900 px-4 py-3 text-sm text-ivory-300">
               Extracting algorithm structure…
             </div>
           </div>
         )}
         {!viz && !generating && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="max-w-sm text-center text-sm text-zinc-500">
+            <div className="max-w-sm text-center text-sm leading-relaxed text-ivory-500">
               {selectedArticle
                 ? "No diagram yet — click Generate to extract this paper's algorithm."
                 : "Select a paper from the library to visualize its algorithm or architecture."}
@@ -1612,40 +1824,39 @@ export function VisualizerView() {
           </div>
         )}
         {error && (
-          <div className="absolute bottom-3 left-3 right-3 rounded-md border border-red-900/60 bg-red-950/80 px-3 py-2 text-xs text-red-300">
+          <div className="absolute bottom-3 left-3 right-3 rounded bg-desk-900/95 px-3 py-2 text-xs leading-relaxed text-pen-red">
             {error}
           </div>
         )}
 
         {/* Which diagram am I looking at, and what changed in it */}
         {viz && (activeVariant || tree.length > 0) && (
-          <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-md border border-zinc-800 bg-zinc-900/85 px-2 py-1 text-[11px] backdrop-blur-sm">
-            <GitBranch className="h-3 w-3 text-zinc-500" />
+          <div className="absolute left-3 top-3 z-10 flex items-baseline gap-1.5 rounded bg-desk-850/90 px-2.5 py-1 text-[11px] backdrop-blur-sm">
             <button
               onClick={() => handleSelectVariant(null)}
-              className={activeVariant ? "text-zinc-400 hover:text-zinc-200" : "text-teal-200"}
+              className={activeVariant ? "text-ivory-500 hover:text-ivory-100" : "text-accent-300"}
             >
               Original
             </button>
             {activeVariant && (
               <>
-                <span className="text-zinc-600">/</span>
-                <span className="max-w-[16rem] truncate text-teal-200">
+                <span className="text-ivory-700">/</span>
+                <span className="max-w-[16rem] truncate text-accent-300">
                   {activeVariant.variant_title}
                 </span>
               </>
             )}
             {showDiff && diff && (
               <>
-                <span className="text-zinc-600">|</span>
-                <span className="font-mono text-emerald-300">+{diff.counts.added}</span>
-                <span className="font-mono text-amber-300">~{diff.counts.changed}</span>
-                <span className="font-mono text-rose-300">-{diff.counts.removed}</span>
+                <span className="text-ivory-700">·</span>
+                <span className="text-pen-moss">+{diff.counts.added}</span>
+                <span className="text-pen-amber">~{diff.counts.changed}</span>
+                <span className="text-pen-red">−{diff.counts.removed}</span>
                 <button
                   onClick={() => setDimUnchanged((value) => !value)}
                   title="Dim the stages this variant did not touch"
-                  className={`ml-1 rounded px-1 font-mono text-[9px] ${
-                    dimUnchanged ? "bg-teal-600/30 text-teal-200" : "text-zinc-500"
+                  className={`ml-1 rounded px-1 text-[10px] ${
+                    dimUnchanged ? "bg-desk-700 text-accent-300" : "text-ivory-700"
                   }`}
                 >
                   dim
@@ -1657,15 +1868,15 @@ export function VisualizerView() {
 
         {/* Key for the machinery colours, limited to what this paper uses */}
         {viewMode === "3d" && viz && !playing3d && activePrimitives.length > 0 && (
-          <div className="pointer-events-none absolute bottom-4 left-4 max-w-[15rem] rounded-lg border border-zinc-800 bg-zinc-900/80 p-2.5 backdrop-blur-sm">
-            <div className="mb-1.5 text-[9px] uppercase tracking-wide text-zinc-500">
+          <div className="pointer-events-none absolute bottom-4 left-4 max-w-[15rem] rounded bg-desk-900/85 p-2.5 backdrop-blur-sm">
+            <div className="mb-1.5 text-[10px] font-medium text-ivory-500">
               Machinery in this paper
             </div>
             <div className="flex flex-wrap gap-x-2.5 gap-y-1">
               {activePrimitives.map((primitive) => (
                 <span
                   key={primitive}
-                  className="flex items-center gap-1 text-[10px] text-zinc-400"
+                  className="flex items-center gap-1 text-[10px] text-ivory-300"
                 >
                   <span
                     className="inline-block h-2 w-2 rounded-sm"
@@ -1678,22 +1889,43 @@ export function VisualizerView() {
           </div>
         )}
 
+        {/* Dynamic stage scene: model-written Three.js in a sandboxed frame,
+            filling the stage exactly like the theater it replaces. The
+            playback caption bar (z-10) stays on top and drives it: pause
+            pauses it, replay restarts it, ✨/✕ return to the theater. */}
+        {stageSceneShowing && selectedNode && activeStageScene && (
+          <div className="absolute inset-0 z-[5]">
+            <SceneFrame
+              code={activeStageScene.scene.code}
+              title={`${selectedNode.label} — dynamic scene`}
+              playing={!paused}
+              restartToken={stageRestartToken}
+              onError={setStageSceneError}
+            />
+          </div>
+        )}
+
         {/* Process playback caption bar */}
         {playing3d && selectedNode && viewMode === "3d" && (
           <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 w-full max-w-2xl -translate-x-1/2 px-4">
-            <div className="pointer-events-auto rounded-xl border border-zinc-700 bg-zinc-900/95 px-4 py-3 shadow-2xl">
+            <div className="pointer-events-auto rounded-lg bg-desk-900/95 px-4 py-3">
               <div className="mb-1.5 flex items-center justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-2">
                   <span
                     className="inline-block h-2 w-2 shrink-0 rounded-full"
                     style={{ backgroundColor: nodeStroke(selectedNode.kind) }}
                   />
-                  <span className="truncate text-xs font-semibold text-zinc-100">
+                  <span className="truncate text-xs font-semibold text-ivory-100">
                     {selectedNode.label}
                   </span>
                   {tourIndex !== null && (
-                    <span className="shrink-0 text-[10px] text-zinc-500">
+                    <span className="shrink-0 text-[10px] text-ivory-700">
                       stage {tourIndex + 1}/{tourOrder.length}
+                    </span>
+                  )}
+                  {stageSceneShowing && activeStageScene && (
+                    <span className="shrink-0 text-[10px] text-accent-300">
+                      dynamic · {activeStageScene.model}
                     </span>
                   )}
                 </div>
@@ -1701,14 +1933,14 @@ export function VisualizerView() {
                   <button
                     onClick={() => stepStage(-1)}
                     title="Previous stage"
-                    className="rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                    className="rounded p-1 text-ivory-500 hover:bg-desk-800 hover:text-ivory-100"
                   >
                     <ChevronLeft className="h-3.5 w-3.5" />
                   </button>
                   <button
                     onClick={() => setPaused((current) => !current)}
                     title={paused ? "Resume" : "Pause"}
-                    className="rounded p-1 text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-teal-300"
+                    className="rounded p-1 text-ivory-300 hover:bg-desk-800 hover:text-accent-300"
                   >
                     {paused ? (
                       <Play className="h-3.5 w-3.5" />
@@ -1718,89 +1950,99 @@ export function VisualizerView() {
                   </button>
                   <button
                     onClick={() => {
-                      theaterControlRef.current.seekStep = 0;
-                      setStepIndex(0);
                       setPaused(false);
+                      setStageRestartToken((value) => value + 1);
                     }}
                     title="Replay this stage"
-                    className="rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                    className="rounded p-1 text-ivory-500 hover:bg-desk-800 hover:text-ivory-100"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                   </button>
                   <button
                     onClick={() => stepStage(1)}
                     title="Next stage"
-                    className="rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                    className="rounded p-1 text-ivory-500 hover:bg-desk-800 hover:text-ivory-100"
                   >
                     <ChevronRight className="h-3.5 w-3.5" />
                   </button>
                   <button
+                    onClick={(event) => {
+                      if (stageSceneLoading) return;
+                      if (event.shiftKey && stageScenes[selectedNode.id]) {
+                        void requestStageScene(selectedNode, true);
+                        return;
+                      }
+                      if (stageSceneOpen) {
+                        dismissStageScene(selectedNode.id);
+                      } else if (stageScenes[selectedNode.id]) {
+                        stageSceneDismissedRef.current.delete(selectedNode.id);
+                        setStageSceneOpen(true);
+                      } else {
+                        void requestStageScene(selectedNode);
+                      }
+                    }}
+                    title={
+                      stageScenes[selectedNode.id]
+                        ? "Toggle the dynamic scene (Shift-click regenerates it)"
+                        : "Write a dynamic scene for this stage"
+                    }
+                    className={`rounded p-1 hover:bg-desk-800 ${
+                      stageSceneOpen
+                        ? "text-accent-300"
+                        : stageSceneLoading
+                          ? "animate-pulse text-accent-300"
+                          : "text-ivory-500 hover:text-accent-300"
+                    }`}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                  </button>
+                  <button
                     onClick={() => setPopupOpen(true)}
                     title="Read the full deep dive"
-                    className="rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-teal-300"
+                    className="rounded p-1 text-ivory-500 hover:bg-desk-800 hover:text-accent-300"
                   >
                     <BookOpen className="h-3.5 w-3.5" />
                   </button>
                   <button
                     onClick={closeNodePopup}
                     title="Exit playback"
-                    className="rounded p-1 text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-zinc-100"
+                    className="rounded p-1 text-ivory-500 hover:bg-desk-800 hover:text-ivory-100"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </div>
 
+              {stageSceneLoading ? (
+                <div className="animate-pulse py-1 text-xs text-ivory-300">
+                  Writing a dynamic scene for this stage…
+                </div>
+              ) : null}
+              {stageSceneError ? (
+                <div className="py-1 text-xs text-pen-red">{stageSceneError}</div>
+              ) : null}
               {expansionLoading ? (
-                <div className="flex items-center gap-2 py-1 text-xs text-zinc-400">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-teal-300" />
+                <div className="animate-pulse py-1 text-xs text-ivory-300">
                   Reading the paper to storyboard this stage…
                 </div>
               ) : expansionError ? (
-                <div className="py-1 text-xs text-red-300">{expansionError}</div>
-              ) : processSteps && processSteps.length > 0 ? (
-                <>
-                  <p className="text-xs leading-relaxed text-zinc-300">
-                    {processSteps[Math.min(stepIndex, processSteps.length - 1)]
-                      ?.caption ?? ""}
-                  </p>
-                  {processSteps[Math.min(stepIndex, processSteps.length - 1)]
-                    ?.detail && (
-                    <p className="mt-0.5 font-mono text-[11px] text-amber-200/80">
-                      {
-                        processSteps[
-                          Math.min(stepIndex, processSteps.length - 1)
-                        ].detail
-                      }
-                    </p>
-                  )}
-                  {viz.worked_example?.input_text && (
-                    <p className="mt-1 truncate text-[10px] text-zinc-500">
-                      following:{" "}
-                      <span className="font-mono text-zinc-400">
-                        {viz.worked_example.input_text}
-                      </span>
-                    </p>
-                  )}
-                  <div className="mt-2 flex items-center gap-1">
-                    {processSteps.map((step, index) => (
-                      <button
-                        key={index}
-                        onClick={() => {
-                          theaterControlRef.current.seekStep = index;
-                          setStepIndex(index);
-                        }}
-                        title={step.caption}
-                        className={`h-1.5 rounded-full transition-all hover:bg-teal-300 ${
-                          index === stepIndex
-                            ? "w-5 bg-teal-400"
-                            : "w-2.5 bg-zinc-700"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </>
+                <div className="py-1 text-xs text-pen-red">{expansionError}</div>
               ) : null}
+              {!stageSceneShowing && !stageSceneLoading && !stageSceneError ? (
+                <p className="py-1 text-xs leading-relaxed text-ivory-500">
+                  {stageScenes[selectedNode.id]
+                    ? "Dynamic scene closed — press ✨ to reopen it."
+                    : "No dynamic scene yet — press ✨ to write one."}
+                </p>
+              ) : null}
+              {stageSceneShowing && viz.worked_example?.input_text && (
+                <p className="mt-1 truncate text-[10px] text-ivory-700">
+                  following:{" "}
+                  <span className="font-mono text-ivory-500">
+                    {viz.worked_example.input_text}
+                  </span>
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -1815,22 +2057,22 @@ export function VisualizerView() {
             }}
           >
             <div
-              className="flex max-h-full w-full max-w-xl flex-col rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl"
+              className="flex max-h-full w-full max-w-xl flex-col rounded-lg bg-desk-900"
               onClick={(event) => event.stopPropagation()}
             >
-              <div className="flex items-start justify-between gap-3 border-b border-zinc-800 px-5 py-4">
+              <div className="flex items-start justify-between gap-3 border-b border-desk-800 px-5 py-4">
                 <div>
                   <div className="mb-1 flex items-center gap-2">
                     <span
                       className="inline-block h-2.5 w-2.5 rounded-full"
                       style={{ backgroundColor: nodeStroke(selectedNode.kind) }}
                     />
-                    <span className="text-[10px] uppercase tracking-wide text-zinc-500">
+                    <span className="text-[11px] text-ivory-500">
                       {formatKind(selectedNode.kind)}
                       {selectedNode.group ? ` · ${selectedNode.group}` : ""}
                     </span>
                   </div>
-                  <h3 className="text-base font-semibold text-zinc-100">
+                  <h3 className="text-base font-semibold leading-snug text-ivory-100">
                     {selectedNode.label}
                   </h3>
                 </div>
@@ -1840,7 +2082,7 @@ export function VisualizerView() {
                     if (!playing3d) closeNodePopup();
                   }}
                   title="Close"
-                  className="rounded-md p-1 text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-200"
+                  className="rounded p-1 text-ivory-500 hover:bg-desk-800 hover:text-ivory-100"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -1848,17 +2090,17 @@ export function VisualizerView() {
 
               <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
                 {selectedNode.detail && (
-                  <p className="mb-4 text-xs italic leading-relaxed text-zinc-400">
+                  <p className="mb-4 text-xs italic leading-relaxed text-ivory-500">
                     {selectedNode.detail}
                   </p>
                 )}
 
                 {diff?.ghostNodeIds.has(selectedNode.id) && (
-                  <div className="mb-3 rounded-md border border-rose-900/60 bg-rose-950/30 p-2.5">
-                    <div className="mb-1 font-mono text-[10px] uppercase tracking-widest text-rose-300">
+                  <div className="mb-3">
+                    <div className="mb-1 text-[11px] font-medium text-pen-red">
                       Removed by this variant
                     </div>
-                    <p className="text-xs leading-relaxed text-zinc-400">
+                    <p className="text-xs leading-relaxed text-ivory-300">
                       {activeVariant?.patch.ops.find(
                         (op) => op.node_id === selectedNode.id,
                       )?.intent ??
@@ -1868,12 +2110,11 @@ export function VisualizerView() {
                 )}
 
                 {expansionLoading ? (
-                  <div className="flex items-center gap-2 py-6 text-sm text-zinc-400">
-                    <Loader2 className="h-4 w-4 animate-spin text-teal-300" />
+                  <div className="animate-pulse py-6 text-sm text-ivory-300">
                     Reading the paper for a deep dive…
                   </div>
                 ) : expansionError ? (
-                  <div className="rounded-md border border-red-900/60 bg-red-950/60 px-3 py-2 text-xs text-red-300">
+                  <div className="text-xs leading-relaxed text-pen-red">
                     {expansionError}
                   </div>
                 ) : expansion ? (
@@ -1890,19 +2131,19 @@ export function VisualizerView() {
 
                     {expansion.content.substeps.length > 0 && (
                       <div>
-                        <div className="mb-2 text-[10px] uppercase tracking-wide text-zinc-500">
+                        <div className="mb-2 text-[11px] font-medium text-ivory-500">
                           Inside this step
                         </div>
-                        <div className="ml-2 space-y-3 border-l border-zinc-700 pl-5">
+                        <div className="ml-2 space-y-3 border-l border-desk-700 pl-5">
                           {expansion.content.substeps.map((step, index) => (
                             <div key={index} className="relative">
-                              <span className="absolute -left-[31px] flex h-5 w-5 items-center justify-center rounded-full border border-teal-500/60 bg-zinc-900 text-[10px] font-medium text-teal-300">
+                              <span className="absolute -left-[31px] flex h-5 w-5 items-center justify-center rounded-full bg-desk-800 text-[10px] font-medium text-accent-300">
                                 {index + 1}
                               </span>
-                              <div className="text-xs font-medium text-zinc-200">
+                              <div className="text-xs font-medium text-ivory-100">
                                 {step.label}
                               </div>
-                              <p className="mt-0.5 text-xs leading-relaxed text-zinc-400">
+                              <p className="mt-0.5 text-xs leading-relaxed text-ivory-500">
                                 {step.detail}
                               </p>
                             </div>
@@ -1912,11 +2153,11 @@ export function VisualizerView() {
                     )}
 
                     {expansion.content.example && (
-                      <div className="rounded-md border border-teal-900/60 bg-teal-950/40 p-3">
-                        <div className="mb-1 text-[10px] uppercase tracking-wide text-teal-400">
+                      <div className="rounded bg-desk-850 p-3">
+                        <div className="mb-1 text-[11px] font-medium text-ivory-500">
                           Intuition
                         </div>
-                        <p className="text-xs leading-relaxed text-teal-100/90">
+                        <p className="text-xs leading-relaxed text-ivory-100">
                           {expansion.content.example}
                         </p>
                       </div>
@@ -1931,13 +2172,13 @@ export function VisualizerView() {
 
       {/* Right dock: paper summary, modification, findings */}
       <div
-        className={`flex shrink-0 flex-col border-l border-zinc-800 ${
+        className={`flex shrink-0 flex-col bg-desk-900 ${
           dockTab === "findings" || dockTab === "discuss" || dockTab === "scene"
             ? "w-[26rem]"
             : "w-80"
         }`}
       >
-        <div className="flex shrink-0 border-b border-zinc-800">
+        <div className="flex shrink-0 border-b border-desk-800">
           {(
             [
               ["paper", "Paper"],
@@ -1951,27 +2192,22 @@ export function VisualizerView() {
               key={tab}
               onClick={() => setDockTab(tab)}
               disabled={!viz}
-              className={`flex flex-1 items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium transition-colors disabled:opacity-40 ${
+              className={`flex flex-1 items-baseline justify-center gap-1 border-b-2 px-2 py-2 text-xs font-medium disabled:opacity-40 ${
                 dockTab === tab
-                  ? "border-b-2 border-teal-500 text-teal-200"
-                  : "text-zinc-500 hover:text-zinc-300"
+                  ? "border-accent-400 text-ivory-100"
+                  : "border-transparent text-ivory-500 hover:text-ivory-300"
               }`}
             >
-              {tab === "modify" ? <GitBranch className="h-3.5 w-3.5" /> : null}
-              {tab === "findings" ? <ShieldCheck className="h-3.5 w-3.5" /> : null}
-              {tab === "discuss" ? (
-                <MessagesSquare className="h-3.5 w-3.5" />
-              ) : null}
               {label}
               {tab === "findings" &&
                 report &&
                 report.findings.filter((f) => !f.inherited).length > 0 && (
-                  <span className="rounded bg-zinc-800 px-1 font-mono text-[9px] text-zinc-300">
+                  <span className="text-[10px] text-accent-400">
                     {report.findings.filter((f) => !f.inherited).length}
                   </span>
                 )}
               {tab === "discuss" && discussion.length > 0 && (
-                <span className="rounded bg-zinc-800 px-1 font-mono text-[9px] text-zinc-300">
+                <span className="text-[10px] text-ivory-700">
                   {discussion.filter((m) => m.role === "user").length}
                 </span>
               )}
@@ -1983,10 +2219,10 @@ export function VisualizerView() {
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
             <div className="flex items-center gap-2">
               <div className="min-w-0">
-                <div className="font-mono text-[10px] uppercase tracking-widest text-zinc-500">
-                  algorithm scene
+                <div className="text-xs font-medium text-ivory-500">
+                  Algorithm scene
                 </div>
-                <div className="truncate text-sm font-medium text-zinc-200">
+                <div className="truncate text-sm font-medium text-ivory-100">
                   {sceneRecord?.scene.algorithm_name || "Not generated yet"}
                 </div>
               </div>
@@ -1994,7 +2230,7 @@ export function VisualizerView() {
                 type="button"
                 onClick={() => requestScene(Boolean(sceneRecord))}
                 disabled={sceneLoading}
-                className="ml-auto shrink-0 rounded border border-teal-600 bg-teal-600/20 px-2 py-1 text-xs text-teal-200 disabled:opacity-50"
+                className="ml-auto shrink-0 rounded bg-accent-400 px-2 py-1 text-xs font-medium text-desk-950 hover:bg-accent-300 disabled:opacity-50"
               >
                 {sceneLoading
                   ? "Working..."
@@ -2005,7 +2241,7 @@ export function VisualizerView() {
             </div>
 
             {sceneRecord ? (
-              <p className="font-mono text-[10px] text-zinc-500">
+              <p className="font-mono text-[10px] text-ivory-700">
                 {sceneRecord.provider || "unknown"} / {sceneRecord.model || "unknown"}
                 {sceneRecord.extraction_strategy
                   ? ` · ${sceneRecord.extraction_strategy}`
@@ -2014,22 +2250,21 @@ export function VisualizerView() {
             ) : null}
 
             {sceneError ? (
-              <p className="rounded border border-red-900 bg-red-950/40 px-2 py-1.5 text-[11px] leading-snug text-red-200">
+              <p className="text-[11px] leading-relaxed text-pen-red">
                 {sceneError}
               </p>
             ) : null}
 
             {sceneRecord ? (
-              <ScenePlayer
-                sceneInput={sceneRecord.scene}
-                verification={sceneRecord.verification}
+              <SceneCodePlayer
+                record={sceneRecord}
                 className="min-h-[26rem] flex-1"
               />
             ) : (
-              <p className="text-[11px] leading-snug text-zinc-500">
-                Generate an evidence-grounded scene to step through this
-                method&apos;s mechanism. Every entity and step is traced back to a
-                passage in the paper, or marked uncertain.
+              <p className="text-[11px] leading-relaxed text-ivory-500">
+                Generate a scene to watch this method&apos;s mechanism as a
+                Three.js animation written by the model. It runs sandboxed and
+                is illustrative, not verified against the paper.
               </p>
             )}
           </div>
@@ -2109,31 +2344,31 @@ export function VisualizerView() {
         >
         {viz ? (
           <div>
-            <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">
+            <div className="mb-1 text-[11px] font-medium capitalize text-ivory-500">
               {formatKind(viz.diagram_kind)}
             </div>
-            <h3 className="mb-1 text-sm font-semibold text-zinc-100">
+            <h3 className="mb-2 text-base font-semibold leading-snug text-ivory-100">
               {viz.algorithm_name || viz.title}
             </h3>
-            <p className="mb-3 text-xs leading-relaxed text-zinc-400">
+            <p className="mb-4 text-xs leading-relaxed text-ivory-300">
               {viz.summary}
             </p>
             {viz.key_insight && (
-              <div className="mb-3 rounded-md border border-teal-900/60 bg-teal-950/40 p-2.5">
-                <div className="mb-1 text-[10px] uppercase tracking-wide text-teal-400">
+              <div className="mb-4 border-l-2 border-accent-400 pl-3">
+                <div className="mb-0.5 text-[11px] font-medium text-ivory-500">
                   Key insight
                 </div>
-                <p className="text-xs leading-relaxed text-teal-100/90">
+                <p className="text-xs italic leading-relaxed text-ivory-100">
                   {viz.key_insight}
                 </p>
               </div>
             )}
             {viz.worked_example?.input_text && (
-              <div className="mb-3 rounded-md border border-zinc-700 bg-zinc-800/40 p-2.5">
-                <div className="mb-1 text-[10px] uppercase tracking-wide text-zinc-500">
+              <div className="mb-4 rounded bg-desk-850 p-3">
+                <div className="mb-1 text-[11px] font-medium text-ivory-500">
                   Worked example
                 </div>
-                <p className="font-mono text-xs text-zinc-200">
+                <p className="font-mono text-xs text-ivory-100">
                   {viz.worked_example.input_text}
                 </p>
                 {viz.worked_example.tokens.length > 0 && (
@@ -2141,7 +2376,7 @@ export function VisualizerView() {
                     {viz.worked_example.tokens.map((token, index) => (
                       <span
                         key={index}
-                        className="rounded bg-zinc-900 px-1.5 py-0.5 font-mono text-[10px] text-teal-200/90"
+                        className="rounded bg-desk-900 px-1.5 py-0.5 font-mono text-[10px] text-ivory-300"
                       >
                         {token}
                       </span>
@@ -2149,29 +2384,29 @@ export function VisualizerView() {
                   </div>
                 )}
                 {viz.worked_example.output_text && (
-                  <p className="mt-1.5 text-[11px] text-zinc-400">
+                  <p className="mt-1.5 text-[11px] text-ivory-300">
                     → {viz.worked_example.output_text}
                   </p>
                 )}
                 {viz.worked_example.dimension && (
-                  <p className="mt-1 font-mono text-[10px] text-amber-200/70">
+                  <p className="mt-1 font-mono text-[10px] text-pen-amber">
                     {viz.worked_example.dimension}
                   </p>
                 )}
               </div>
             )}
-            <div className="text-[10px] text-zinc-600">
+            <div className="text-[10px] leading-relaxed text-ivory-700">
               {viz.diagram.nodes.length} nodes · {viz.diagram.edges.length} edges
               {viz.model ? ` · ${viz.model}` : ""}
               <br />
               Generated {new Date(viz.updated_at).toLocaleString()}
             </div>
-            <div className="mt-3 text-[11px] text-zinc-500">
+            <div className="mt-3 text-[11px] text-ivory-500">
               Click a node to see how it works.
             </div>
           </div>
         ) : (
-          <div className="text-xs text-zinc-500">
+          <div className="text-xs leading-relaxed text-ivory-500">
             The visualizer identifies the paper's core algorithm or
             architecture, extracts it into a structured graph, and renders it
             as an interactive diagram.

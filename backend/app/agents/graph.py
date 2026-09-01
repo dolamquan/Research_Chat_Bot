@@ -14,8 +14,10 @@ from app.agents.tools import (
     ingest_paper_tool,
     rag_tool,
     rebuild_topology_tool,
+    save_note_export_notion_tool,
     save_note_tool,
     search_arxiv_tool,
+    search_notes_tool,
     search_papers_tool,
     search_github_tool,
     search_library_tool,
@@ -37,6 +39,8 @@ INTENTS: set[str] = {
     "search_reddit",
     "ingest_paper",
     "save_note",
+    "save_note_export_notion",
+    "search_notes",
     "rebuild_topology",
     "export_notion",
     "create_github_issue",
@@ -80,7 +84,7 @@ def _looks_like_small_talk(text: str) -> bool:
         return True
 
     casual_patterns = [
-        r"^(hi|hello|hey)\s+(there|researchmind|agent|bot)?$",
+        r"^(hi|hello|hey)\s+(there|zoetrope|agent|bot)?$",
         r"^how are you$",
         r"^what can you do$",
         r"^who are you$",
@@ -115,6 +119,11 @@ def _heuristic_intent(question: str) -> AgentIntent | None:
     ):
         return "export_visualization_notion"
 
+    if "notion" in lowered and re.search(r"\bnote\b", lowered) and any(
+        phrase in lowered for phrase in ["save", "store", "remember", "keep"]
+    ):
+        return "save_note_export_notion"
+
     if any(
         phrase in lowered
         for phrase in [
@@ -126,6 +135,22 @@ def _heuristic_intent(question: str) -> AgentIntent | None:
         ]
     ):
         return "export_notion"
+
+    if any(
+        phrase in lowered
+        for phrase in [
+            "my notes",
+            "my saved notes",
+            "search notes",
+            "search my notes",
+            "find my notes",
+            "notes about",
+            "what did i note",
+            "what did i write",
+            "what have i written",
+        ]
+    ):
+        return "search_notes"
 
     if "github" in lowered and any(
         phrase in lowered
@@ -288,6 +313,8 @@ Allowed intents:
 - search_reddit: search Reddit posts/discussions for practitioner or community context
 - ingest_paper: add/index/store an arXiv or PDF URL into the database
 - save_note: save a note about a selected/pinned paper passage
+- save_note_export_notion: save a note AND export/sync it to Notion in one step
+- search_notes: search the user's own saved notes/highlights (e.g. "what did I write about X")
 - rebuild_topology: rebuild/update/refresh the paper topology or cluster map
 - export_notion: create/export/save a research note or paper summary to Notion
 - create_github_issue: create/open a GitHub issue for a research task or project follow-up
@@ -346,6 +373,12 @@ def route_intent(state: AgentState) -> str:
     if intent == "save_note":
         return "save_note"
 
+    if intent == "save_note_export_notion":
+        return "save_note_export_notion"
+
+    if intent == "search_notes":
+        return "search_notes"
+
     if intent == "rebuild_topology":
         return "rebuild_topology"
 
@@ -385,6 +418,8 @@ def build_agent_graph():
     graph.add_node("search_reddit", search_reddit_tool)
     graph.add_node("ingest_paper", ingest_paper_tool)
     graph.add_node("save_note", save_note_tool)
+    graph.add_node("save_note_export_notion", save_note_export_notion_tool)
+    graph.add_node("search_notes", search_notes_tool)
     graph.add_node("rebuild_topology", rebuild_topology_tool)
     graph.add_node("export_notion", export_notion_tool)
     graph.add_node("create_github_issue", create_github_issue_tool)
@@ -407,6 +442,8 @@ def build_agent_graph():
             "search_reddit": "search_reddit",
             "ingest_paper": "ingest_paper",
             "save_note": "save_note",
+            "save_note_export_notion": "save_note_export_notion",
+            "search_notes": "search_notes",
             "rebuild_topology": "rebuild_topology",
             "export_notion": "export_notion",
             "create_github_issue": "create_github_issue",
@@ -425,6 +462,8 @@ def build_agent_graph():
     graph.add_edge("search_reddit", END)
     graph.add_edge("ingest_paper", END)
     graph.add_edge("save_note", END)
+    graph.add_edge("save_note_export_notion", END)
+    graph.add_edge("search_notes", END)
     graph.add_edge("rebuild_topology", END)
     graph.add_edge("export_notion", END)
     graph.add_edge("create_github_issue", END)

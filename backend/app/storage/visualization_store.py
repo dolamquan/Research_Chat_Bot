@@ -5,11 +5,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
-# scene_composer is a leaf module (no app imports at module level), so this
-# does not create an import cycle even though rag modules import this store.
-from app.rag.scene_composer import SCENE_SCHEMA_VERSION
-
-
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "researchmind.sqlite3"
 
@@ -43,26 +38,13 @@ def expansion_content_is_current(
     ):
         return False
 
-    # Predates stage-targeted retrieval, so its scene and code were grounded
-    # in the paper's opening pages rather than in this stage.
-    if not content.get("stage_grounded"):
-        return False
-
-    # Keyed on presence, not on truthiness: composition is best-effort and
-    # stores None when it fails, and re-running the whole expansion on every
-    # click for a stage that keeps failing would cost a lot and converge never.
-    if "scene" not in content:
-        return False
-
-    # The version stamps the composition *attempt*, not its outcome, so a
-    # failed compose is a recorded attempt at the current schema -- retried
-    # once per schema bump, never once per click. Rows written before the
-    # stamp existed count as version 1.
-    try:
-        stored_version = int(content.get("scene_schema_version") or 1)
-    except (TypeError, ValueError):
-        stored_version = 1
-    return stored_version >= SCENE_SCHEMA_VERSION
+    # Predates stage-targeted retrieval, so its text was grounded in the
+    # paper's opening pages rather than in this stage.
+    # (The composed-scene and scene-schema-version checks that used to follow
+    # were retired with the declarative theater: stored `scene` /
+    # `scene_graph` / `scene_schema_version` keys are simply ignored now, and
+    # stage visuals come from the separately-stored generated stage scenes.)
+    return bool(content.get("stage_grounded"))
 
 
 def _now() -> str:
