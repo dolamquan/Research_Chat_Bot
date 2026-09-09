@@ -127,6 +127,31 @@ def test_generation_happy_path(stub_chat_model, sample_visualization, paper):
     assert "function init(ctx)" in llm.prompts[0]
 
 
+@pytest.mark.parametrize('title', ['Unseen Ocean Transport Method', 'New Molecular Assembly Method'])
+@pytest.mark.parametrize('mode', ['whole', 'stage'])
+def test_new_papers_and_repairs_share_presentation_policy(
+    stub_chat_model, sample_visualization, title, mode
+):
+    from app.rag.scene_coder import _PRESENTATION_RULES
+
+    sample_visualization['article_id'] = title
+    sample_visualization['diagram']['title'] = title
+    node = {'id': 'previously-unseen-stage', 'label': 'Transform the input'}
+    sample_visualization['diagram']['nodes'] = [node]
+    llm = stub_chat_model(responses=['const invalid = true;', GOOD_CODE])
+    if mode == 'whole':
+        generate_scene_code(sample_visualization, {'title': title}, StructuredPaper(title=title), llm=llm)
+    else:
+        generate_stage_code(sample_visualization, node, article={'title': title}, llm=llm)
+    assert len(llm.prompts) == 2
+    for prompt in llm.prompts:
+        assert title in prompt
+        assert prompt.count(_PRESENTATION_RULES) == 1
+        assert 'Use ctx.makeLabel for ALL text' in prompt
+        assert 'function resize(ctx)' in prompt
+        assert 'Use cyan for' not in prompt
+
+
 def test_markdown_fences_are_stripped(stub_chat_model, sample_visualization, paper):
     llm = stub_chat_model(responses=[f"```javascript\n{GOOD_CODE}\n```"])
     scene, _ = generate_scene_code(

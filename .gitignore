@@ -35,3 +35,8 @@ Thumbs.db
 backend/app/data/*.sqlite
 backend/app/data/*.sqlite3
 backend/app/data/uploads/
+# Local validation dependencies
+.test-deps/
+.scene-check/
+benchmarks/results/
+backend/app/data/scene-repair-backups/

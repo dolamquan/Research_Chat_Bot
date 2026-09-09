@@ -75,6 +75,12 @@ describe("checkSceneCode", () => {
 });
 
 describe("buildSceneSrcDoc", () => {
+  it("treats the scene title as text, including closing script markup", () => {
+    const doc = buildSceneSrcDoc(GOOD_CODE, '</script><img src=x onerror=alert(1)>');
+    expect(doc).not.toContain('<img src=x');
+    expect(doc).toContain('\\u003c/script>');
+    expect(doc).toContain('.textContent = TITLE');
+  });
   it("embeds the code and the harness contract", () => {
     const doc = buildSceneSrcDoc(GOOD_CODE);
     expect(doc).toContain("importmap");

@@ -141,3 +141,17 @@ def test_stage_routes_sit_above_the_catch_all():
         "/visualizer/item/{viz_id}/stage-scenes",
     ):
         assert ordered.index(literal) < catch_all, f"{literal} is below the catch-all"
+
+
+def test_cached_scope_error_is_filtered_and_rebuilt(client, sample_visualization, monkeypatch):
+    record = _store(sample_visualization)
+    record['scene']['code'] = 'function init(ctx) { const rightX=6; } function update(ctx,t) { ctx.setCaption(rightX); }'
+    stage_scene_store.upsert_stage_scene(
+        viz_id='viz_1', node_id='encoder', scene=record['scene'],
+        verification={'valid': True}, schema_version=SCHEMA_VERSION,
+    )
+    assert client.get('/visualizer/item/viz_1/stage-scenes').json()['stage_scenes'] == []
+    # A stale valid=True flag must not bypass the new scope check.
+    monkeypatch.setattr(scene_service, 'get_visualization_by_id', lambda _: None)
+    response = client.post('/visualizer/generate-stage-scene', json={'viz_id': 'viz_1', 'node_id': 'encoder'})
+    assert response.status_code == 404

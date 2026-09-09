@@ -30,17 +30,22 @@ export function SceneFrame({
   className?: string;
 }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const srcDoc = useMemo(() => buildSceneSrcDoc(code), [code]);
+  const srcDoc = useMemo(() => buildSceneSrcDoc(code, title), [code, title]);
 
   useEffect(() => {
     const handler = (event: MessageEvent<SceneFrameMessage>) => {
       if (event.source !== frameRef.current?.contentWindow) return;
-      if (event.data?.type === "scene-ready") onReady?.();
+      if (event.data?.type === "scene-ready") {
+        frameRef.current?.contentWindow?.postMessage(
+          { type: "scene-control", action: playing ? "play" : "pause" }, "*",
+        );
+        onReady?.();
+      }
       if (event.data?.type === "scene-error") onError?.(event.data.message);
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [onReady, onError]);
+  }, [onReady, onError, playing]);
 
   useEffect(() => {
     frameRef.current?.contentWindow?.postMessage(

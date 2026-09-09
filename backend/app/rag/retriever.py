@@ -1,11 +1,29 @@
 from typing import Any, Dict, List
 
 from qdrant_client.models import FieldCondition, Filter, MatchValue
+from qdrant_client.http.exceptions import ResponseHandlingException
 
 from app.rag.embedder import embed_text
 from app.rag.vector_store import COLLECTION_NAME, get_client, search_vectors
 
 from langsmith import traceable
+
+
+class PaperStoreUnavailable(RuntimeError):
+    """The indexed paper excerpts cannot be reached; saved scenes remain usable."""
+
+    def __init__(self):
+        super().__init__(
+            "The paper database (Qdrant) is unavailable. Start the database service, "
+            "then retry Prepare all. Your saved scenes are still available."
+        )
+
+
+def _read_paper_page(client, **kwargs):
+    try:
+        return client.scroll(**kwargs)
+    except (ResponseHandlingException, ConnectionError, TimeoutError) as error:
+        raise PaperStoreUnavailable() from error
 
 def format_retrieved_point(point: Any) -> Dict[str, Any]:
     """
@@ -143,7 +161,7 @@ def retrieve_document_chunks(
     offset: Any = None
 
     while len(chunks) < limit:
-        points, offset = client.scroll(
+        points, offset = _read_paper_page(client,
             collection_name=COLLECTION_NAME,
             limit=min(256, limit - len(chunks)),
             offset=offset,

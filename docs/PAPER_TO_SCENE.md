@@ -89,15 +89,70 @@ Generated code sees exactly one object, `ctx`, built by the harness in
 | `scene` | a `THREE.Scene` with background and lights prepared |
 | `camera` | a `PerspectiveCamera` with OrbitControls attached |
 | `controls`, `renderer` | the OrbitControls and WebGLRenderer instances |
-| `width`, `height` | live canvas size in pixels |
+| `width`, `height` | live viewport size in pixels |
 | `makeLabel(text, opts)` | a crisp text sprite, so code never needs the DOM |
-| `setCaption(text)` | the caption bar under the canvas, for narrating phases |
+| `makePanel(title, opts)` | a dark card with border and colored heading; returns a group |
+| `makeBars(values, opts)` | signed numeric bars with a shared baseline and value labels; returns a group |
+| `makeMatrix(values, opts)` | bracketed numeric/symbolic matrix; optional title, cell size and decimals; labels exposed in `group.userData.cells` |
+| `makeNetwork(layerSizes, opts)` | layered neurons with thin connections; optional signed weights indexed by connection layer, destination, source; meshes in `group.userData.layers` |
+| `theme` | the theatre palette; independent from the unchanged main 3D overview |
+| `setCaption(text)` | the caption above the figure, for narrating phases |
 
 The code must define `function init(ctx)` (build once) and
 `function update(ctx, t)` (animate; `t` is seconds since start). The harness
 owns the render loop, resizing, damping, error capture and restarts. A frame
 that throws stops the loop, shows the error inside the frame, and reports it
-to the player, which offers Restart.
+to the player. Stage playback returns to the overview and offers an explicit
+Regenerate animation action. Restart builds a new module scope, preventing
+old arrays and objects from accumulating. The camera fits geometry and label
+anchor points after initialization and resize. The theatre supplies typography,
+label collision handling, annotation clearance, and outlines for existing blocks.
+
+### Generation latency and scope validation
+
+Stage preparation uses a shared five-request queue, prioritizing animations
+ahead of written explanations. The scene coder can use existing notes and
+stage-specific paper excerpts, so new notes are not a prerequisite. This
+preserves five simultaneous scene requests when explanations are cached.
+Identical scene requests share their pending promise in
+the client and their pending build within each backend process. Independent
+nodes remain concurrent; a failed build is removed so it can be retried.
+
+The visualizer resolves saved storyboards and stage scenes together for the
+active diagram before declaring readiness or automatically requesting a missing
+animation. A stage counts as prepared only when both its storyboard and a
+saved scene passing the client contract are present. During lookup the toolbar
+shows "Checking saved stages"; lookup errors have a retry action. "Prepare all"
+remains visible during playback while any stage is missing, uses the active
+variant's node count, and leaves failed stages available to retry. Only a fully
+prepared diagram displays "All stages ready". This avoids treating a
+storyboard-only cache or an empty loading map as completed animation work.
+
+In addition to the contract checks shared with the browser, the backend uses
+Tree-sitter to parse modern JavaScript and check lexical references without
+executing generated code. Undefined names such as an `init`-local `rightX`
+used by `update` trigger the single repair attempt, which includes both the
+original code and named findings. Cached code is checked before reuse;
+invalid stage records are excluded from listings and regenerated on demand.
+Validation results are cached by exact code (128 entries), with fresh lists
+returned to callers so a caller cannot mutate the cached result.
+Scope checks do not prove runtime behavior or scientific correctness.
+
+The reusable panel and bar helpers reduce drawing boilerplate in generated
+answers. Generation prompts specify a consistent palette, concise labels,
+front-facing layouts and compact programs. Provider generation time still
+depends on model and load; no live-provider latency benchmark is assumed.
+
+Install the pinned `tree-sitter` and `tree-sitter-javascript` dependencies from
+`backend/requirements.txt` when upgrading. Regression coverage includes the
+Layer Normalization scope failure, repair prompts, cached-code validation,
+concurrent requests and sandbox playback controls.
+
+For responsive scenes, an optional `resize(ctx)` hook can reposition panels
+and call `ctx.setContentHeight(pixels)` to use vertical scrolling. The reviewed
+Layer Normalization example stacks panels below 760px width, preserving text
+size instead of compressing three panels into a phone viewport. Scroll mode
+disables orbit gestures so touch scrolling works normally.
 
 ## Scene document
 

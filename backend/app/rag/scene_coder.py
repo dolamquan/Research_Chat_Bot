@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import re
+from functools import lru_cache
 from typing import Any, Dict, List, Sequence, Tuple
 
 from dotenv import load_dotenv
@@ -32,6 +33,7 @@ from app.rag.document_structure import (
     select_architecture_evidence,
 )
 from app.rag.llm_provider import build_chat_model, describe_model
+from app.rag.scene_validation import scope_findings
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +143,12 @@ REQUIRED_FUNCTIONS = ("init", "update")
 
 
 def check_scene_code(code: str) -> List[str]:
+    # Return a fresh list so callers cannot mutate the cached validation result.
+    return list(_cached_scene_findings(code))
+
+
+@lru_cache(maxsize=128)
+def _cached_scene_findings(code: str) -> tuple[str, ...]:
     """Static contract findings for one piece of generated code.
 
     Empty list means the code is accepted. Every finding is phrased so it can
@@ -148,7 +156,7 @@ def check_scene_code(code: str) -> List[str]:
     """
     findings: List[str] = []
     if not code or not code.strip():
-        return ["the code is empty"]
+        return ("the code is empty",)
     if len(code) > MAX_CODE_CHARS:
         findings.append(
             f"the code is {len(code)} characters; the maximum is {MAX_CODE_CHARS}"
@@ -161,7 +169,9 @@ def check_scene_code(code: str) -> List[str]:
     for compiled, reason in _COMPILED_FORBIDDEN:
         if compiled.search(code):
             findings.append(f"forbidden construct: {reason}")
-    return findings
+    if not findings:
+        findings.extend(scope_findings(code))
+    return tuple(findings)
 
 
 # The parts of the prompt shared by every generation mode: what the harness
@@ -175,12 +185,41 @@ THE HARNESS provides a context object `ctx` with:
   ctx.camera         a THREE.PerspectiveCamera with OrbitControls attached
   ctx.controls       the OrbitControls instance
   ctx.renderer       the WebGLRenderer
-  ctx.width, ctx.height   canvas size in pixels
+  ctx.width, ctx.height   viewport size in pixels
+  ctx.theme          application palette: background, surface, border, ink,
+                     muted, data, process, output, danger. Reuse these colors.
   ctx.makeLabel(text, opts) -> THREE.Sprite
                      a crisp text label; opts is optional: { size (world units,
                      default 1), color (css string), background (css string) }
-  ctx.setCaption(text)    sets the caption below the canvas; call it whenever
+  ctx.setLabelText(sprite, text) updates an existing label without rebuilding it.
+                     Use for changing scores and tokens; never stretch text with
+                     scale.setScalar or leave placeholder values in the animation.
+  ctx.makeMatrix(values, opts) -> THREE.Group
+                     numeric/symbolic entries framed by fine mathematical brackets;
+                     opts: {title, cellSize:0.65, decimals:1, color}.
+                     group.userData.cells[row][col] is its label; update via setLabelText.
+  ctx.makeNetwork(layerSizes, opts) -> THREE.Group
+                     layered neuron spheres with fine connections; opts:
+                     {title, width:5, height:4, weights}. Optional weights are
+                     indexed [layerConnection][destination][source]; signed values
+                     use teal/coral. Without weights, edges are neutral.
+                     group.userData.layers[layer][node] exposes meshes for animation.
+  ctx.setCaption(text)    sets the caption above the figure; call it whenever
                      the animation enters a new phase so the viewer can follow
+  ctx.makePanel(title, opts) -> THREE.Group
+                     a styled dark card with a readable colored heading;
+                     opts: {width: 4.4, height: 5, color: "#85a3bd"}
+  ctx.makeBars(values, opts) -> THREE.Group
+                     signed numeric bars with a baseline and value labels;
+                     opts: {width: 3.5, height: 1.7, maxValue: 2, color: "#85a3bd"}
+                     place bars inside a panel; use the same maxValue to compare.
+  Prefer these helpers over hand-written mesh/label boilerplate. Add their
+  returned groups to ctx.scene; set group.position to place them. Build once
+  in init, animate group scale/position in update. Do not rebuild per frame.
+  ctx.setContentHeight(pixels) sets a vertically scrollable canvas height;
+                     use it in optional function resize(ctx) on narrow screens
+                     to stack panels instead of shrinking labels. The harness
+                     calls resize after init and whenever the viewport changes.
 
 DEFINE EXACTLY these two top-level functions (plain declarations, no exports):
   function init(ctx) { ... }       // build the scene graph, runs once
@@ -203,6 +242,37 @@ Output ONLY the JavaScript source. No markdown fences, no commentary before
 or after the code.
 """
 
+# One presentation policy for every paper, stage, and repair prompt.
+_PRESENTATION_RULES = """\
+PRESENTATION FOR EVERY PAPER:
+  - Use the visual language of a mathematical film: black negative space,
+    elegant serif section headings (makeLabel opts.role='heading'), unboxed
+    text, fine bracketed matrices, thin connecting lines, restrained teal/coral
+    accents, and layered geometry whose depth explains the computation.
+  - Reuse ctx.theme: data for inputs, process for transformations, output for
+    results, danger for errors, ink and muted for text. Color encodes meaning.
+  - Keep the harness background and lights. Use matte surfaces (roughness >=
+    0.85, metalness <= 0.05); no neon glow, glass cages, mirrors, or colored lights.
+  - Use ctx.makeLabel for ALL text and ctx.setLabelText for changing values.
+    The player supplies the stage title; do not add another oversized title.
+  - Compose 2-4 major structures with generous negative space. Use shallow
+    oblique layers where depth explains a tensor, attention path, or mechanism;
+    keep text facing the camera. Avoid generic boxes standing in for mechanisms.
+    Reserve separate rows for diagrams, values, and formulas. Account for
+    multiline labels; never place text on top of text or shrink text to fit.
+  - Use ctx.makeMatrix and ctx.makeNetwork for actual matrices and networks;
+    use bars for scalar comparisons and domain-specific structures for other
+    mechanisms. Do not force every domain into a neural-network metaphor.
+    Leave at least 1.5 world units between structures. Preserve the paper's
+    specific mechanism and explicitly label invented numbers as illustrative.
+  - Reveal the explanation in phases: establish inputs, show the operation,
+    then the result. Reveal detailed values and annotations only in their
+    relevant phase; do not display every equation and annotation at once.
+  - For narrow screens, define function resize(ctx), stack groups vertically,
+    and use ctx.setContentHeight to keep the complete figure scrollable.
+    Do not shrink a desktop layout into unreadable phone-sized text.
+"""
+
 CODE_RULES = (
     """\
 You are writing a self-contained Three.js animation that TEACHES one research
@@ -211,6 +281,7 @@ the page; you only build and animate the scene graph.
 
 """
     + _CONTRACT_RULES
+    + _PRESENTATION_RULES
     + """
 QUALITY BAR:
   - Visualize the method the paper PROPOSES, not related work or baselines.
@@ -234,6 +305,7 @@ page; you only build and animate the scene graph.
 
 """
     + _CONTRACT_RULES
+    + _PRESENTATION_RULES
     + """
 QUALITY BAR:
   - Zoom in: show THIS stage's internal mechanism, step by step. Its inputs
@@ -247,6 +319,13 @@ QUALITY BAR:
     mechanism is concrete, and keep it consistent across the whole loop.
   - Keep the whole program under roughly 200 lines. One clear mechanism,
     well animated, beats an exhaustive reconstruction.
+  - Aim for 80-120 concise lines; reuse helpers and geometry.
+  - Use 2-4 clearly separated structures with short camera-facing labels
+    (size 0.4-0.6). Place labels above their objects with clear gaps.
+    Avoid decorative grids and titles. Allow vertical space when stacking
+    groups for a narrow viewport.
+  - Keep surfaces visible, labels bright, and inactive elements at least 45%
+    opacity. Use motion to explain a transformation, not as decoration.
 """
 )
 
@@ -394,6 +473,7 @@ def generate_scene_code(
             prompt
             + "\n\nYour previous answer was rejected for these reasons:\n"
             + "\n".join(f"  - {finding}" for finding in findings)
+            + "\n\nPrevious JavaScript:\n" + code
             + "\n\nReturn the corrected JavaScript only. Remember: define "
             "`function init(ctx)` and `function update(ctx, t)`, use only "
             "what ctx provides, and never touch the network, storage, or "
@@ -517,6 +597,7 @@ def generate_stage_code(
             prompt
             + "\n\nYour previous answer was rejected for these reasons:\n"
             + "\n".join(f"  - {finding}" for finding in findings)
+            + "\n\nPrevious JavaScript:\n" + code
             + "\n\nReturn the corrected JavaScript only. Remember: define "
             "`function init(ctx)` and `function update(ctx, t)`, keep shared "
             "state in a top-level `const state = {}`, and never touch the "
@@ -548,11 +629,6 @@ _DIAGRAM_TEMPLATE = """\
 // was involved; boxes are diagram nodes and pulses trace diagram edges.
 const GRAPH = __GRAPH__;
 
-const KIND_COLORS = {
-  input: 0x4fc3f7, output: 0x81c784, operation: 0xffb74d,
-  data: 0x9575cd, component: 0x90a4ae,
-};
-
 const state = { nodes: {}, pulses: [], labels: [] };
 
 function layoutLayers(nodes, edges) {
@@ -579,6 +655,10 @@ function layoutLayers(nodes, edges) {
 
 function init(ctx) {
   const { THREE, scene } = ctx;
+  const kindColors = {
+    input: ctx.theme.data, output: ctx.theme.output, operation: ctx.theme.process,
+    data: ctx.theme.data, component: ctx.theme.muted,
+  };
   const nodes = GRAPH.nodes || [];
   const edges = GRAPH.edges || [];
   const layer = layoutLayers(nodes, edges);
@@ -595,23 +675,23 @@ function init(ctx) {
     const row = siblings.indexOf(n);
     const x = (layer[n.id] / Math.max(1, layerCount - 1) - 0.5) * spanX;
     const y = (row - (siblings.length - 1) / 2) * 2.6;
-    const color = KIND_COLORS[n.kind] || KIND_COLORS.component;
+    const color = kindColors[n.kind] || kindColors.component;
     const box = new THREE.Mesh(
       new THREE.BoxGeometry(2.4, 1.2, 1.2),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.4 })
+      new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0 })
     );
     box.position.set(x, y, 0);
     scene.add(box);
     state.nodes[n.id] = box;
 
-    const label = ctx.makeLabel(n.label || n.id, { size: 1.4 });
+    const label = ctx.makeLabel(n.label || n.id, { size: 0.6, color: ctx.theme.ink });
     label.position.set(x, y + 1.3, 0);
     scene.add(label);
   });
 
-  const lineMaterial = new THREE.LineBasicMaterial({ color: 0x556677 });
+  const lineMaterial = new THREE.LineBasicMaterial({ color: ctx.theme.border });
   const pulseGeometry = new THREE.SphereGeometry(0.22, 16, 16);
-  const pulseMaterial = new THREE.MeshBasicMaterial({ color: 0x66e0ff });
+  const pulseMaterial = new THREE.MeshBasicMaterial({ color: ctx.theme.data });
   edges.forEach((e, index) => {
     const from = state.nodes[e.source];
     const to = state.nodes[e.target];

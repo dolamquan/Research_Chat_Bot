@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import SceneCodePlayer from "../SceneCodePlayer";
 import type { SceneRecord } from "../sceneTypes";
+import SceneFrame from "../SceneFrame";
+import { vi } from "vitest";
 
 const GOOD_CODE = `
 function init(ctx) {
@@ -60,5 +62,19 @@ describe("SceneCodePlayer", () => {
     fireEvent.click(screen.getByText("Code"));
     expect(screen.getByTestId("scene-code-source")).toBeInTheDocument();
     expect(screen.queryByTestId("scene-frame")).toBeNull();
+  });
+});
+
+describe("SceneFrame messages", () => {
+  it("reapplies pause after the sandbox finishes loading and ignores other windows", () => {
+    const ready = vi.fn();
+    render(<SceneFrame code={GOOD_CODE} title="paused" playing={false} onReady={ready} />);
+    const frame = screen.getByTestId("scene-frame") as HTMLIFrameElement;
+    const post = vi.spyOn(frame.contentWindow!, "postMessage");
+    fireEvent(window, new MessageEvent("message", {data: {type: "scene-ready"}, source: window}));
+    expect(ready).not.toHaveBeenCalled();
+    fireEvent(window, new MessageEvent("message", {data: {type: "scene-ready"}, source: frame.contentWindow}));
+    expect(ready).toHaveBeenCalledOnce();
+    expect(post).toHaveBeenCalledWith({type: "scene-control", action: "pause"}, "*");
   });
 });

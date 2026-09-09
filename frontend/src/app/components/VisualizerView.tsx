@@ -74,6 +74,10 @@ const NODE_H = 48;
 const MIN_SCALE = 0.3;
 const MAX_SCALE = 2.5;
 
+function sceneIsPlayable(record: StageSceneRecord): boolean {
+  return record.valid !== false && checkSceneCode(record.scene.code).length === 0;
+}
+
 const EDGE_KIND_LIST = [
   "flow",
   "data",
@@ -168,7 +172,15 @@ export function VisualizerView() {
     Record<string, StageSceneRecord>
   >({});
   const [stageSceneOpen, setStageSceneOpen] = useState(false);
-  const [stageSceneLoading, setStageSceneLoading] = useState(false);
+  const [preparationState, setPreparationState] = useState<{
+    diagramId: string | null; status: "loading" | "ready" | "error";
+  }>({diagramId: null, status: "loading"});
+  const [preparationReload, setPreparationReload] = useState(0);
+  const [prepareError, setPrepareError] = useState<string | null>(null);
+  const stageAutoRequestedRef = useRef<Set<string>>(new Set());
+  const [stageLoadingIds, setStageLoadingIds] = useState<Set<string>>(new Set());
+  const stageSceneLoading = selectedNode !== null && stageLoadingIds.has(selectedNode.id);
+  const stageSelectionRef = useRef<string | null>(null);
   const [stageSceneError, setStageSceneError] = useState<string | null>(null);
   // Nodes whose dynamic scene the user explicitly closed: auto-open skips
   // them so the tour respects a "show me the classic theater" choice.
@@ -517,31 +529,6 @@ export function VisualizerView() {
     loadExpansion(node);
   }
 
-  // Which stages already have a stored storyboard (so playback is instant).
-  useEffect(() => {
-    if (!viz) {
-      setPreparedIds(new Set());
-      setStoryboards({});
-      return;
-    }
-    let cancelled = false;
-    getPreparedStages(activeDiagramId ?? viz.viz_id)
-      .then((response) => {
-        if (cancelled) return;
-        setPreparedIds(new Set(response.prepared));
-        const next: Record<string, ProcessStep[]> = {};
-        for (const expansion of response.expansions) {
-          const steps = expansion.content.process_steps;
-          if (steps && steps.length > 0) next[expansion.node_id] = steps;
-        }
-        setStoryboards(next);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [viz]);
-
   // The worked example is generated server-side on the first expansion, so
   // pull the record again once stages exist to pick it up.
   const refreshViz = useCallback(() => {
@@ -572,11 +559,14 @@ export function VisualizerView() {
     return [...seen.keys()].sort();
   }, [storyboards]);
 
-  const unpreparedCount = viz
-    ? (activeVariant?.diagram.nodes ?? viz.diagram.nodes).filter(
-        (node) => !preparedIds.has(node.id),
-      ).length
-    : 0;
+  const preparationLoaded = activeDiagramId !== null &&
+    preparationState.diagramId === activeDiagramId && preparationState.status === "ready";
+  const preparationLoadFailed = preparationState.diagramId === activeDiagramId &&
+    preparationState.status === "error";
+  const preparationNodes = activeVariant?.diagram.nodes ?? viz?.diagram.nodes ?? [];
+  const unpreparedCount = preparationNodes.filter(
+    (node) => !preparedIds.has(node.id) || !stageScenes[node.id],
+  ).length;
 
   const prepareAbortRef = useRef(false);
   const proposeAbortRef = useRef<AbortController | null>(null);
@@ -792,18 +782,17 @@ export function VisualizerView() {
   }
 
   async function prepareAllStages() {
-    if (!viz || prepareDone !== null) return;
+    if (!viz || !preparationLoaded || prepareDone !== null) return;
     const nodes = activeVariant?.diagram.nodes ?? viz.diagram.nodes;
-    // A stage is fully prepared when it has BOTH its expansion (storyboard +
-    // deep-dive text) and its generated dynamic scene. Preparing writes the
-    // scene right after the expansion, so the scene coder can use the fresh
-    // mechanism text as source material.
+    // Both tasks use the paper independently. Start the animation immediately;
+    // the deep dive must not add a second model call to time-to-first-scene.
     const pending = nodes.filter(
       (node) => !preparedIds.has(node.id) || !stageScenes[node.id],
     );
     if (pending.length === 0) return;
 
     prepareAbortRef.current = false;
+    setPrepareError(null);
     const targetDiagramId = activeDiagramId;
     setPrepareTotal(pending.length);
     setPrepareDone(0);
@@ -811,12 +800,23 @@ export function VisualizerView() {
     const CONCURRENCY = 5;
     let cursor = 0;
     let completed = 0;
-
-    async function worker() {
-      while (cursor < pending.length && !prepareAbortRef.current) {
-        const node = pending[cursor++];
-        try {
-          if (!preparedIds.has(node.id)) {
+    const failedStages = new Set<string>();
+    const failureReasons = new Set<string>();
+    // Prioritize playable scenes. A shared request queue preserves the original
+    // five-call budget even when notes are cached or take much longer to write.
+    const remaining = new Map(pending.map((node) => [node.id,
+      Number(!stageScenes[node.id]) + Number(!preparedIds.has(node.id)),
+    ]));
+    const tasks = [
+      ...pending.filter((node) => !stageScenes[node.id]).map((node) => ({node, run: async () => {
+        const response = await generateStageScene({
+          vizId: targetDiagramId ?? viz.viz_id, nodeId: node.id,
+        });
+        if (diagramRef.current !== targetDiagramId) return;
+        if (!sceneIsPlayable(response.stage_scene)) throw new Error("Invalid stage scene");
+        setStageScenes((current) => ({...current, [node.id]: response.stage_scene}));
+      }})),
+      ...pending.filter((node) => !preparedIds.has(node.id)).map((node) => ({node, run: async () => {
             const response = await expandVisualizationNode({
               vizId: targetDiagramId ?? viz.viz_id,
               nodeId: node.id,
@@ -828,32 +828,38 @@ export function VisualizerView() {
             if (steps && steps.length > 0) {
               setStoryboards((current) => ({ ...current, [node.id]: steps }));
             }
-          }
-          if (!prepareAbortRef.current && !stageScenes[node.id]) {
-            const sceneResponse = await generateStageScene({
-              vizId: targetDiagramId ?? viz.viz_id,
-              nodeId: node.id,
-            });
-            if (diagramRef.current !== targetDiagramId) return;
-            setStageScenes((current) => ({
-              ...current,
-              [node.id]: sceneResponse.stage_scene,
-            }));
-          }
-        } catch {
-          // A failed stage stays unprepared; it retries on demand when played.
+      }})),
+    ];
+
+    async function worker() {
+      while (cursor < tasks.length && !prepareAbortRef.current && diagramRef.current === targetDiagramId) {
+        const task = tasks[cursor++];
+        try {
+          await task.run();
+        } catch (error) {
+          failedStages.add(task.node.id);
+          failureReasons.add(error instanceof Error ? error.message : "Unknown preparation error");
         }
-        completed += 1;
-        setPrepareDone(completed);
+        if (diagramRef.current !== targetDiagramId) return;
+        const left = remaining.get(task.node.id)! - 1;
+        remaining.set(task.node.id, left);
+        if (left === 0) {
+          completed += 1;
+          setPrepareDone(completed);
+        }
       }
     }
 
     await Promise.all(
-      Array.from({ length: Math.min(CONCURRENCY, pending.length) }, worker),
+      Array.from({ length: Math.min(CONCURRENCY, tasks.length) }, worker),
     );
+    if (diagramRef.current !== targetDiagramId) return;
     setPrepareDone(null);
     setPrepareTotal(0);
     refreshViz();
+    if (failedStages.size > 0) setPrepareError(
+      `Could not prepare ${failedStages.size} stage${failedStages.size === 1 ? "" : "s"}. ${Array.from(failureReasons).join(" ")} Retry Prepare all.`,
+    );
   }
 
   useEffect(() => {
@@ -871,20 +877,14 @@ export function VisualizerView() {
 
   function focusAndPlay(node: DiagramNode, viaTourIndex: number | null = null) {
     if (!viz) return;
+    stageSelectionRef.current = node.id;
     setSelectedNode(node);
     setPopupOpen(false);
     setPlaying3d(true);
     setPaused(false);
     setTourIndex(viaTourIndex);
     loadExpansion(node);
-    // The stage IS its dynamic scene now: write one on focus if none exists.
-    if (
-      !stageScenes[node.id] &&
-      !stageSceneLoading &&
-      !stageSceneDismissedRef.current.has(node.id)
-    ) {
-      void requestStageScene(node);
-    }
+    // Saved scenes are resolved before the effect below decides to generate.
     // Warm the server cache for the next stage while this one plays.
     if (viaTourIndex !== null && viaTourIndex + 1 < tourOrder.length) {
       expandVisualizationNode({
@@ -927,33 +927,60 @@ export function VisualizerView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [popupOpen, playing3d]);
 
-  // Stored stage scenes for the active diagram, so the Sparkles toggle knows
-  // instantly which nodes can already play dynamically.
+  // Resolve notes and playable scenes together for this exact diagram.
+  // A pending or failed lookup must not mean "all ready" or "missing scene".
   useEffect(() => {
     const vizId = activeDiagramId ?? viz?.viz_id;
+    setPreparationState({diagramId: vizId ?? null, status: "loading"});
+    setPrepareDone(null);
+    setPrepareTotal(0);
+    setPrepareError(null);
+    setPreparedIds(new Set());
+    setStoryboards({});
     setStageScenes({});
+    setStageLoadingIds(new Set());
+    stageAutoRequestedRef.current = new Set();
     setStageSceneOpen(false);
     setStageSceneError(null);
     stageSceneDismissedRef.current = new Set();
     if (!vizId) return;
     let live = true;
-    getStageScenes(vizId)
-      .then((response) => {
+    Promise.all([getPreparedStages(vizId), getStageScenes(vizId)])
+      .then(([notes, response]) => {
         if (!live) return;
-        setStageScenes(
-          Object.fromEntries(
-            response.stage_scenes.map((record) => [record.node_id, record]),
+        setPreparedIds((current) => new Set([...notes.prepared, ...current]));
+        const next: Record<string, ProcessStep[]> = {};
+        for (const expansion of notes.expansions) {
+          const steps = expansion.content.process_steps;
+          if (steps?.length) next[expansion.node_id] = steps;
+        }
+        setStoryboards((current) => ({...next, ...current}));
+        setStageScenes((current) => ({
+          ...Object.fromEntries(
+            response.stage_scenes.filter(sceneIsPlayable).map((record) => [record.node_id, record]),
           ),
-        );
+          ...current,
+        }));
+        setPreparationState({diagramId: vizId, status: "ready"});
       })
       .catch(() => {
-        // Non-fatal: the theater still plays; generation can rebuild the map.
+        if (live) setPreparationState({diagramId: vizId, status: "error"});
       });
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDiagramId, viz?.viz_id]);
+  }, [activeDiagramId, viz?.viz_id, preparationReload]);
+
+  useEffect(() => {
+    if (!preparationLoaded || !playing3d || !selectedNode ||
+        stageScenes[selectedNode.id] || stageAutoRequestedRef.current.has(selectedNode.id) ||
+        stageSceneDismissedRef.current.has(selectedNode.id)) return;
+    stageAutoRequestedRef.current.add(selectedNode.id);
+    void requestStageScene(selectedNode);
+    // Failed automatic attempts remain explicitly retryable without a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preparationLoaded, playing3d, selectedNode?.id, stageScenes]);
 
   // The dynamic scene is the primary stage experience: it opens by itself
   // whenever the focused stage has one — including the moment prepare
@@ -967,7 +994,7 @@ export function VisualizerView() {
         !stageSceneDismissedRef.current.has(selectedNode.id),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNode?.id, stageScenes]);
+  }, [selectedNode?.id, stageScenes[selectedNode?.id ?? ""]]);
 
   function dismissStageScene(nodeId: string) {
     stageSceneDismissedRef.current.add(nodeId);
@@ -987,8 +1014,8 @@ export function VisualizerView() {
 
   async function requestStageScene(node: DiagramNode, force = false) {
     const vizId = activeDiagramId ?? viz?.viz_id;
-    if (!vizId) return;
-    setStageSceneLoading(true);
+    if (!vizId || !preparationLoaded) return;
+    setStageLoadingIds((current) => new Set(current).add(node.id));
     setStageSceneError(null);
     try {
       const response = await generateStageScene({
@@ -996,18 +1023,26 @@ export function VisualizerView() {
         nodeId: node.id,
         force,
       });
+      if (diagramRef.current !== vizId) return;
+      if (!sceneIsPlayable(response.stage_scene)) throw new Error("The generated animation is not playable. Try regenerating it.");
       setStageScenes((current) => ({
         ...current,
         [node.id]: response.stage_scene,
       }));
-      stageSceneDismissedRef.current.delete(node.id);
-      setStageSceneOpen(true);
+      if (stageSelectionRef.current === node.id) {
+        stageSceneDismissedRef.current.delete(node.id);
+        setStageSceneOpen(true);
+      }
     } catch (error) {
-      setStageSceneError(
-        error instanceof Error ? error.message : "Stage generation failed.",
-      );
+      if (diagramRef.current === vizId && stageSelectionRef.current === node.id) {
+        setStageSceneError(error instanceof Error ? error.message : "Stage generation failed.");
+      }
     } finally {
-      setStageSceneLoading(false);
+      if (diagramRef.current === vizId) setStageLoadingIds((current) => {
+        const next = new Set(current);
+        next.delete(node.id);
+        return next;
+      });
     }
   }
 
@@ -1232,7 +1267,7 @@ export function VisualizerView() {
       )}
       <div className="flex min-h-0 flex-1">
       {/* Left rail: paper picker + controls */}
-      <div className="flex w-72 shrink-0 flex-col bg-desk-900">
+      <div className={`${stageSceneShowing ? "hidden" : "flex"} w-72 shrink-0 flex-col bg-desk-900`}>
         <div className="px-4 pb-2 pt-4">
           <span className="text-sm font-semibold text-ivory-100">
             Algorithm Visualizer
@@ -1349,7 +1384,7 @@ export function VisualizerView() {
       {/* Canvas */}
       <div className="relative min-w-0 flex-1">
         {viz && diagram && viewMode === "3d" ? (
-          <div className="absolute inset-0">
+          <div className={`${stageSceneShowing ? "invisible" : ""} absolute inset-0`}>
             <Visualizer3D
               key={`${activeDiagramId}-${viz.updated_at}-${fit3dCounter}-${overlayMode}`}
               diagram={diagram}
@@ -1699,10 +1734,21 @@ export function VisualizerView() {
 
         {/* Canvas toolbar */}
         {viz && (
-          <div className="absolute right-3 top-3 flex gap-1.5">
-            {viewMode === "3d" && !playing3d && (
+          <div className="absolute right-3 top-3 z-10 flex gap-1.5">
+            {viewMode === "3d" && (
               <>
-                {prepareDone !== null ? (
+                {!preparationLoaded ? (
+                  preparationLoadFailed ? (
+                    <button onClick={() => setPreparationReload((value) => value + 1)}
+                      className="rounded bg-desk-850/95 px-2.5 py-1.5 text-xs text-pen-red">
+                      Could not check saved stages · Retry
+                    </button>
+                  ) : (
+                    <span role="status" className="rounded bg-desk-850/95 px-2.5 py-1.5 text-xs text-ivory-300">
+                      Checking saved stages…
+                    </span>
+                  )
+                ) : prepareDone !== null ? (
                   <div className="flex items-center gap-2 rounded bg-desk-850/95 px-2.5 py-1.5 text-xs text-ivory-300">
                     <span className="animate-pulse">
                       Preparing {prepareDone}/{prepareTotal}
@@ -1717,28 +1763,33 @@ export function VisualizerView() {
                     </span>
                   </div>
                 ) : (
-                  unpreparedCount > 0 && (
+                  unpreparedCount > 0 ? (
                     <button
                       onClick={() => void prepareAllStages()}
-                      title="Generate every stage's storyboard now so the walkthrough never stalls"
+                      title="Prepare missing animations and storyboards for every stage"
                       className="flex items-center gap-1.5 rounded bg-desk-850/95 px-2.5 py-1.5 text-xs font-medium text-ivory-300 hover:bg-desk-800 hover:text-accent-300"
                     >
                       Prepare all
                       <span className="text-[10px] text-ivory-700">
-                        {viz.diagram.nodes.length - unpreparedCount}/
-                        {viz.diagram.nodes.length}
+                        {preparationNodes.length - unpreparedCount}/
+                        {preparationNodes.length}
                       </span>
                     </button>
+                  ) : (
+                    <span className="rounded bg-desk-850/95 px-2.5 py-1.5 text-xs text-ivory-300">
+                      All stages ready
+                    </span>
                   )
                 )}
-                <button
+                {prepareError && <span role="alert" className="max-h-40 max-w-sm overflow-y-auto whitespace-normal break-words rounded bg-desk-850/95 px-2.5 py-1.5 text-xs text-pen-red">{prepareError}</span>}
+                {!playing3d && <button
                   onClick={startTour}
                   title="Play a guided walkthrough of every stage"
                   className="flex items-center gap-1.5 rounded bg-accent-400 px-2.5 py-1.5 text-xs font-medium text-desk-950 hover:bg-accent-300"
                 >
                   <Play className="h-3.5 w-3.5" />
                   Walkthrough
-                </button>
+                </button>}
               </>
             )}
             {diff && (
@@ -1894,14 +1945,20 @@ export function VisualizerView() {
             playback caption bar (z-10) stays on top and drives it: pause
             pauses it, replay restarts it, ✨/✕ return to the theater. */}
         {stageSceneShowing && selectedNode && activeStageScene && (
-          <div className="absolute inset-0 z-[5]">
+          <div data-theatre-stage className="absolute inset-x-0 top-16 bottom-0 z-[5] bg-black">
+            <div className="absolute inset-x-0 top-0 bottom-28">
             <SceneFrame
+              key={`${activeStageScene.node_id}:${activeStageScene.updated_at}`}
               code={activeStageScene.scene.code}
-              title={`${selectedNode.label} — dynamic scene`}
+              title={selectedNode.label}
               playing={!paused}
               restartToken={stageRestartToken}
-              onError={setStageSceneError}
+              onError={(message) => {
+                dismissStageScene(selectedNode.id);
+                setStageSceneError(message.split("\n")[0]);
+              }}
             />
+            </div>
           </div>
         )}
 
@@ -1925,7 +1982,7 @@ export function VisualizerView() {
                   )}
                   {stageSceneShowing && activeStageScene && (
                     <span className="shrink-0 text-[10px] text-accent-300">
-                      dynamic · {activeStageScene.model}
+                      animated
                     </span>
                   )}
                 </div>
@@ -1966,7 +2023,9 @@ export function VisualizerView() {
                     <ChevronRight className="h-3.5 w-3.5" />
                   </button>
                   <button
+                    disabled={!preparationLoaded || stageSceneLoading}
                     onClick={(event) => {
+                      if (!preparationLoaded) return;
                       if (stageSceneLoading) return;
                       if (event.shiftKey && stageScenes[selectedNode.id]) {
                         void requestStageScene(selectedNode, true);
@@ -2019,7 +2078,16 @@ export function VisualizerView() {
                 </div>
               ) : null}
               {stageSceneError ? (
-                <div className="py-1 text-xs text-pen-red">{stageSceneError}</div>
+                <div className="py-1 text-xs text-ivory-300">
+                  <p>The animation could not play. The stage overview is still available.</p>
+                  <details className="mt-1 text-[11px] text-ivory-500">
+                    <summary>Error details</summary>{stageSceneError}
+                  </details>
+                  <button disabled={stageSceneLoading} onClick={() => void requestStageScene(selectedNode, true)}
+                    className="mt-2 rounded border border-desk-700 px-2 py-1 text-accent-300 disabled:opacity-50">
+                    Regenerate animation
+                  </button>
+                </div>
               ) : null}
               {expansionLoading ? (
                 <div className="animate-pulse py-1 text-xs text-ivory-300">
@@ -2028,7 +2096,10 @@ export function VisualizerView() {
               ) : expansionError ? (
                 <div className="py-1 text-xs text-pen-red">{expansionError}</div>
               ) : null}
-              {!stageSceneShowing && !stageSceneLoading && !stageSceneError ? (
+              {!preparationLoaded && !preparationLoadFailed && (
+                <p className="py-1 text-xs text-ivory-300">Checking saved animations…</p>
+              )}
+              {preparationLoaded && !stageSceneShowing && !stageSceneLoading && !stageSceneError ? (
                 <p className="py-1 text-xs leading-relaxed text-ivory-500">
                   {stageScenes[selectedNode.id]
                     ? "Dynamic scene closed — press ✨ to reopen it."
@@ -2172,7 +2243,7 @@ export function VisualizerView() {
 
       {/* Right dock: paper summary, modification, findings */}
       <div
-        className={`flex shrink-0 flex-col bg-desk-900 ${
+        className={`${stageSceneShowing ? "hidden" : "flex"} shrink-0 flex-col bg-desk-900 ${
           dockTab === "findings" || dockTab === "discuss" || dockTab === "scene"
             ? "w-[26rem]"
             : "w-80"

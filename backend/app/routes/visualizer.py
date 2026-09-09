@@ -9,6 +9,7 @@ from app.rag.llm_provider import (
     available_providers,
 )
 from app.rag.paper_visualizer import expand_node, generate_paper_visualization
+from app.rag.retriever import PaperStoreUnavailable
 from app.rag.scene_coder import SceneCodingError
 from app.rag.scene_service import (
     NodeNotFound,
@@ -50,6 +51,8 @@ def generate_visualization_endpoint(request: GenerateVisualizationRequest) -> Di
             diagram_kind=request.diagram_kind,
             force=request.force,
         )
+    except PaperStoreUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except ValueError as error:
         message = str(error)
         status = 404 if "not found" in message.lower() else 422
@@ -75,6 +78,8 @@ def expand_node_endpoint(request: ExpandNodeRequest) -> Dict[str, Any]:
             node_id=request.node_id,
             force=request.force,
         )
+    except PaperStoreUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except ValueError as error:
         message = str(error)
         status = 404 if "not found" in message.lower() else 422
@@ -120,6 +125,8 @@ def generate_scene_endpoint(request: GenerateSceneRequest) -> Dict[str, Any]:
             provider=request.provider,
             model=request.model,
         )
+    except PaperStoreUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except VisualizationNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except UnknownProvider as error:
@@ -172,6 +179,8 @@ def generate_stage_scene_endpoint(request: GenerateStageSceneRequest) -> Dict[st
             provider=request.provider,
             model=request.model,
         )
+    except PaperStoreUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except (VisualizationNotFound, NodeNotFound) as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except UnknownProvider as error:

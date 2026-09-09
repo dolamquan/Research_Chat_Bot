@@ -855,6 +855,8 @@ export function listSceneProviders(): Promise<{ providers: string[] }> {
 // Per-node stage scenes: the same generated-code pipeline, scoped to one
 // diagram node. Rendered by the stage overlay in the visualizer.
 
+const pendingStageScenes = new Map<string, Promise<{ stage_scene: StageSceneRecord }>>();
+
 export function generateStageScene({
   vizId,
   nodeId,
@@ -868,7 +870,10 @@ export function generateStageScene({
   provider?: string;
   model?: string;
 }): Promise<{ stage_scene: StageSceneRecord }> {
-  return requestJson("/visualizer/generate-stage-scene", {
+  const key = JSON.stringify([vizId, nodeId, force, provider ?? null, model ?? null]);
+  const pending = pendingStageScenes.get(key);
+  if (pending) return pending;
+  const request = requestJson<{ stage_scene: StageSceneRecord }>("/visualizer/generate-stage-scene", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -878,7 +883,9 @@ export function generateStageScene({
       provider: provider ?? null,
       model: model ?? null,
     }),
-  });
+  }).finally(() => pendingStageScenes.delete(key));
+  pendingStageScenes.set(key, request);
+  return request;
 }
 
 export function getStageScenes(

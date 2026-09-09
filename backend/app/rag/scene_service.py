@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from app.rag.llm_provider import resolve_provider
+from app.rag.scene_requests import share_scene_request
+from app.rag.retriever import PaperStoreUnavailable
 from app.rag.document_structure import (
     EXTRACTION_EMPTY,
     StructuredPaper,
@@ -88,6 +90,7 @@ def load_structured_paper(
     )
 
 
+@share_scene_request
 def build_scene(
     viz_id: str,
     force: bool = False,
@@ -109,7 +112,7 @@ def build_scene(
 
     if not force:
         cached = get_scene(viz_id, SCHEMA_VERSION)
-        if cached:
+        if cached and not check_scene_code(str((cached.get("scene") or {}).get("code", ""))):
             return cached
 
     record = get_visualization_by_id(viz_id)
@@ -203,6 +206,7 @@ def build_scene_from_expansions(viz_id: str) -> Dict[str, Any]:
     )
 
 
+@share_scene_request
 def build_stage_scene(
     viz_id: str,
     node_id: str,
@@ -223,7 +227,7 @@ def build_stage_scene(
 
     if not force:
         cached = get_stage_scene(viz_id, node_id, SCHEMA_VERSION)
-        if cached:
+        if cached and not check_scene_code(str((cached.get("scene") or {}).get("code", ""))):
             return cached
 
     record = get_visualization_by_id(viz_id)
@@ -254,6 +258,9 @@ def build_stage_scene(
             document_source=record["document_source"], limit=MAX_SCENE_CHUNKS
         )
         stage_context = _stage_context(record, node, chunks)
+    except PaperStoreUnavailable:
+        # Do not silently generate a new scene without its paper during an outage.
+        raise
     except Exception:
         stage_context = ""
 
@@ -283,7 +290,8 @@ def build_stage_scene(
 
 def fetch_stage_scenes(viz_id: str) -> List[Dict[str, Any]]:
     """Every stored stage scene for a visualization (possibly empty)."""
-    return list_stage_scenes(viz_id, SCHEMA_VERSION)
+    return [record for record in list_stage_scenes(viz_id, SCHEMA_VERSION)
+            if not check_scene_code(str((record.get("scene") or {}).get("code", "")))]
 
 
 __all__ = [
