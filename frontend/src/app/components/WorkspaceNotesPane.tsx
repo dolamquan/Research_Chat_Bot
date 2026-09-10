@@ -11,6 +11,7 @@ import {
   PenTool,
   Save,
   Send,
+  Maximize2,
 } from "lucide-react";
 import {
   Excalidraw,
@@ -27,14 +28,18 @@ import type {
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 
 import type { Source } from "../types";
+import { NoteEditor } from "./notes";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 import {
   addNoteAttachment,
+  deleteNoteAttachment,
   createNote,
   exportNoteToNotion,
   listNotes,
   listNotionTargets,
   updateNote,
 } from "../api";
+import { CANVAS_ATTACHMENT_ID, hasSketch, renderSketch, sketchFingerprint } from "../sketchExport";
 
 type NoteMode = "notes" | "sketch";
 
@@ -191,6 +196,7 @@ export function WorkspaceNotesPane({
   const [sketch, setSketch] = useState<ExcalidrawScene>(emptyScene);
   const [sketchElementCount, setSketchElementCount] = useState(0);
   const [savedAt, setSavedAt] = useState("");
+  const [documentOpen, setDocumentOpen] = useState(false);
   const [librarySavedAt, setLibrarySavedAt] = useState("");
   const [sketchStatus, setSketchStatus] = useState("");
   const [isSyncing, setIsSyncing] = useState(false);
@@ -200,7 +206,9 @@ export function WorkspaceNotesPane({
   const sketchRef = useRef<ExcalidrawScene>(emptyScene());
   const sketchSaveTimeoutRef = useRef<number>();
   const serverNoteIdRef = useRef<string>("");
-  const uploadedAttachmentIdsRef = useRef<Set<string>>(new Set());
+  const uploadedAttachmentsRef = useRef(new Map<string, NoteAttachment>());
+  const knownAttachmentIdsRef = useRef(new Set<string>());
+  const savingRef = useRef(false);
   const noteKey = useMemo(() => storageKey(scopeId), [scopeId]);
   const initialSketchData = useMemo(
     () => ({
@@ -229,7 +237,8 @@ export function WorkspaceNotesPane({
     setSketchStatus("");
     setSyncStatus("");
     serverNoteIdRef.current = "";
-    uploadedAttachmentIdsRef.current = new Set();
+    uploadedAttachmentsRef.current = new Map();
+    knownAttachmentIdsRef.current = new Set(stored.attachments.map(item => item.id));
   }, [noteKey]);
 
   useEffect(() => {
@@ -249,7 +258,9 @@ export function WorkspaceNotesPane({
     }, 350);
 
     return () => window.clearTimeout(timeout);
-  }, [attachments, note, noteKey]);
+  }, [attachments, note, noteKey, mode]);
+
+  useEffect(() => () => window.clearTimeout(sketchSaveTimeoutRef.current), [mode, noteKey]);
 
   useEffect(() => {
     if (mode !== "sketch") return;
@@ -282,7 +293,6 @@ export function WorkspaceNotesPane({
     });
     if (existing.notes.length > 0) {
       serverNoteIdRef.current = existing.notes[0].note_id;
-      uploadedAttachmentIdsRef.current = new Set(attachments.map((item) => item.id));
       return serverNoteIdRef.current;
     }
 
@@ -300,31 +310,61 @@ export function WorkspaceNotesPane({
   }
 
   async function saveCurrentNoteToLibrary(): Promise<string> {
+    if (savingRef.current) return "";
     if (!note.trim() && attachments.length === 0 && sketchRef.current.elements.length === 0) {
       return "";
     }
 
+    savingRef.current = true;
     setIsSyncing(true);
     setSyncStatus("");
     try {
+      const scene = sketchRef.current;
+      let savedAttachments = attachments;
+      if (hasSketch(scene)) {
+        const fingerprint = sketchFingerprint(scene);
+        const matching = attachments.find(item => item.id !== CANVAS_ATTACHMENT_ID && item.scene && sketchFingerprint(item.scene) === fingerprint)
+          || attachments.find(item => item.scene && sketchFingerprint(item.scene) === fingerprint);
+        if (!matching) {
+          savedAttachments = [{
+            id: CANVAS_ATTACHMENT_ID, kind: "sketch", name: "Current sketch.png",
+            dataUrl: await renderSketch(scene), scene, createdAt: new Date().toISOString(),
+          }, ...attachments.filter(item => item.id !== CANVAS_ATTACHMENT_ID)];
+          setAttachments(savedAttachments);
+        } else if (matching.id !== CANVAS_ATTACHMENT_ID && attachments.some(item => item.id === CANVAS_ATTACHMENT_ID)) {
+          savedAttachments = attachments.filter(item => item.id !== CANVAS_ATTACHMENT_ID);
+          setAttachments(savedAttachments);
+        }
+      }
       const noteId = await resolveServerNoteId();
-      await updateNote(noteId, {
+      const saved = await updateNote(noteId, {
         title: scopeTitle || "Workspace note",
         source_title: scopeTitle,
         body_md: note,
-        sketch: sketchRef.current,
+        sketch: scene,
       });
 
-      for (const attachment of attachments) {
-        if (uploadedAttachmentIdsRef.current.has(attachment.id)) continue;
+      for (const attachment of savedAttachments) {
+        if (uploadedAttachmentsRef.current.get(attachment.id) === attachment) continue;
         await addNoteAttachment(noteId, {
+          client_id: attachment.id,
           kind: attachment.kind,
           name: attachment.name,
           data_url: attachment.dataUrl,
           scene: attachment.scene,
         });
-        uploadedAttachmentIdsRef.current.add(attachment.id);
+        uploadedAttachmentsRef.current.set(attachment.id, attachment);
       }
+      // Only remove attachments this browser actually showed to the user.
+      // A fresh local draft must not erase images saved by another browser.
+      for (const attachment of saved.note.attachments) {
+        if (attachment.client_id && knownAttachmentIdsRef.current.has(attachment.client_id)
+          && !savedAttachments.some(item => item.id === attachment.client_id)) {
+          await deleteNoteAttachment(attachment.attachment_id);
+          uploadedAttachmentsRef.current.delete(attachment.client_id);
+        }
+      }
+      knownAttachmentIdsRef.current = new Set(savedAttachments.map(item => item.id));
 
       setLibrarySavedAt(
         new Date().toLocaleTimeString([], {
@@ -341,6 +381,7 @@ export function WorkspaceNotesPane({
       );
       return "";
     } finally {
+      savingRef.current = false;
       setIsSyncing(false);
     }
   }
@@ -499,6 +540,7 @@ export function WorkspaceNotesPane({
     setSketchElementCount(getNonDeletedElements(attachment.scene.elements).length);
     setMode("sketch");
     window.setTimeout(() => {
+      excalidrawApiRef.current?.addFiles(Object.values(attachment.scene?.files || {}));
       excalidrawApiRef.current?.updateScene({
         elements: attachment.scene?.elements || [],
         appState: attachment.scene?.appState || {},
@@ -556,7 +598,10 @@ export function WorkspaceNotesPane({
             <button
               key={item.mode}
               type="button"
-              onClick={() => setMode(item.mode)}
+              onClick={() => {
+                if (item.mode === "sketch") setSketch(sketchRef.current);
+                setMode(item.mode);
+              }}
               className={`h-8 rounded px-2 text-xs flex items-center gap-1.5 ${
                 active
                   ? "border border-border bg-secondary text-foreground"
@@ -572,12 +617,19 @@ export function WorkspaceNotesPane({
 
       {mode === "notes" ? (
         <div className="min-h-0 flex-1 flex flex-col">
-          <textarea
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="Capture claims, questions, paper ideas, and reading notes..."
-            className="min-h-0 flex-1 resize-none bg-background px-4 py-4 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground"
-          />
+          <div className="flex justify-end border-b border-border px-3 py-1">
+            <button type="button" className="flex items-center gap-1 text-xs text-muted-foreground" onClick={() => setDocumentOpen(true)}><Maximize2 size={12} /> Expand editor</button>
+          </div>
+          <NoteEditor value={note} onChange={setNote} onSave={() => void saveCurrentNoteToLibrary()} />
+          <Dialog open={documentOpen} onOpenChange={setDocumentOpen}>
+            <DialogContent className="flex h-[85vh] flex-col sm:max-w-5xl" onInteractOutside={event => event.preventDefault()}>
+              <DialogTitle>{scopeTitle || "Research note"}</DialogTitle>
+              <DialogDescription>Your draft autosaves in this browser. Save to add it to Notes.</DialogDescription>
+              <NoteEditor value={note} onChange={setNote} onSave={() => void saveCurrentNoteToLibrary()} label="Expanded note document" />
+              <div className="flex items-center justify-between gap-4"><span className="text-xs text-muted-foreground" role="status">{syncStatus || (librarySavedAt ? `Saved to Notes ${librarySavedAt}` : "Local draft")}</span>
+                <button type="button" disabled={isSyncing} className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-40" onClick={() => void saveCurrentNoteToLibrary()}>{isSyncing ? "Saving…" : "Save to Notes"}</button></div>
+            </DialogContent>
+          </Dialog>
           <div className="shrink-0 border-t border-border bg-card px-3 py-3 space-y-2">
             <div className="flex items-center gap-2">
               <input
@@ -746,7 +798,7 @@ export function WorkspaceNotesPane({
               }`}
             >
               {sketchStatus ||
-                "Use Excalidraw tools, images, arrows, text, and shapes. Add to note exports the scene as a PNG attachment while preserving editable scene data."}
+                "Use images, arrows, text, and shapes. Save and Notion include your current sketch automatically. Add to note keeps a separate snapshot you can edit later."}
             </p>
           </div>
         </div>

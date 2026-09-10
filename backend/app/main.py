@@ -59,3 +59,8 @@ app.include_router(visuals.router)
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+from app.agents.catalog import configure_application_tools
+
+configure_application_tools(app)

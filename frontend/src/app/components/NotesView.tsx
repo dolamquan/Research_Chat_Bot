@@ -15,7 +15,10 @@ import {
   Settings2,
   Trash2,
   X,
+  Pencil,
 } from "lucide-react";
+import { NoteEditor, NotePreview } from "./notes";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 
 import {
   createNotionTarget,
@@ -128,6 +131,24 @@ export function NotesView({
   const [targetError, setTargetError] = useState("");
   const [isSavingTarget, setIsSavingTarget] = useState(false);
   const [exportingNoteId, setExportingNoteId] = useState("");
+  const [editingNote, setEditingNote] = useState<ResearchNote | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [editError, setEditError] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  function editNote(note: ResearchNote) {
+    setEditingNote(note); setEditTitle(note.title); setEditBody(note.body_md); setEditError("");
+  }
+  async function saveEdit() {
+    if (!editingNote || savingEdit) return;
+    setSavingEdit(true); setEditError("");
+    try {
+      const result = await updateNote(editingNote.note_id, {title: editTitle, body_md: editBody});
+      replaceNote(result.note); setEditingNote(null);
+    } catch (error) { setEditError(error instanceof Error ? error.message : "Could not save note"); }
+    finally { setSavingEdit(false); }
+  }
 
   const loadAll = useCallback(async () => {
     const [notesResult, foldersResult] = await Promise.all([
@@ -239,6 +260,7 @@ export function NotesView({
     const counts = new Map<string, number>();
     counts.set(DEFAULT_FOLDER_ID, workspaceNotes.length);
     workspaceNotes.forEach((note) => {
+      if (note.folder_id === DEFAULT_FOLDER_ID) return;
       counts.set(note.folder_id, (counts.get(note.folder_id) || 0) + 1);
     });
     return counts;
@@ -676,9 +698,7 @@ export function NotesView({
                           </div>
 
                           {note.body_md ? (
-                            <p className="mt-4 overflow-hidden rounded border border-border bg-background px-3 py-2 text-sm leading-6 text-foreground line-clamp-5 break-words">
-                              {note.body_md}
-                            </p>
+                            <NotePreview value={note.body_md} className="mt-4 max-h-48 overflow-auto rounded border border-border bg-background px-3 py-2" />
                           ) : (
                             <p className="mt-4 text-sm text-muted-foreground">
                               Image-only note
@@ -726,6 +746,7 @@ export function NotesView({
                             <MessageSquarePlus size={13} />
                             Use in chat
                           </button>
+                          <button type="button" className="inline-flex h-9 items-center gap-2 rounded border border-border px-3 text-xs" onClick={() => editNote(note)}><Pencil size={13} /> Edit</button>
                           {renderExportButton(note)}
                           <select
                             value={note.folder_id}
@@ -802,9 +823,7 @@ export function NotesView({
                             {note.selected_text}
                           </p>
                           {note.body_md && (
-                            <p className="mt-4 overflow-hidden rounded border border-border bg-background px-3 py-2 text-sm leading-6 text-foreground line-clamp-3 break-words">
-                              {note.body_md}
-                            </p>
+                            <NotePreview value={note.body_md} className="mt-4 max-h-48 overflow-auto rounded border border-border bg-background px-3 py-2" />
                           )}
                           <div className="mt-4 flex flex-wrap gap-2">
                             {dateLabel(note.updated_at) && (
@@ -836,6 +855,7 @@ export function NotesView({
                             <MessageSquarePlus size={13} />
                             Use in chat
                           </button>
+                          <button type="button" className="inline-flex h-9 items-center gap-2 rounded border border-border px-3 text-xs" onClick={() => editNote(note)}><Pencil size={13} /> Edit note</button>
                           {renderExportButton(note)}
                           <button
                             type="button"
@@ -1038,6 +1058,17 @@ export function NotesView({
           </div>
         </div>
       )}
+      <Dialog open={editingNote !== null} onOpenChange={open => {if (!open && !savingEdit) setEditingNote(null);}}>
+        <DialogContent className="flex h-[85vh] flex-col sm:max-w-5xl" onInteractOutside={event => event.preventDefault()}>
+          <DialogTitle>Edit research note</DialogTitle>
+          <DialogDescription>Format your notes, highlight key ideas, and write LaTeX equations.</DialogDescription>
+          <input aria-label="Note title" className="rounded border bg-background px-3 py-2 text-lg font-semibold" value={editTitle} onChange={event => setEditTitle(event.target.value)} />
+          <NoteEditor value={editBody} onChange={setEditBody} onSave={() => void saveEdit()} />
+          {editError && <p role="alert" className="text-sm text-destructive">{editError}</p>}
+          <div className="flex justify-end gap-2"><button type="button" className="rounded border px-4 py-2 text-sm" disabled={savingEdit} onClick={() => setEditingNote(null)}>Cancel</button>
+            <button type="button" className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-40" disabled={savingEdit} onClick={() => void saveEdit()}>{savingEdit ? "Saving…" : "Save changes"}</button></div>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

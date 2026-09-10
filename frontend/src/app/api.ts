@@ -2,9 +2,14 @@ import type {
   SceneRecord,
   StageSceneRecord,
 } from "./components/visualization/sceneTypes";
+import { hasSketch, sketchFingerprint, renderSketch, CANVAS_ATTACHMENT_ID } from "./sketchExport";
 import type {
+  AgentContext,
   AgentSession,
   AgentSessionDetail,
+  AgentTool,
+  AgentToolCallResponse,
+  AgentToolsResponse,
   Article,
   ArticleDomain,
   Annotation,
@@ -437,7 +442,7 @@ export function deleteNote(noteId: string): Promise<{ status: string }> {
 
 export function addNoteAttachment(
   noteId: string,
-  payload: { kind: string; name: string; data_url: string; scene?: unknown },
+  payload: { kind: string; name: string; data_url: string; scene?: unknown; client_id?: string },
 ): Promise<{ attachment: { attachment_id: string } }> {
   return requestJson(`/notes/${encodeURIComponent(noteId)}/attachments`, {
     method: "POST",
@@ -501,10 +506,30 @@ export function deleteNotionTarget(targetId: string): Promise<{ status: string }
   });
 }
 
-export function exportNoteToNotion(
+export async function exportNoteToNotion(
   noteId: string,
   payload: { target_id?: string; database_id?: string } = {},
 ): Promise<NoteExportResult> {
+  // Older saved notes may contain only editable canvas JSON. Render it in
+  // the browser before the backend uploads the note's images to Notion.
+  const { note } = await requestJson<{ note: ResearchNote }>(`/notes/${encodeURIComponent(noteId)}`);
+  if (hasSketch(note.sketch)) {
+    const fingerprint = sketchFingerprint(note.sketch);
+    let hasSnapshot = false;
+    for (const attachment of note.attachments.filter(item => item.has_scene)) {
+      const { scene } = await getNoteAttachmentScene(attachment.attachment_id);
+      if (hasSketch(scene) && sketchFingerprint(scene) === fingerprint) {
+        hasSnapshot = true;
+        break;
+      }
+    }
+    if (!hasSnapshot) {
+      await addNoteAttachment(noteId, {
+        client_id: CANVAS_ATTACHMENT_ID, kind: "sketch", name: "Current sketch.png",
+        data_url: await renderSketch(note.sketch), scene: note.sketch,
+      });
+    }
+  }
   return requestJson(`/notes/${encodeURIComponent(noteId)}/export-notion`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -680,6 +705,7 @@ export function sendAgentChat({
   category,
   tags,
   contextMode = "retrieval",
+  workspace,
 }: {
   sessionId?: string;
   question: string;
@@ -691,6 +717,7 @@ export function sendAgentChat({
   category?: string;
   tags?: string[];
   contextMode?: ContextMode;
+  workspace?: Record<string, unknown>;
 }): Promise<ChatResponse> {
   return requestJson("/agent/chat", {
     method: "POST",
@@ -711,8 +738,53 @@ export function sendAgentChat({
       domain: domain ?? null,
       category: category ?? null,
       tags: tags ?? [],
+      workspace: workspace ?? {},
     }),
   });
+}
+
+export function getAgentTools({
+  query = "",
+  category = "",
+  offset = 0,
+  limit = 200,
+}: {
+  query?: string;
+  category?: string;
+  offset?: number;
+  limit?: number;
+} = {}): Promise<AgentToolsResponse> {
+  const params = new URLSearchParams({
+    query,
+    category,
+    offset: String(offset),
+    limit: String(limit),
+  });
+  return requestJson(`/agent/tools?${params.toString()}`);
+}
+
+export function getAgentTool(name: string): Promise<AgentTool> {
+  return requestJson(`/agent/tools/${encodeURIComponent(name)}`);
+}
+
+export function callAgentTool({
+  name,
+  arguments: args,
+  workspace,
+}: {
+  name: string;
+  arguments: Record<string, unknown>;
+  workspace?: Record<string, unknown>;
+}): Promise<AgentToolCallResponse> {
+  return requestJson("/agent/tools/call", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, arguments: args, workspace: workspace ?? {} }),
+  });
+}
+
+export function getAgentContext(): Promise<AgentContext> {
+  return requestJson("/agent/context");
 }
 
 export function getAgentSessions(): Promise<{ sessions: AgentSession[] }> {

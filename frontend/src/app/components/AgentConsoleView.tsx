@@ -8,8 +8,25 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { callMcpTool, getAgentSession, getAgentSessions, getMcpTools } from "../api";
-import type { AgentSession, ChatHistoryItem, ChatResponse, McpTool } from "../types";
+import {
+  callAgentTool,
+  callMcpTool,
+  getAgentContext,
+  getAgentSession,
+  getAgentSessions,
+  getAgentTool,
+  getAgentTools,
+  getMcpTools,
+} from "../api";
+import type {
+  AgentContext,
+  AgentSession,
+  AgentTool,
+  AgentToolsResponse,
+  ChatHistoryItem,
+  ChatResponse,
+  McpTool,
+} from "../types";
 
 declare global {
   interface Window {
@@ -98,7 +115,25 @@ const SLASH_COMMANDS: SlashCommand[] = [
   {
     name: "/tools",
     label: "List tools",
-    description: "Show the internal tools the research agent can call.",
+    description: "List every application tool the agent can call; add a keyword to filter.",
+    template: "/tools ",
+  },
+  {
+    name: "/tool",
+    label: "Describe tool",
+    description: "Show one tool's definition and input schema.",
+    template: "/tool ",
+  },
+  {
+    name: "/call",
+    label: "Call tool",
+    description: "Run any application tool directly with JSON arguments.",
+    template: '/call app.papers {"query":"graph rag","limit":5}',
+  },
+  {
+    name: "/context",
+    label: "App context",
+    description: "Show what the agent knows about the application right now.",
     local: true,
   },
   {
@@ -217,24 +252,93 @@ const SLASH_COMMANDS: SlashCommand[] = [
   },
 ];
 
-const TOOL_HELP = [
-  ["retrieve_papers", "Answer research questions using Qdrant retrieval."],
-  ["plan_workflow", "Plan a multi-step research workflow."],
-  ["rank_results", "Rank local, graph, and external candidates against the research goal."],
-  ["query_graph_rag", "Use the local concept graph for relationship-aware context."],
-  ["search_papers", "Search for new papers across arXiv, PubMed, bioRxiv, medRxiv, and Semantic Scholar."],
-  ["search_arxiv", "Search for new papers from arXiv only."],
-  ["search_library", "Find indexed papers in your local library."],
-  ["add_paper", "Index an arXiv or PDF URL into your database."],
-  ["save_note", "Save a note attached to selected PDF context."],
-  ["rebuild_topology", "Recompute clusters and topology."],
-  ["notion.create_research_page", "Export selected research context to Notion."],
-  ["github.create_issue", "Create implementation or research follow-up issues."],
-  ["github.search_repositories", "Find external code related to a paper or topic."],
-  ["research.summarize_paper", "Create a structured summary from selected paper chunks."],
-  ["research.generate_visualization", "Generate Mermaid diagrams from paper context."],
-  ["notion.create_visualization_page", "Store Mermaid diagrams and explanations in Notion."],
-];
+function toolFlags(tool: AgentTool): string {
+  const flags = [
+    tool.effect !== "read" ? tool.effect : "",
+    tool.available ? "" : "unavailable",
+  ].filter(Boolean);
+  return flags.length > 0 ? ` (${flags.join(", ")})` : "";
+}
+
+function toolsText(result: AgentToolsResponse, query: string): string {
+  if (result.tools.length === 0) {
+    return query
+      ? `No application tools match \`${query}\`.`
+      : "No application tools are loaded. Restart the backend so it serves /agent/tools.";
+  }
+
+  const grouped = new Map<string, AgentTool[]>();
+  for (const tool of result.tools) {
+    const list = grouped.get(tool.category) ?? [];
+    list.push(tool);
+    grouped.set(tool.category, list);
+  }
+
+  const lines = [
+    query
+      ? `${result.total} application tools match \`${query}\`:`
+      : `${result.total} application tools the agent can call:`,
+  ];
+  for (const [category, tools] of [...grouped.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    lines.push("", `[${category}]`);
+    for (const tool of tools) {
+      lines.push(`  ${tool.name}${toolFlags(tool)}`, `      ${tool.description}`);
+    }
+  }
+  lines.push(
+    "",
+    "Describe one with `/tool <name>`; run one with `/call <name> {json}`.",
+    "In plain language the agent picks these itself.",
+  );
+  return lines.join("\n");
+}
+
+function toolDetailText(tool: AgentTool): string {
+  const lines = [`${tool.name}  -  ${tool.execution}, ${tool.effect}${tool.available ? "" : ", unavailable"}`, tool.description];
+  if (tool.method && tool.path) {
+    lines.push(`${tool.method} ${tool.path}`);
+  }
+  if (!tool.available && tool.unavailable_reason) {
+    lines.push(tool.unavailable_reason);
+  }
+  lines.push("", "input_schema:", JSON.stringify(tool.input_schema ?? {}, null, 2));
+  return lines.join("\n");
+}
+
+function contextText(context: AgentContext | null): string {
+  if (!context) {
+    return "Application context is not loaded. Restart the backend so it serves /agent/context, then try again.";
+  }
+
+  const areas = Object.entries(context.tool_categories).sort(([a], [b]) => a.localeCompare(b));
+  const lines = [
+    `${context.application}: ${context.paper_count} papers indexed, ${context.tool_count} tools across ${areas.length} areas.`,
+    "",
+    "Features the agent can operate:",
+    ...Object.entries(context.guide).map(([name, text]) => `  ${name}: ${text}`),
+    "",
+    "Papers by domain/category:",
+    ...context.domains.map((row) => `  ${row.domain}/${row.category}: ${row.article_count}`),
+    "",
+    "Tool areas:",
+    ...areas.map(([name, count]) => `  ${name}: ${count}`),
+  ];
+  if (context.unavailable_tools.length > 0) {
+    lines.push(
+      "",
+      "Not available right now:",
+      ...context.unavailable_tools.map((tool) => `  ${tool.name}: ${tool.reason ?? ""}`),
+    );
+  }
+  if (context.notion_targets.length > 0) {
+    lines.push(
+      "",
+      "Notion targets:",
+      ...context.notion_targets.map((target) => `  ${target.name ?? target.target_id ?? ""}`),
+    );
+  }
+  return lines.join("\n");
+}
 
 function makeLocalResponse(content: string, intent = "local_command"): ConsoleEntry {
   return {
@@ -260,7 +364,16 @@ function helpText(): string {
       (command) => `${command.name.padEnd(18)} ${command.description}`,
     ),
     "",
+    "Plain language works for every part of the app, for example:",
+    "  which papers do I have about diffusion models?",
+    "  list my notes about attention and export the newest one to Notion",
+    "  what visualizations exist for the transformer paper? prepare a 3D scene for it",
+    "  show my latest evaluation run and compare it with the previous one",
+    "",
     "Examples:",
+    "  /tools notes",
+    "  /tool api.notes.create_note",
+    '  /call app.papers {"query":"graph rag","limit":5}',
     "  /workflow graph RAG tool routing, rank the top 3, add them, then rebuild topology",
     "  /search-papers graph RAG",
     "  /search-arxiv graph RAG",
@@ -278,13 +391,6 @@ function helpText(): string {
     "  /resume            list previous agent sessions",
     "  /resume 1          resume the first listed session",
     "  /resume <id>       resume a session by id prefix",
-  ].join("\n");
-}
-
-function toolsText(): string {
-  return [
-    "Available internal tools:",
-    ...TOOL_HELP.map(([tool, description]) => `  ${tool.padEnd(18)} ${description}`),
   ].join("\n");
 }
 
@@ -308,18 +414,21 @@ function mcpToolsText(tools: McpTool[]): string {
   ].join("\n");
 }
 
-function parseMcpCall(command: string): { toolName: string; args: Record<string, unknown> } {
-  const rest = command.replace(/^\/mcp-call\s+/i, "").trim();
+function parseToolCall(
+  command: string,
+  prefix: string,
+): { name: string; args: Record<string, unknown> } {
+  const rest = command.slice(prefix.length).trim();
   const firstSpace = rest.indexOf(" ");
   if (firstSpace === -1) {
-    return { toolName: rest, args: {} };
+    return { name: rest, args: {} };
   }
 
-  const toolName = rest.slice(0, firstSpace).trim();
+  const name = rest.slice(0, firstSpace).trim();
   const rawArgs = rest.slice(firstSpace + 1).trim();
   return {
-    toolName,
-    args: rawArgs ? JSON.parse(rawArgs) : {},
+    name,
+    args: rawArgs ? (JSON.parse(rawArgs) as Record<string, unknown>) : {},
   };
 }
 
@@ -372,7 +481,13 @@ function TerminalLogo() {
   );
 }
 
-function TerminalBootHeader({ isRunning }: { isRunning: boolean }) {
+function TerminalBootHeader({
+  isRunning,
+  summary,
+}: {
+  isRunning: boolean;
+  summary: string;
+}) {
   return (
     <div className="mb-8 flex items-start gap-6">
       <TerminalLogo />
@@ -383,9 +498,7 @@ function TerminalBootHeader({ isRunning }: { isRunning: boolean }) {
           </span>
           <span className="text-muted-foreground">v0.1.0</span>
         </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          local research tools - MCP bridge - paper automation
-        </p>
+        <p className="mt-1 text-sm text-muted-foreground">{summary}</p>
         <p className="mt-1 truncate text-sm text-muted-foreground">
           ~\OneDrive\Documents\AI Engineer\Research-chatbot
         </p>
@@ -535,7 +648,12 @@ function ToolTimeline({ trace }: { trace: ChatResponse["tool_trace"] }) {
             className="grid grid-cols-[0.9rem_minmax(8rem,12rem)_1fr] items-start gap-2 text-[11px]"
           >
             <ToolStatusIcon status={step.status} />
-            <span className="break-words text-primary">{step.tool}</span>
+            <span className="break-words text-primary" title={step.arguments || undefined}>
+              {step.tool}
+              {step.effect && step.effect !== "read" && (
+                <span className="ml-1 text-muted-foreground">[{step.effect}]</span>
+              )}
+            </span>
             <span
               title={step.message}
               className={
@@ -564,6 +682,7 @@ export function AgentConsoleView({
   const logRef = useRef<HTMLDivElement | null>(null);
   const [command, setCommand] = useState("");
   const [mcpTools, setMcpTools] = useState<McpTool[]>([]);
+  const [appContext, setAppContext] = useState<AgentContext | null>(null);
   const [, setAgentSessions] = useState<AgentSession[]>([]);
   const [activeAgentSessionId, setActiveAgentSessionId] = useState<string | undefined>();
   const [entries, setEntries] = useState<ConsoleEntry[]>([
@@ -571,7 +690,7 @@ export function AgentConsoleView({
       id: "welcome",
       kind: "agent",
       content:
-        "Research Agent ready. Try `search arXiv for graph RAG`, `find indexed papers about retrieval in my library`, `add this paper: <url>`, or `rebuild topology`.",
+        "Research Agent ready. It can operate every part of Zoetrope: ask about your papers, notes, visualizations, clusters, evaluations or integrations in plain language, or type /tools to see the full catalog and /context for what it knows about the app.",
       intent: "ready",
       response: {
         session_id: "",
@@ -595,10 +714,21 @@ export function AgentConsoleView({
       .catch(() => {
         if (active) setMcpTools([]);
       });
+    getAgentContext()
+      .then((result) => {
+        if (active) setAppContext(result);
+      })
+      .catch(() => {
+        if (active) setAppContext(null);
+      });
     return () => {
       active = false;
     };
   }, []);
+
+  const bootSummary = appContext
+    ? `${appContext.tool_count} application tools across ${Object.keys(appContext.tool_categories).length} areas - ${appContext.paper_count} papers indexed`
+    : "local research tools - MCP bridge - paper automation";
 
   async function refreshAgentSessions(active = true) {
     try {
@@ -656,8 +786,11 @@ export function AgentConsoleView({
       return true;
     }
 
-    if (trimmed === "/tools") {
-      setEntries((current) => [...current, makeLocalResponse(toolsText(), "tools")]);
+    if (trimmed === "/context") {
+      setEntries((current) => [
+        ...current,
+        makeLocalResponse(contextText(appContext), "context"),
+      ]);
       return true;
     }
 
@@ -790,6 +923,74 @@ export function AgentConsoleView({
     return true;
   }
 
+  function pushError(error: unknown, fallback: string) {
+    setEntries((current) => [
+      ...current,
+      {
+        id: `error-${Date.now()}`,
+        kind: "error",
+        content: error instanceof Error ? error.message : fallback,
+        timestamp: new Date(),
+      },
+    ]);
+  }
+
+  async function runCatalogCommand(trimmed: string): Promise<boolean> {
+    const lower = trimmed.toLowerCase();
+    const isTools = lower === "/tools" || lower.startsWith("/tools ");
+    const isTool = lower === "/tool" || lower.startsWith("/tool ");
+    const isCall = lower === "/call" || lower.startsWith("/call ");
+    if (!isTools && !isTool && !isCall) {
+      return false;
+    }
+
+    setIsRunning(true);
+    try {
+      if (isTools) {
+        const query = trimmed.slice("/tools".length).trim();
+        const result = await getAgentTools({ query, limit: 200 });
+        setEntries((current) => [
+          ...current,
+          makeLocalResponse(toolsText(result, query), "tools"),
+        ]);
+      } else if (isTool) {
+        const name = trimmed.slice("/tool".length).trim();
+        if (!name) {
+          setEntries((current) => [
+            ...current,
+            makeLocalResponse("Usage: /tool <name>   e.g. /tool api.notes.create_note", "tool"),
+          ]);
+        } else {
+          const tool = await getAgentTool(name);
+          setEntries((current) => [
+            ...current,
+            makeLocalResponse(toolDetailText(tool), "tool"),
+          ]);
+        }
+      } else {
+        const { name, args } = parseToolCall(trimmed, "/call");
+        if (!name) {
+          setEntries((current) => [
+            ...current,
+            makeLocalResponse('Usage: /call <name> {json}   e.g. /call app.papers {"query":"graph rag"}', "call"),
+          ]);
+        } else {
+          const response = await callAgentTool({ name, arguments: args });
+          setEntries((current) => [
+            ...current,
+            makeLocalResponse(JSON.stringify(response.result, null, 2), "call"),
+          ]);
+        }
+      }
+    } catch (error) {
+      pushError(error, "Application tool call failed.");
+    } finally {
+      setIsRunning(false);
+    }
+
+    return true;
+  }
+
   async function runMcpCall(trimmed: string): Promise<boolean> {
     if (!trimmed.toLowerCase().startsWith("/mcp-call")) {
       return false;
@@ -797,7 +998,7 @@ export function AgentConsoleView({
 
     setIsRunning(true);
     try {
-      const { toolName, args } = parseMcpCall(trimmed);
+      const { name: toolName, args } = parseToolCall(trimmed, "/mcp-call");
       const response = await callMcpTool({ toolName, arguments: args });
       const content = JSON.stringify(response.result, null, 2);
       setEntries((current) => [
@@ -845,6 +1046,10 @@ export function AgentConsoleView({
     }
 
     if (await runResumeCommand(trimmed)) {
+      return;
+    }
+
+    if (await runCatalogCommand(trimmed)) {
       return;
     }
 
@@ -896,7 +1101,7 @@ export function AgentConsoleView({
         ref={logRef}
         className="flex-1 min-h-0 overflow-y-auto px-6 py-7 font-mono md:px-10"
       >
-        <TerminalBootHeader isRunning={isRunning} />
+        <TerminalBootHeader isRunning={isRunning} summary={bootSummary} />
 
         <div className="space-y-7">
           {entries.map((entry) => (

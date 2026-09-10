@@ -109,6 +109,12 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         ON note_attachments(note_id, created_at)
         """
     )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(note_attachments)")}
+    for column in ("client_id", "content_hash"):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE note_attachments ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+    conn.execute("""CREATE UNIQUE INDEX IF NOT EXISTS idx_attachment_client
+                    ON note_attachments(note_id, client_id) WHERE client_id != ''""")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS notion_targets (
@@ -176,15 +182,27 @@ def _row_to_note(row: sqlite3.Row) -> Dict[str, Any]:
 
 def note_content_hash(note: Dict[str, Any], attachment_ids: List[str]) -> str:
     """Stable hash of the exportable content, used to detect edits since sync."""
+    sketch = note.get("sketch") or {}
+    elements = (
+        [item for item in sketch.get("elements", []) if not item.get("isDeleted")]
+        if isinstance(sketch, dict) else []
+    )
+    content = {
+        "title": note.get("title", ""),
+        "body_md": note.get("body_md", ""),
+        "selected_text": note.get("selected_text", ""),
+        "tags": note.get("tags", []),
+        "source_ref": note.get("source_ref", ""),
+        "attachments": sorted(attachment_ids),
+    }
+    if elements:
+        content["sketch"] = [
+            elements,
+            (sketch.get("appState") or {}).get("viewBackgroundColor") or "#ffffff",
+            sketch.get("files") or {},
+        ]
     payload = json.dumps(
-        {
-            "title": note.get("title", ""),
-            "body_md": note.get("body_md", ""),
-            "selected_text": note.get("selected_text", ""),
-            "tags": note.get("tags", []),
-            "source_ref": note.get("source_ref", ""),
-            "attachments": sorted(attachment_ids),
-        },
+        content,
         sort_keys=True,
         ensure_ascii=False,
     )
@@ -198,7 +216,7 @@ def _attach_meta(conn: sqlite3.Connection, note_ids: List[str]) -> Dict[str, Lis
     rows = conn.execute(
         f"""
         SELECT attachment_id, note_id, kind, name, mime_type,
-               scene_json != '' AS has_scene, created_at
+               scene_json != '' AS has_scene, created_at, client_id, content_hash
         FROM note_attachments
         WHERE note_id IN ({placeholders})
         ORDER BY created_at DESC
@@ -220,7 +238,7 @@ def _decorate(conn: sqlite3.Connection, rows: List[sqlite3.Row]) -> List[Dict[st
     for note in notes:
         note["attachments"] = attachments.get(note["note_id"], [])
         current_hash = note_content_hash(
-            note, [item["attachment_id"] for item in note["attachments"]]
+            note, [item["attachment_id"] + item["content_hash"] for item in note["attachments"]]
         )
         note["content_hash"] = current_hash
         note["notion_dirty"] = bool(
@@ -467,20 +485,47 @@ def add_attachment(
     name: str = "",
     data_url: str,
     scene: Any = None,
+    client_id: str = "",
 ) -> Dict[str, Any]:
     get_note(note_id)  # Raises when the note does not exist.
     data, mime = _decode_data_url(data_url)
     attachment_id = uuid.uuid4().hex
     timestamp = _now()
+    scene_json = json.dumps(scene, sort_keys=True) if scene is not None else ""
+    content_hash = hashlib.sha256(data + json.dumps(
+        [kind, name, mime, scene_json], ensure_ascii=False,
+    ).encode("utf-8")).hexdigest()
 
     with _connect() as conn:
+        # A retry or reopened browser must not create a second copy. Adopt an
+        # identical legacy upload on its first save with a client identifier.
+        conn.execute("BEGIN IMMEDIATE")
+        existing = None
+        if client_id:
+            existing = conn.execute(
+                "SELECT * FROM note_attachments WHERE note_id = ? AND client_id = ?",
+                (note_id, client_id),
+            ).fetchone()
+            if existing is None:
+                existing = conn.execute(
+                    """SELECT * FROM note_attachments WHERE note_id = ? AND client_id = ''
+                       AND kind = ? AND name = ? AND mime_type = ? AND data = ? LIMIT 1""",
+                    (note_id, kind, name, mime, data),
+                ).fetchone()
+        if existing is not None:
+            attachment_id = existing["attachment_id"]
+            timestamp = existing["created_at"]
         conn.execute(
             """
             INSERT INTO note_attachments (
                 attachment_id, note_id, kind, name, mime_type, data,
-                scene_json, created_at
+                scene_json, created_at, client_id, content_hash
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(attachment_id) DO UPDATE SET
+                kind = excluded.kind, name = excluded.name, mime_type = excluded.mime_type,
+                data = excluded.data, scene_json = excluded.scene_json,
+                client_id = excluded.client_id, content_hash = excluded.content_hash
             """,
             (
                 attachment_id,
@@ -489,13 +534,15 @@ def add_attachment(
                 name,
                 mime,
                 data,
-                json.dumps(scene) if scene is not None else "",
+                scene_json,
                 timestamp,
+                client_id,
+                content_hash,
             ),
         )
         conn.execute(
             "UPDATE notes SET updated_at = ? WHERE note_id = ?",
-            (timestamp, note_id),
+            (_now(), note_id),
         )
         conn.commit()
 
@@ -506,6 +553,8 @@ def add_attachment(
         "mime_type": mime,
         "has_scene": scene is not None,
         "created_at": timestamp,
+        "client_id": client_id,
+        "content_hash": content_hash,
     }
 
 

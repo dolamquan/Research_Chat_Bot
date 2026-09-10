@@ -12,6 +12,8 @@ pypdf
 numpy
 scikit-learn
 requests
+httpx
+jsonschema>=4
 datasets
 ragas
 PyMuPDF

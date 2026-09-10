@@ -90,6 +90,28 @@ docker pull mcp/reddit
 The agent exposes this through `/search-reddit graph RAG` and through the MCP
 bridge command `/mcp-call reddit.search_posts {"query":"graph rag","limit":5}`.
 
+### Agent tab
+
+The Agent tab runs a tool-calling loop (`backend/app/agents/runtime.py`) over a
+catalog built from the running application (`backend/app/agents/catalog.py`):
+every FastAPI route becomes an `api.<area>.<function>` tool, every MCP bridge
+tool is included by name, and `app.context` / `app.papers` give the model a live
+overview of the app and the whole paper library. The system prompt carries the
+feature guide, paper counts, the user's current selection and the full tool
+index, so plain-language requests can reach notes, visualizations, variants,
+clusters, Graph RAG, evaluation runs, ingestion and integrations without any
+per-feature wiring.
+
+- `GET /agent/tools?query=&category=` lists tools; `GET /agent/tools/{name}`
+  returns one with its `input_schema`; `POST /agent/tools/call` runs one;
+  `GET /agent/context` returns the overview.
+- In the console: `/tools notes`, `/tool api.notes.create_note`,
+  `/call app.papers {"query":"graph rag"}`, `/context`.
+- Destructive and external-write tools (deletes, Notion, GitHub) only run when
+  the user's message explicitly asks for that action.
+- `AGENT_MODEL`, `AGENT_MAX_STEPS` and `AGENT_MODE=legacy` (the previous fixed
+  intent router) are documented in `backend/.env.example`.
+
 ## Notes
 
 - Uploaded PDFs live in `backend/app/data/uploaded_docs`.

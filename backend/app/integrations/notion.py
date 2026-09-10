@@ -87,10 +87,16 @@ def _request(
 # --- markdown -> Notion blocks --------------------------------------------------
 
 _INLINE_PATTERN = re.compile(
-    r"(\*\*(?P<bold>.+?)\*\*)"
-    r"|(\*(?P<italic>[^*]+)\*)"
-    r"|(`(?P<code>[^`]+)`)"
-    r"|(\[(?P<link_text>[^\]]+)\]\((?P<link_url>https?://[^)\s]+)\))"
+    r"(?P<escape>\\[\\`*_$=+~\[\]])"
+    r"|`(?P<code>[^`]+)`"
+    r"|(?<!\$)\$(?P<equation>[^$\n]+)\$(?!\$)"
+    r"|==(?P<highlight>.+?)=="
+    r"|\+\+(?P<underline>.+?)\+\+"
+    r"|~~(?P<strike>.+?)~~"
+    r"|\*\*\*(?P<bolditalic>.+?)\*\*\*"
+    r"|\*\*(?P<bold>.+?)\*\*"
+    r"|\*(?P<italic>[^*]+)\*"
+    r"|\[(?P<link_text>[^\]]+)\]\((?P<link_url>https?://[^)\s]+)\)"
 )
 
 
@@ -114,36 +120,45 @@ def _split_long(text: str) -> List[str]:
 
 
 def _rich_text(text: str) -> List[Dict[str, Any]]:
-    """Parse inline markdown (bold, italic, code, links) into rich_text items."""
+    """Preserve nested formatting and emit LaTeX as native Notion equations."""
     items: List[Dict[str, Any]] = []
     cursor = 0
-
+    annotations = {
+        "bolditalic": {"bold": True, "italic": True},
+        "bold": {"bold": True}, "italic": {"italic": True},
+        "underline": {"underline": True}, "strike": {"strikethrough": True},
+        "highlight": {"color": "yellow_background"},
+    }
     for match in _INLINE_PATTERN.finditer(text):
         if match.start() > cursor:
-            for chunk in _split_long(text[cursor : match.start()]):
-                if chunk:
-                    items.append(_plain_rich_text(chunk))
-
-        if match.group("bold") is not None:
-            items.append(_plain_rich_text(match.group("bold")[:MAX_RICH_TEXT_LENGTH], {"bold": True}))
-        elif match.group("italic") is not None:
-            items.append(_plain_rich_text(match.group("italic")[:MAX_RICH_TEXT_LENGTH], {"italic": True}))
+            items.extend(_plain_rich_text(chunk) for chunk in _split_long(text[cursor:match.start()]) if chunk)
+        if match.group("escape") is not None:
+            items.append(_plain_rich_text(match.group("escape")[1:]))
         elif match.group("code") is not None:
-            items.append(_plain_rich_text(match.group("code")[:MAX_RICH_TEXT_LENGTH], {"code": True}))
+            items.extend(_plain_rich_text(chunk, {"code": True}) for chunk in _split_long(match.group("code")))
+        elif match.group("equation") is not None:
+            expression = match.group("equation").strip()
+            if len(expression) <= MAX_RICH_TEXT_LENGTH:
+                items.append({"type": "equation", "equation": {"expression": expression}})
+            else:
+                items.extend(_plain_rich_text(chunk, {"code": True}) for chunk in _split_long(match.group(0)))
         elif match.group("link_text") is not None:
-            items.append(
-                _plain_rich_text(
-                    match.group("link_text")[:MAX_RICH_TEXT_LENGTH],
-                    link=match.group("link_url"),
-                )
-            )
+            linked = _rich_text(match.group("link_text"))
+            for item in linked:
+                if item["type"] == "text":
+                    item["text"]["link"] = {"url": match.group("link_url")}
+            items.extend(linked)
+        else:
+            for name, style in annotations.items():
+                if match.group(name) is not None:
+                    nested = _rich_text(match.group(name))
+                    for item in nested:
+                        item.setdefault("annotations", {}).update(style)
+                    items.extend(nested)
+                    break
         cursor = match.end()
-
     if cursor < len(text):
-        for chunk in _split_long(text[cursor:]):
-            if chunk:
-                items.append(_plain_rich_text(chunk))
-
+        items.extend(_plain_rich_text(chunk) for chunk in _split_long(text[cursor:]) if chunk)
     return items or [_plain_rich_text("")]
 
 
@@ -204,6 +219,22 @@ def markdown_to_blocks(markdown: str) -> List[Dict[str, Any]]:
             flush_paragraph()
             index += 1
             continue
+
+        if stripped.startswith("$$"):
+            # Only consume a complete display equation; preserve unfinished source.
+            remainder = "\n".join(lines[index:]).lstrip()[2:]
+            closing = remainder.find("$$")
+            if closing >= 0:
+                expression = remainder[:closing].strip()
+                trailing = remainder[closing + 2:].split("\n", 1)[0].strip()
+                if expression and not trailing:
+                    flush_paragraph()
+                    if len(expression) <= MAX_RICH_TEXT_LENGTH:
+                        blocks.append({"object": "block", "type": "equation", "equation": {"expression": expression}})
+                    else:
+                        blocks.append(code_block(expression, language="latex"))
+                    index += remainder[:closing + 2].count("\n") + 1
+                    continue
 
         heading = re.match(r"^(#{1,6})\s+(.*)$", stripped)
         if heading:
@@ -326,12 +357,18 @@ def build_properties(
 
 def upload_file(name: str, data: bytes, mime_type: str) -> str:
     """Upload bytes through the Notion File Upload API; returns the upload id."""
+    if not data or len(data) > 20 * 1024 * 1024:
+        raise NotionError("upload_failed", "Images must be nonempty and no larger than 20 MiB.")
+    filename = name[:180] or "attachment"
+    extension = {"image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif"}.get(mime_type, "")
+    if extension and not filename.lower().endswith((extension, ".jpeg" if mime_type == "image/jpeg" else extension)):
+        filename += extension
     created = _request(
         "POST",
         "/file_uploads",
         json_body={
             "mode": "single_part",
-            "filename": name[:200] or "attachment.png",
+            "filename": filename,
             "content_type": mime_type,
         },
     )
@@ -346,7 +383,7 @@ def upload_file(name: str, data: bytes, mime_type: str) -> str:
                 "Authorization": f"Bearer {_api_key()}",
                 "Notion-Version": NOTION_VERSION,
             },
-            files={"file": (name or "attachment.png", data, mime_type)},
+            files={"file": (filename, data, mime_type)},
             timeout=60,
         )
     except requests.RequestException as exc:
@@ -357,6 +394,14 @@ def upload_file(name: str, data: bytes, mime_type: str) -> str:
             "upload_failed",
             f"Notion rejected the file upload ({response.status_code}): {response.text[:300]}",
         )
+    try:
+        uploaded = response.json()
+    except ValueError as exc:
+        raise NotionError("upload_failed", "Notion returned an invalid file upload response.") from exc
+    if uploaded.get("status") == "pending":
+        uploaded = _request("GET", f"/file_uploads/{upload_id}")
+    if uploaded.get("status") != "uploaded":
+        raise NotionError("upload_failed", "Notion has not completed the image upload. Please retry the export.")
     return upload_id
 
 
@@ -490,7 +535,9 @@ def build_note_children(
             upload_id = upload_file(name, data, mime_type)
             children.append(image_block_from_upload(upload_id))
         except NotionError as exc:
-            warnings.append(f"Skipped attachment '{name}': {exc.message}")
+            # Finish uploading every image before creating/replacing any page
+            # blocks. A failed image must never turn into a text-only success.
+            raise NotionError(exc.code, f"Could not export attachment '{name}': {exc.message}") from exc
 
     footer = f"Exported from Zoetrope"
     if source_label:

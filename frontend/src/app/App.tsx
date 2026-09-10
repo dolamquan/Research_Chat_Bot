@@ -1298,6 +1298,27 @@ function AppContent() {
       domain: selectedDomain || undefined,
       category: selectedCategory || undefined,
       contextMode: selectedDocument ? contextMode : "retrieval",
+      workspace: {
+        selected_paper: selectedDocument
+          ? {
+              title: selectedDocument.title,
+              source: selectedDocument.source,
+              article_id: selectedDocument.article_id,
+              cluster_label: selectedDocument.cluster_label,
+            }
+          : null,
+        selected_cluster: selectedCluster
+          ? {
+              cluster_id: selectedCluster.cluster_id,
+              cluster_label: selectedCluster.cluster_label,
+            }
+          : null,
+        library_search: librarySearch || null,
+        library_filter: {
+          domain: selectedDomain || null,
+          category: selectedCategory || null,
+        },
+      },
     });
 
     setSources(result.sources || []);

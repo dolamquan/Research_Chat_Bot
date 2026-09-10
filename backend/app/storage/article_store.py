@@ -283,7 +283,8 @@ def list_articles(
         and _article_matches_filters(article, domain=domain, category=category)
     ]
 
-    return [*db_articles, *manifest_articles][:limit]
+    combined = [*db_articles, *manifest_articles]
+    return combined if limit < 0 else combined[:limit]
 
 
 def list_domains() -> List[Dict[str, Any]]:

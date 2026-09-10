@@ -46,6 +46,7 @@ class AttachmentRequest(BaseModel):
     name: str = ""
     data_url: str = Field(..., min_length=10)
     scene: Any = None
+    client_id: str = Field(default="", max_length=200)
 
 
 class NotionTargetRequest(BaseModel):
@@ -98,6 +99,7 @@ def _http_error(exc: Exception) -> HTTPException:
         status = {
             "not_configured": 400,
             "validation": 400,
+            "sketch_not_prepared": 400,
             "unauthorized": 401,
             "not_found": 404,
             "rate_limited": 429,
@@ -361,6 +363,7 @@ def add_attachment(note_id: str, request: AttachmentRequest) -> Dict[str, Any]:
             name=request.name,
             data_url=request.data_url,
             scene=request.scene,
+            client_id=request.client_id,
         )
     except ValueError as exc:
         raise _http_error(exc) from exc

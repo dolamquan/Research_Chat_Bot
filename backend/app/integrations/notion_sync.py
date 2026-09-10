@@ -64,14 +64,27 @@ def _note_source_label(note: Dict[str, Any]) -> str:
     return " ".join(part for part in parts if part).strip()
 
 
-def _note_images(note_id: str) -> List[Tuple[str, bytes, str]]:
+def _scene_content(scene: Any) -> Any:
+    if not isinstance(scene, dict):
+        return None
+    elements = [item for item in scene.get("elements", []) if not item.get("isDeleted")]
+    if not elements:
+        return None
+    return (elements, (scene.get("appState") or {}).get("viewBackgroundColor") or "#ffffff", scene.get("files") or {})
+
+
+def _note_images(note_id: str, sketch: Any = None) -> List[Tuple[str, bytes, str]]:
+    attachments = notes_store.list_attachment_blobs(note_id)
+    current_scene = _scene_content(sketch)
+    if current_scene and not any(_scene_content(item.get("scene")) == current_scene for item in attachments):
+        raise NotionError("sketch_not_prepared", "The current sketch needs an image preview. Open this note in the app and export again.")
     return [
         (
             attachment.get("name") or f"attachment-{attachment['attachment_id'][:8]}.png",
             attachment["data"],
             attachment.get("mime_type") or "image/png",
         )
-        for attachment in notes_store.list_attachment_blobs(note_id)
+        for attachment in attachments
     ]
 
 
@@ -100,7 +113,7 @@ def export_note(
         markdown=note.get("body_md", ""),
         selected_text=note.get("selected_text", ""),
         source_label=_note_source_label(note),
-        images=_note_images(note_id),
+        images=_note_images(note_id, note.get("sketch")),
     )
 
     source_ref = str(note.get("source_ref") or "")

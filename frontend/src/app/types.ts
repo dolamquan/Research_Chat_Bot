@@ -253,6 +253,8 @@ export type NoteType = "freeform" | "highlight" | "chat_capture" | "visualizatio
 
 export type NoteAttachmentMeta = {
   attachment_id: string;
+  client_id?: string;
+  content_hash?: string;
   kind: "image" | "sketch" | string;
   name: string;
   mime_type: string;
@@ -398,6 +400,47 @@ export type AgentToolTrace = {
   status: "success" | "error" | "skipped" | string;
   message: string;
   timestamp: string;
+  arguments?: string;
+  effect?: string;
+};
+
+export type AgentTool = {
+  name: string;
+  category: string;
+  description: string;
+  effect: "read" | "write" | "destructive" | "external_write" | string;
+  execution: "api" | "mcp" | "builtin" | string;
+  available: boolean;
+  unavailable_reason?: string;
+  method?: string;
+  path?: string;
+  input_schema?: Record<string, unknown>;
+};
+
+export type AgentToolsResponse = {
+  total: number;
+  categories: Record<string, number>;
+  tools: AgentTool[];
+  next_offset: number | null;
+};
+
+export type AgentToolCallResponse = {
+  status: string;
+  name: string;
+  result: unknown;
+};
+
+export type AgentContext = {
+  application: string;
+  guide: Record<string, string>;
+  paper_count: number;
+  domains: ArticleDomain[];
+  tool_count: number;
+  tool_categories: Record<string, number>;
+  notion_targets: { target_id?: string; name?: string; database_id?: string }[];
+  unavailable_tools: { name: string; reason?: string }[];
+  workspace: Record<string, unknown>;
+  paper_lookup?: string;
 };
 
 export type McpTool = {
