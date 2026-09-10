@@ -50,6 +50,7 @@ import {
   sendChat,
 } from "./api";
 import { AgentConsoleView } from "./components/AgentConsoleView";
+import { useAuth } from "./auth/AuthProvider";
 import ZoetropeMark from "./components/ZoetropeMark";
 import { CrawlerView } from "./components/CrawlerView";
 import { DocumentReader } from "./components/DocumentReader";
@@ -662,6 +663,7 @@ function MessageBubble({
 }
 
 function AppContent() {
+  const auth = useAuth();
   const [graph, setGraph] = useState<ClusterGraph>(EMPTY_GRAPH);
   const [selectedCluster, setSelectedCluster] = useState<Cluster>();
   const [selectedDocument, setSelectedDocument] = useState<ClusterDocument>();
@@ -2133,6 +2135,24 @@ function AppContent() {
             </button>
           )}
           <div className="ml-auto hidden sm:flex items-center gap-2">
+            {auth.user && (
+              <>
+                <span
+                  className="font-mono text-[10px] text-muted-foreground truncate max-w-[14rem]"
+                  title={auth.user.email}
+                >
+                  {auth.user.email}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void auth.signOut()}
+                  className="font-mono text-[10px] text-muted-foreground hover:text-foreground"
+                >
+                  Sign out
+                </button>
+                <span className="text-border">|</span>
+              </>
+            )}
             <span
               className={`w-1.5 h-1.5 rounded-full ${
                 backendOnline ? "bg-green-500" : "bg-red-500"

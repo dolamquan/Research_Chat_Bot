@@ -5,6 +5,10 @@ from pathlib import Path
 from typing import Any, Dict, List
 from uuid import uuid4
 
+from app.auth.context import UNSET, resolve_owner
+from app.storage import ownership
+from app.storage.ownership import ensure_owner_column, owner_clause
+
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "agent_history.sqlite3"
@@ -56,6 +60,7 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         )
         """
     )
+    ensure_owner_column(conn, "agent_sessions")
     conn.commit()
 
     if owns_connection:
@@ -71,24 +76,31 @@ def _session_title(question: str) -> str:
     return title
 
 
+def _scope(owner: str | None) -> tuple[str, List[Any]]:
+    sql, params = owner_clause(owner)
+    return (f" AND {sql}" if sql else ""), params
+
+
 def create_session(
     title: str | None = None,
     first_question: str = "",
     cluster_id: int | None = None,
     document_source: str | None = None,
     context_mode: str = "retrieval",
+    owner_id: Any = UNSET,
 ) -> Dict[str, Any]:
     session_id = str(uuid4())
     timestamp = _now()
     session_title = title or _session_title(first_question)
+    owner = resolve_owner(owner_id)
 
     with _connect() as conn:
         conn.execute(
             """
             INSERT INTO agent_sessions (
-                id, title, cluster_id, document_source, context_mode, created_at, updated_at
+                id, title, cluster_id, document_source, context_mode, created_at, updated_at, owner_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 session_id,
@@ -98,22 +110,24 @@ def create_session(
                 context_mode,
                 timestamp,
                 timestamp,
+                owner,
             ),
         )
         conn.commit()
 
-    return get_session_summary(session_id)
+    return get_session_summary(session_id, owner_id=owner)
 
 
-def get_session_summary(session_id: str) -> Dict[str, Any]:
+def get_session_summary(session_id: str, owner_id: Any = UNSET) -> Dict[str, Any]:
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
     with _connect() as conn:
         row = conn.execute(
-            """
+            f"""
             SELECT id, title, cluster_id, document_source, context_mode, created_at, updated_at
             FROM agent_sessions
-            WHERE id = ?
+            WHERE id = ?{scope_sql}
             """,
-            (session_id,),
+            (session_id, *scope_params),
         ).fetchone()
 
     if row is None:
@@ -122,16 +136,18 @@ def get_session_summary(session_id: str) -> Dict[str, Any]:
     return dict(row)
 
 
-def list_sessions(limit: int = 50) -> List[Dict[str, Any]]:
+def list_sessions(limit: int = 50, owner_id: Any = UNSET) -> List[Dict[str, Any]]:
+    scope_sql, scope_params = owner_clause(resolve_owner(owner_id))
     with _connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT id, title, cluster_id, document_source, context_mode, created_at, updated_at
             FROM agent_sessions
+            {f'WHERE {scope_sql}' if scope_sql else ''}
             ORDER BY updated_at DESC
             LIMIT ?
             """,
-            (limit,),
+            (*scope_params, limit),
         ).fetchall()
 
     return [dict(row) for row in rows]
@@ -145,10 +161,20 @@ def append_message(
     pinned_sources: List[Dict[str, Any]] | None = None,
     tool_trace: List[Dict[str, Any]] | None = None,
     intent: str | None = None,
+    owner_id: Any = UNSET,
 ) -> Dict[str, Any]:
     timestamp = _now()
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
 
     with _connect() as conn:
+        # Touching the session first doubles as the ownership check: a session
+        # id belonging to someone else updates nothing and gets no message.
+        touched = conn.execute(
+            f"UPDATE agent_sessions SET updated_at = ? WHERE id = ?{scope_sql}",
+            (timestamp, session_id, *scope_params),
+        ).rowcount
+        if touched == 0:
+            raise ValueError(f"Agent session not found: {session_id}")
         conn.execute(
             """
             INSERT INTO agent_messages (
@@ -168,14 +194,6 @@ def append_message(
                 timestamp,
             ),
         )
-        conn.execute(
-            """
-            UPDATE agent_sessions
-            SET updated_at = ?
-            WHERE id = ?
-            """,
-            (timestamp, session_id),
-        )
         conn.commit()
 
     return {
@@ -189,8 +207,15 @@ def append_message(
     }
 
 
-def get_session(session_id: str) -> Dict[str, Any]:
-    session = get_session_summary(session_id)
+def _loads(raw: Any, fallback: Any) -> Any:
+    try:
+        return json.loads(raw or "")
+    except (TypeError, json.JSONDecodeError):
+        return fallback
+
+
+def get_session(session_id: str, owner_id: Any = UNSET) -> Dict[str, Any]:
+    session = get_session_summary(session_id, owner_id=owner_id)
 
     with _connect() as conn:
         rows = conn.execute(
@@ -203,32 +228,18 @@ def get_session(session_id: str) -> Dict[str, Any]:
             (session_id,),
         ).fetchall()
 
-    messages = []
-    for row in rows:
-        try:
-            sources = json.loads(row["sources_json"] or "[]")
-        except json.JSONDecodeError:
-            sources = []
-        try:
-            pinned_sources = json.loads(row["pinned_sources_json"] or "[]")
-        except json.JSONDecodeError:
-            pinned_sources = []
-        try:
-            tool_trace = json.loads(row["tool_trace_json"] or "[]")
-        except json.JSONDecodeError:
-            tool_trace = []
-
-        messages.append(
-            {
-                "role": row["role"],
-                "content": row["content"],
-                "sources": sources,
-                "pinned_sources": pinned_sources,
-                "tool_trace": tool_trace,
-                "intent": row["intent"],
-                "created_at": row["created_at"],
-            }
-        )
+    messages = [
+        {
+            "role": row["role"],
+            "content": row["content"],
+            "sources": _loads(row["sources_json"], []),
+            "pinned_sources": _loads(row["pinned_sources_json"], []),
+            "tool_trace": _loads(row["tool_trace_json"], []),
+            "intent": row["intent"],
+            "created_at": row["created_at"],
+        }
+        for row in rows
+    ]
 
     return {
         "session": session,
@@ -236,13 +247,21 @@ def get_session(session_id: str) -> Dict[str, Any]:
     }
 
 
-def delete_session(session_id: str) -> None:
+def delete_session(session_id: str, owner_id: Any = UNSET) -> None:
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
     with _connect() as conn:
         deleted = conn.execute(
-            "DELETE FROM agent_sessions WHERE id = ?",
-            (session_id,),
+            f"DELETE FROM agent_sessions WHERE id = ?{scope_sql}",
+            (session_id, *scope_params),
         ).rowcount
         conn.commit()
 
     if deleted == 0:
         raise ValueError(f"Agent session not found: {session_id}")
+
+
+def claim_unowned(owner: str) -> Dict[str, int]:
+    with _connect() as conn:
+        count = ownership.claim_unowned(conn, "agent_sessions", owner)
+        conn.commit()
+    return {"agent_sessions": count}

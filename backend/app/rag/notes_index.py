@@ -10,8 +10,18 @@ import logging
 import uuid
 from typing import Any, Dict, List
 
-from qdrant_client.models import Distance, PointIdsList, VectorParams
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    IsEmptyCondition,
+    MatchValue,
+    PayloadField,
+    PointIdsList,
+    VectorParams,
+)
 
+from app.auth.context import UNSET, resolve_owner
 from app.rag.embedder import embed_text, get_embedding_dimension
 from app.rag.vector_store import get_client
 
@@ -72,6 +82,7 @@ def index_note(note: Dict[str, Any]) -> None:
                     "page": note.get("page"),
                     "tags": note.get("tags", []),
                     "updated_at": note.get("updated_at", ""),
+                    "owner_id": note.get("owner_id"),
                 },
             }
         ],
@@ -103,11 +114,37 @@ def remove_note_safe(note_id: str) -> None:
         logger.warning("Could not remove note %s from the search index", note_id, exc_info=True)
 
 
-def search_notes(query: str, limit: int = 8) -> List[Dict[str, Any]]:
+def claim_unowned(owner: str) -> None:
+    """Stamp legacy note points with their new owner so they stay searchable."""
     ensure_collection()
+    get_client().set_payload(
+        collection_name=NOTES_COLLECTION,
+        payload={"owner_id": owner},
+        points=Filter(must=[IsEmptyCondition(is_empty=PayloadField(key="owner_id"))]),
+    )
+
+
+def claim_unowned_safe(owner: str) -> None:
+    try:
+        claim_unowned(owner)
+    except Exception as exc:  # noqa: BLE001 - Qdrant may be down; SQLite is authoritative.
+        logger.warning("Could not claim legacy note vectors for %s: %s", owner, exc)
+
+
+def search_notes(query: str, limit: int = 8, owner_id: Any = UNSET) -> List[Dict[str, Any]]:
+    ensure_collection()
+    owner = resolve_owner(owner_id)
+    # Notes are personal: unlike papers there is no public tier, so unowned
+    # points are invisible until the administrator claims them.
+    query_filter = (
+        Filter(must=[FieldCondition(key="owner_id", match=MatchValue(value=owner))])
+        if owner is not None
+        else None
+    )
     results = get_client().query_points(
         collection_name=NOTES_COLLECTION,
         query=embed_text(query),
+        query_filter=query_filter,
         limit=limit,
     )
 

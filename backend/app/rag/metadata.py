@@ -130,6 +130,8 @@ def _clean_metadata(metadata: Dict[str, Any]) -> Dict[str, Any]:
         "section_type": section_type,
         "keywords": keywords[:8],
         "summary": summary,
+        # Who may see these chunks; None means everyone.
+        "owner_id": (str(metadata.get("owner_id")).strip() or None) if metadata.get("owner_id") else None,
     }
 
 
@@ -178,6 +180,7 @@ def build_article_metadata(
             "section_type": overrides.get("section_type", "unknown"),
             "keywords": overrides.get("keywords", []),
             "summary": overrides.get("summary", ""),
+            "owner_id": overrides.get("owner_id"),
         }
     )
 
@@ -353,4 +356,5 @@ def build_qdrant_payload(child_record: Dict[str, Any]) -> Dict[str, Any]:
         "image_url": metadata.get("image_url", ""),
         "image_path": metadata.get("image_path", ""),
         "page": metadata.get("page"),
+        "owner_id": metadata.get("owner_id"),
     }

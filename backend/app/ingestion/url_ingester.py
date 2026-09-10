@@ -6,9 +6,10 @@ from urllib.parse import urlparse
 
 import requests
 
+from app.auth.context import UNSET, resolve_owner
 from app.rag.metadata import build_article_metadata
 from app.rag.vector_store import index_pdf
-from app.storage.article_store import upsert_article
+from app.storage.article_store import find_articles_by_source, get_article, upsert_article
 
 
 UPLOAD_FOLDER = Path(__file__).resolve().parents[1] / "data" / "uploaded_docs"
@@ -169,16 +170,50 @@ def _download_pdf(pdf_url: str, output_path: Path) -> None:
                     file.write(chunk)
 
 
+def resolve_article_identity(
+    base_article_id: str,
+    filename: str,
+    owner: str | None,
+) -> tuple[str, Dict[str, Any] | None]:
+    """Which article row this ingest writes, and the public copy to reuse if one exists.
+
+    Papers are public (owner None) or private to one user. A private ingest of
+    something already public is a no-op: the shared copy is returned. When two
+    users privately ingest the same paper, the second gets their own article id
+    so neither can see or overwrite the other's copy.
+    """
+    copies = find_articles_by_source(filename)
+    public = next((a for a in copies if a.get("owner_id") is None and a.get("status") == "indexed"), None)
+    if public is not None:
+        return public["article_id"], public
+    if owner is None:
+        return base_article_id, None
+    try:
+        existing = get_article(base_article_id, owner_id=None)
+    except ValueError:
+        existing = None
+    if existing is None or existing.get("owner_id") == owner:
+        return base_article_id, None
+    if existing.get("owner_id") is None:
+        return existing["article_id"], (existing if existing.get("status") == "indexed" else None)
+    return f"{base_article_id}~{owner[:8]}", None
+
+
 def ingest_article_url(
     url: str,
     title: str | None = None,
     domain: str = "research",
     category: str = "uncategorized",
     tags: List[str] | None = None,
+    owner_id: Any = UNSET,
 ) -> Dict[str, Any]:
     """
     Download a paper URL/PDF URL, index it into Qdrant, and record article metadata.
+
+    The paper belongs to the acting user (private) unless no user is acting,
+    which is how the CLI scripts publish to the shared library.
     """
+    owner = resolve_owner(owner_id)
     resolved = _resolve_url_metadata(url)
     arxiv_categories = resolved.get("categories", [])
     normalized_tags = _normalize_tags([*(tags or []), *arxiv_categories])
@@ -191,9 +226,19 @@ def ingest_article_url(
     )
     filename = _safe_pdf_filename(pdf_url, title=resolved_title)
     pdf_path = UPLOAD_FOLDER / filename
+    base_metadata = build_article_metadata(source=filename, article_metadata={"title": resolved_title})
+    article_id, public_copy = resolve_article_identity(base_metadata["article_id"], filename, owner)
+    if public_copy is not None and owner is not None:
+        return {
+            "article": public_copy,
+            "pdf_path": str(pdf_path),
+            "pdf_url": pdf_url,
+            "already_indexed": True,
+        }
     article_metadata = build_article_metadata(
         source=filename,
         article_metadata={
+            "article_id": article_id,
             "title": resolved_title,
             "url": resolved["url"],
             "abstract": resolved.get("abstract", ""),
@@ -201,6 +246,7 @@ def ingest_article_url(
             "domain": domain,
             "category": resolved_category,
             "tags": normalized_tags,
+            "owner_id": owner,
         },
     )
 
@@ -228,6 +274,7 @@ def ingest_article_url(
             published_at=resolved.get("published_at", ""),
             updated_at_source=resolved.get("updated_at_source", ""),
             status="indexed",
+            owner_id=owner,
         )
     except Exception as exc:
         article = upsert_article(
@@ -245,6 +292,7 @@ def ingest_article_url(
             updated_at_source=resolved.get("updated_at_source", ""),
             status="failed",
             error=str(exc),
+            owner_id=owner,
         )
         raise
 

@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 from dotenv import load_dotenv
 from langsmith import traceable
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, Filter, PointStruct, VectorParams
+from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, PointStruct, VectorParams
 
 from app.rag.chunker import load_and_chunk_pdf
 from app.rag.embedder import embed_texts, get_embedding_dimension
@@ -251,6 +251,16 @@ def index_folder(
             },
             ensure_collection=False,
         )
+
+def set_article_owner(article_id: str, owner_id: str | None) -> None:
+    """Publish (owner None) or privatise every chunk of one paper."""
+    client = get_client()
+    selector = Filter(must=[FieldCondition(key="article_id", match=MatchValue(value=article_id))])
+    if owner_id is None:
+        client.delete_payload(collection_name=COLLECTION_NAME, keys=["owner_id"], points=selector)
+    else:
+        client.set_payload(collection_name=COLLECTION_NAME, payload={"owner_id": owner_id}, points=selector)
+
 
 @traceable(name="retrieve", run_type="retriever")
 def search_vectors(

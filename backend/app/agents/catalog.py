@@ -22,6 +22,8 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.routing import APIRoute
 from jsonschema import Draft202012Validator
 
+from app.auth.context import request_token
+
 _application: FastAPI | None = None
 _api_tools_cache: list[dict] | None = None
 
@@ -35,6 +37,8 @@ EXCLUDED = {
     ("GET", "/agent/context"): "Available through app.context.",
     ("GET", "/mcp/tools"): "Every MCP tool is included individually in this catalog.",
     ("POST", "/mcp/call"): "Every MCP tool is callable individually through execute_tool.",
+    ("GET", "/auth/config"): "Sign-in plumbing; the agent already runs as the signed-in user.",
+    ("GET", "/auth/me"): "Sign-in plumbing; the current user is part of app.context's workspace.",
 }
 
 APP_GUIDE = {
@@ -275,6 +279,11 @@ async def _call_api(tool: dict, arguments: dict) -> Any:
             raise ValueError("Path identifiers cannot contain URL control characters")
         path = path.replace("{" + key + "}", quote(value, safe=""))
     kwargs = {"params": arguments.get("query", {})}
+    # The agent acts as the signed-in user: internal calls carry their session
+    # token, so every route applies the same ownership rules as the UI.
+    token = request_token()
+    if token:
+        kwargs["headers"] = {"Authorization": f"Bearer {token}"}
     if "body" in arguments:
         kwargs["json"] = arguments["body"]
     if "file" in arguments:

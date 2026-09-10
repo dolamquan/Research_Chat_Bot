@@ -67,13 +67,16 @@ def chat(request: ChatRequest) -> ChatResponse:
         )
         session_id = session["id"]
 
-    append_message(
-        session_id=session_id,
-        role="user",
-        content=request.question,
-        sources=[],
-        pinned_sources=request.pinned_sources,
-    )
+    try:
+        append_message(
+            session_id=session_id,
+            role="user",
+            content=request.question,
+            sources=[],
+            pinned_sources=request.pinned_sources,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     try:
         result = generate_answer(

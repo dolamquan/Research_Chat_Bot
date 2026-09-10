@@ -16,6 +16,9 @@ os.environ.setdefault("LANGSMITH_TRACING", "false")
 os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
 os.environ.pop("LANGSMITH_API_KEY", None)
 os.environ.pop("LANGCHAIN_API_KEY", None)
+# Routes require a signed-in user. The suite runs as the local development
+# administrator; tests that exercise real token verification opt back in.
+os.environ.setdefault("AUTH_MODE", "disabled")
 from typing import Any, Dict, List
 
 import pytest

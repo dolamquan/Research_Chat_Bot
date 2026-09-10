@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 import numpy as np
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 
+from app.rag.access_scope import owner_scope
 from app.rag.vector_store import COLLECTION_NAME, DATA_DIR, get_client
 
 
@@ -113,10 +114,7 @@ def _scope_filter(domain: str | None = None, category: str | None = None) -> Fil
             )
         )
 
-    if not conditions:
-        return None
-
-    return Filter(must=conditions)
+    return owner_scope(Filter(must=conditions) if conditions else None)
 
 
 def _safe_scope_part(value: str | None) -> str:
@@ -354,13 +352,15 @@ def get_document_detail(source: str, chunk_limit: int = 5) -> Dict[str, Any]:
         limit=chunk_limit,
         with_payload=True,
         with_vectors=False,
-        scroll_filter=Filter(
-            must=[
-                FieldCondition(
-                    key="source",
-                    match=MatchValue(value=source),
-                )
-            ]
+        scroll_filter=owner_scope(
+            Filter(
+                must=[
+                    FieldCondition(
+                        key="source",
+                        match=MatchValue(value=source),
+                    )
+                ]
+            )
         ),
     )
 

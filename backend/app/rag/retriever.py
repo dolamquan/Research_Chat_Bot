@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 from qdrant_client.http.exceptions import ResponseHandlingException
 
+from app.rag.access_scope import owner_scope
 from app.rag.embedder import embed_text
 from app.rag.vector_store import COLLECTION_NAME, get_client, search_vectors
 
@@ -109,10 +110,9 @@ def build_retrieval_filter(
             )
         )
 
-    if not conditions:
-        return None
-
-    return Filter(must=conditions)
+    # Every retrieval path funnels through here, so per-user visibility is
+    # applied once rather than at each call site.
+    return owner_scope(Filter(must=conditions) if conditions else None)
 
 
 @traceable(name="retrieve_chunks", run_type="retriever")

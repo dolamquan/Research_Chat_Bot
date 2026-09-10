@@ -5,6 +5,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.auth.context import UNSET, resolve_owner
+from app.storage.ownership import ensure_owner_column, owner_clause
+
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "researchmind.sqlite3"
@@ -55,6 +58,7 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         ON ingestion_jobs(updated_at)
         """
     )
+    ensure_owner_column(conn, "ingestion_jobs")
     conn.commit()
 
     if owns_connection:
@@ -76,6 +80,7 @@ def create_ingestion_job(
     domain: str = "research",
     category: str = "uncategorized",
     tags: List[str] | None = None,
+    owner_id: Any = UNSET,
 ) -> Dict[str, Any]:
     job_id = uuid.uuid4().hex
     timestamp = _now()
@@ -85,9 +90,9 @@ def create_ingestion_job(
             """
             INSERT INTO ingestion_jobs (
                 job_id, url, title, domain, category, tags_json, status, stage,
-                message, created_at, updated_at
+                message, created_at, updated_at, owner_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
@@ -101,6 +106,7 @@ def create_ingestion_job(
                 "Waiting to start ingestion.",
                 timestamp,
                 timestamp,
+                resolve_owner(owner_id),
             ),
         )
         conn.commit()
@@ -156,11 +162,12 @@ def update_ingestion_job(
     return get_ingestion_job(job_id)
 
 
-def get_ingestion_job(job_id: str) -> Dict[str, Any]:
+def get_ingestion_job(job_id: str, owner_id: Any = UNSET) -> Dict[str, Any]:
+    scope_sql, scope_params = owner_clause(resolve_owner(owner_id))
     with _connect() as conn:
         row = conn.execute(
-            "SELECT * FROM ingestion_jobs WHERE job_id = ?",
-            (job_id,),
+            f"SELECT * FROM ingestion_jobs WHERE job_id = ?{f' AND {scope_sql}' if scope_sql else ''}",
+            (job_id, *scope_params),
         ).fetchone()
 
     if row is None:
@@ -169,15 +176,17 @@ def get_ingestion_job(job_id: str) -> Dict[str, Any]:
     return _row_to_job(row)
 
 
-def list_ingestion_jobs(limit: int = 20) -> List[Dict[str, Any]]:
+def list_ingestion_jobs(limit: int = 20, owner_id: Any = UNSET) -> List[Dict[str, Any]]:
+    scope_sql, scope_params = owner_clause(resolve_owner(owner_id))
     with _connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT * FROM ingestion_jobs
+            {f'WHERE {scope_sql}' if scope_sql else ''}
             ORDER BY updated_at DESC
             LIMIT ?
             """,
-            (limit,),
+            (*scope_params, limit),
         ).fetchall()
 
     return [_row_to_job(row) for row in rows]

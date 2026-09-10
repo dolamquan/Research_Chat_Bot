@@ -90,6 +90,31 @@ docker pull mcp/reddit
 The agent exposes this through `/search-reddit graph RAG` and through the MCP
 bridge command `/mcp-call reddit.search_posts {"query":"graph rag","limit":5}`.
 
+### Accounts
+
+Sign-in is handled by Supabase Auth; all application data stays in the local
+SQLite databases and Qdrant. The backend verifies each request's bearer token
+against the project's public JWKS (`backend/app/auth/`), so it needs only
+`SUPABASE_URL` — never a Supabase secret key. The frontend needs
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` in `frontend/.env.local`.
+`AUTH_MODE=disabled` runs the backend as one local administrator for
+development.
+
+Data is divided by an `owner_id` column:
+
+- Papers are **public** (`owner_id` NULL — everything indexed before accounts,
+  plus anything an admin publishes) or **private** to the user who crawled
+  them. Retrieval, clusters and the library list show `public ∪ own`.
+- Notes, folders, Notion targets, chat sessions, agent sessions and ingestion
+  jobs are personal. Rows from before accounts existed are adopted by the
+  first administrator who signs in (`GET /auth/me`).
+- Administrators (`app_metadata.role = "admin"` in Supabase) can publish a
+  private paper with `POST /articles/{article_id}/visibility {"public": true}`.
+
+Not yet per-user: visualizations/scenes/variants, evaluation runs, extracted
+figures, integration credentials, and the browser extension (which needs a
+token to call the API).
+
 ### Agent tab
 
 The Agent tab runs a tool-calling loop (`backend/app/agents/runtime.py`) over a

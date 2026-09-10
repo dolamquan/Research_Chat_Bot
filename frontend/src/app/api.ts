@@ -60,8 +60,34 @@ export const API_URL =
   import.meta.env.VITE_API_URL?.replace(/\/$/, "") ||
   (import.meta.env.DEV ? "/api" : "http://127.0.0.1:8002");
 
+let accessTokenProvider: () => string | null | undefined = () => undefined;
+
+/** Registered by AuthProvider so every request carries the current session token. */
+export function setAccessTokenProvider(provider: () => string | null | undefined): void {
+  accessTokenProvider = provider;
+}
+
+/** Fired when the API refuses the current token; AuthProvider refreshes or signs out. */
+export const UNAUTHORIZED_EVENT = "zoetrope:unauthorized";
+
+/** For <img>, <iframe> and PDF viewers, which cannot send an Authorization header. */
+function withAccessToken(url: string): string {
+  const token = accessTokenProvider();
+  if (!token) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`;
+}
+
 async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, options);
+  const headers = new Headers(options?.headers);
+  const token = accessTokenProvider();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+
+  if (response.status === 401) {
+    window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  }
 
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
@@ -267,12 +293,12 @@ export function getDocumentDetail(source: string): Promise<DocumentDetail> {
 }
 
 export function getPdfUrl(source: string): string {
-  return `${API_URL}/documents/pdf?source=${encodeURIComponent(source)}`;
+  return withAccessToken(`${API_URL}/documents/pdf?source=${encodeURIComponent(source)}`);
 }
 
 export function getVisualImageUrl(imageUrl: string): string {
   if (imageUrl.startsWith("http")) return imageUrl;
-  return `${API_URL}${imageUrl}`;
+  return withAccessToken(`${API_URL}${imageUrl}`);
 }
 
 export function getVisualAssets(
@@ -458,7 +484,7 @@ export function deleteNoteAttachment(attachmentId: string): Promise<{ status: st
 }
 
 export function noteAttachmentUrl(attachmentId: string): string {
-  return `${API_URL}/notes/attachments/${encodeURIComponent(attachmentId)}`;
+  return withAccessToken(`${API_URL}/notes/attachments/${encodeURIComponent(attachmentId)}`);
 }
 
 export function getNoteAttachmentScene(

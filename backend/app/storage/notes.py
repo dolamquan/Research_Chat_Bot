@@ -16,6 +16,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.auth.context import UNSET, resolve_owner
+from app.storage import ownership
+from app.storage.ownership import ensure_owner_column, owner_clause
+
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "researchmind.sqlite3"
 
@@ -128,6 +132,10 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         )
         """
     )
+    # Notes, folders and Notion targets are personal. NULL owner rows predate
+    # accounts and are adopted by the administrator on sign-in.
+    for table in ("notes", "note_folders", "notion_targets"):
+        ensure_owner_column(conn, table)
     conn.commit()
 
     _migrate_legacy_annotations(conn)
@@ -264,12 +272,14 @@ def create_note(
     sketch: Any = None,
     created_at: str = "",
     updated_at: str = "",
+    owner_id: Any = UNSET,
 ) -> Dict[str, Any]:
     if note_type not in NOTE_TYPES:
         raise ValueError(f"Invalid note_type: {note_type}")
 
     resolved_id = note_id or uuid.uuid4().hex
     timestamp = _now()
+    owner = resolve_owner(owner_id)
 
     with _connect() as conn:
         conn.execute(
@@ -277,9 +287,9 @@ def create_note(
             INSERT INTO notes (
                 note_id, note_type, source_type, source_ref, source_title,
                 article_id, page, selected_text, title, body_md, tags,
-                folder_id, sketch_json, created_at, updated_at
+                folder_id, sketch_json, created_at, updated_at, owner_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 resolved_id,
@@ -297,33 +307,42 @@ def create_note(
                 json.dumps(sketch) if sketch is not None else "",
                 created_at or timestamp,
                 updated_at or timestamp,
+                owner,
             ),
         )
         conn.commit()
 
-    return get_note(resolved_id)
+    return get_note(resolved_id, owner_id=owner)
 
 
-def get_note(note_id: str) -> Dict[str, Any]:
+def _scope(owner: str | None, column: str = "owner_id") -> tuple[str, List[Any]]:
+    """` AND owner = ?` for scoped calls, nothing for unscoped ones."""
+    sql, params = owner_clause(owner, column=column)
+    return (f" AND {sql}" if sql else ""), params
+
+
+def get_note(note_id: str, owner_id: Any = UNSET) -> Dict[str, Any]:
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
     with _connect() as conn:
         row = conn.execute(
-            "SELECT * FROM notes WHERE note_id = ?", (note_id,)
+            f"SELECT * FROM notes WHERE note_id = ?{scope_sql}", (note_id, *scope_params)
         ).fetchone()
         if row is None:
             raise ValueError(f"Note not found: {note_id}")
         return _decorate(conn, [row])[0]
 
 
-def find_note_by_source(note_type: str, source_ref: str) -> Dict[str, Any] | None:
+def find_note_by_source(note_type: str, source_ref: str, owner_id: Any = UNSET) -> Dict[str, Any] | None:
     """Latest note of a given type for a scope, used for scoped upserts."""
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
     with _connect() as conn:
         row = conn.execute(
-            """
+            f"""
             SELECT * FROM notes
-            WHERE note_type = ? AND source_ref = ?
+            WHERE note_type = ? AND source_ref = ?{scope_sql}
             ORDER BY updated_at DESC LIMIT 1
             """,
-            (note_type, source_ref),
+            (note_type, source_ref, *scope_params),
         ).fetchone()
         if row is None:
             return None
@@ -337,9 +356,15 @@ def list_notes(
     folder_id: str | None = None,
     query: str | None = None,
     limit: int = 200,
+    owner_id: Any = UNSET,
 ) -> List[Dict[str, Any]]:
     clauses = []
     params: List[Any] = []
+
+    scope_sql, scope_params = owner_clause(resolve_owner(owner_id))
+    if scope_sql:
+        clauses.append(scope_sql)
+        params.extend(scope_params)
 
     if note_type:
         clauses.append("note_type = ?")
@@ -387,7 +412,9 @@ _UPDATABLE_FIELDS = {
 }
 
 
-def update_note(note_id: str, **fields: Any) -> Dict[str, Any]:
+def update_note(note_id: str, owner_id: Any = UNSET, **fields: Any) -> Dict[str, Any]:
+    owner = resolve_owner(owner_id)
+    scope_sql, scope_params = _scope(owner)
     assignments = []
     params: List[Any] = []
 
@@ -407,28 +434,33 @@ def update_note(note_id: str, **fields: Any) -> Dict[str, Any]:
             raise ValueError(f"Cannot update field: {key}")
 
     if not assignments:
-        return get_note(note_id)
+        return get_note(note_id, owner_id=owner)
 
     assignments.append("updated_at = ?")
     params.append(_now())
     params.append(note_id)
+    params.extend(scope_params)
 
     with _connect() as conn:
         cursor = conn.execute(
-            f"UPDATE notes SET {', '.join(assignments)} WHERE note_id = ?",
+            f"UPDATE notes SET {', '.join(assignments)} WHERE note_id = ?{scope_sql}",
             params,
         )
         conn.commit()
 
     if cursor.rowcount == 0:
         raise ValueError(f"Note not found: {note_id}")
-    return get_note(note_id)
+    return get_note(note_id, owner_id=owner)
 
 
-def delete_note(note_id: str) -> None:
+def delete_note(note_id: str, owner_id: Any = UNSET) -> None:
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
     with _connect() as conn:
-        cursor = conn.execute("DELETE FROM notes WHERE note_id = ?", (note_id,))
-        conn.execute("DELETE FROM note_attachments WHERE note_id = ?", (note_id,))
+        cursor = conn.execute(
+            f"DELETE FROM notes WHERE note_id = ?{scope_sql}", (note_id, *scope_params)
+        )
+        if cursor.rowcount:
+            conn.execute("DELETE FROM note_attachments WHERE note_id = ?", (note_id,))
         conn.commit()
 
     if cursor.rowcount == 0:
@@ -558,12 +590,26 @@ def add_attachment(
     }
 
 
-def get_attachment(attachment_id: str) -> Dict[str, Any]:
+def get_attachment(attachment_id: str, owner_id: Any = UNSET) -> Dict[str, Any]:
+    owner = resolve_owner(owner_id)
     with _connect() as conn:
-        row = conn.execute(
-            "SELECT * FROM note_attachments WHERE attachment_id = ?",
-            (attachment_id,),
-        ).fetchone()
+        if owner is None:
+            # Unscoped reads must still find attachments whose note row is
+            # missing (legacy databases mid-migration).
+            row = conn.execute(
+                "SELECT * FROM note_attachments WHERE attachment_id = ?",
+                (attachment_id,),
+            ).fetchone()
+        else:
+            # Attachments inherit their note's owner.
+            row = conn.execute(
+                """
+                SELECT a.* FROM note_attachments a
+                JOIN notes n ON n.note_id = a.note_id
+                WHERE a.attachment_id = ? AND n.owner_id = ?
+                """,
+                (attachment_id, owner),
+            ).fetchone()
 
     if row is None:
         raise ValueError(f"Attachment not found: {attachment_id}")
@@ -593,12 +639,23 @@ def list_attachment_blobs(note_id: str) -> List[Dict[str, Any]]:
     return attachments
 
 
-def delete_attachment(attachment_id: str) -> None:
+def delete_attachment(attachment_id: str, owner_id: Any = UNSET) -> None:
+    owner = resolve_owner(owner_id)
     with _connect() as conn:
-        cursor = conn.execute(
-            "DELETE FROM note_attachments WHERE attachment_id = ?",
-            (attachment_id,),
-        )
+        if owner is None:
+            cursor = conn.execute(
+                "DELETE FROM note_attachments WHERE attachment_id = ?",
+                (attachment_id,),
+            )
+        else:
+            cursor = conn.execute(
+                """
+                DELETE FROM note_attachments
+                WHERE attachment_id = ?
+                  AND note_id IN (SELECT note_id FROM notes WHERE owner_id = ?)
+                """,
+                (attachment_id, owner),
+            )
         conn.commit()
 
     if cursor.rowcount == 0:
@@ -608,10 +665,12 @@ def delete_attachment(attachment_id: str) -> None:
 # --- folders ------------------------------------------------------------------
 
 
-def list_folders() -> List[Dict[str, Any]]:
+def list_folders(owner_id: Any = UNSET) -> List[Dict[str, Any]]:
+    scope_sql, scope_params = owner_clause(resolve_owner(owner_id))
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM note_folders ORDER BY name COLLATE NOCASE"
+            f"SELECT * FROM note_folders {f'WHERE {scope_sql}' if scope_sql else ''} ORDER BY name COLLATE NOCASE",
+            scope_params,
         ).fetchall()
 
     return [
@@ -625,21 +684,22 @@ def list_folders() -> List[Dict[str, Any]]:
     ]
 
 
-def create_folder(name: str, *, folder_id: str = "") -> Dict[str, Any]:
+def create_folder(name: str, *, folder_id: str = "", owner_id: Any = UNSET) -> Dict[str, Any]:
     trimmed = name.strip()
     if not trimmed:
         raise ValueError("Folder name is required")
 
     resolved_id = folder_id or uuid.uuid4().hex
     timestamp = _now()
+    owner = resolve_owner(owner_id)
 
     with _connect() as conn:
         conn.execute(
             """
-            INSERT OR IGNORE INTO note_folders (folder_id, name, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
+            INSERT OR IGNORE INTO note_folders (folder_id, name, created_at, updated_at, owner_id)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (resolved_id, trimmed, timestamp, timestamp),
+            (resolved_id, trimmed, timestamp, timestamp, owner),
         )
         conn.commit()
         row = conn.execute(
@@ -649,15 +709,16 @@ def create_folder(name: str, *, folder_id: str = "") -> Dict[str, Any]:
     return dict(row)
 
 
-def rename_folder(folder_id: str, name: str) -> Dict[str, Any]:
+def rename_folder(folder_id: str, name: str, owner_id: Any = UNSET) -> Dict[str, Any]:
     trimmed = name.strip()
     if not trimmed:
         raise ValueError("Folder name is required")
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
 
     with _connect() as conn:
         cursor = conn.execute(
-            "UPDATE note_folders SET name = ?, updated_at = ? WHERE folder_id = ?",
-            (trimmed, _now(), folder_id),
+            f"UPDATE note_folders SET name = ?, updated_at = ? WHERE folder_id = ?{scope_sql}",
+            (trimmed, _now(), folder_id, *scope_params),
         )
         conn.commit()
         if cursor.rowcount == 0:
@@ -669,31 +730,43 @@ def rename_folder(folder_id: str, name: str) -> Dict[str, Any]:
     return dict(row)
 
 
-def delete_folder(folder_id: str) -> None:
+def delete_folder(folder_id: str, owner_id: Any = UNSET) -> None:
     if folder_id == DEFAULT_FOLDER_ID:
         raise ValueError("The default folder cannot be deleted")
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
 
     with _connect() as conn:
         cursor = conn.execute(
-            "DELETE FROM note_folders WHERE folder_id = ?", (folder_id,)
+            f"DELETE FROM note_folders WHERE folder_id = ?{scope_sql}", (folder_id, *scope_params)
         )
-        conn.execute(
-            "UPDATE notes SET folder_id = ? WHERE folder_id = ?",
-            (DEFAULT_FOLDER_ID, folder_id),
-        )
+        if cursor.rowcount:
+            conn.execute(
+                f"UPDATE notes SET folder_id = ? WHERE folder_id = ?{scope_sql}",
+                (DEFAULT_FOLDER_ID, folder_id, *scope_params),
+            )
         conn.commit()
 
     if cursor.rowcount == 0:
         raise ValueError(f"Folder not found: {folder_id}")
 
 
+def claim_unowned(owner: str) -> Dict[str, int]:
+    """Adopt every ownerless note, folder and Notion target. Idempotent."""
+    with _connect() as conn:
+        counts = {table: ownership.claim_unowned(conn, table, owner) for table in ("notes", "note_folders", "notion_targets")}
+        conn.commit()
+    return counts
+
+
 # --- Notion targets -------------------------------------------------------------
 
 
-def list_notion_targets() -> List[Dict[str, Any]]:
+def list_notion_targets(owner_id: Any = UNSET) -> List[Dict[str, Any]]:
+    scope_sql, scope_params = owner_clause(resolve_owner(owner_id))
     with _connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM notion_targets ORDER BY name COLLATE NOCASE"
+            f"SELECT * FROM notion_targets {f'WHERE {scope_sql}' if scope_sql else ''} ORDER BY name COLLATE NOCASE",
+            scope_params,
         ).fetchall()
 
     targets = []
@@ -704,10 +777,11 @@ def list_notion_targets() -> List[Dict[str, Any]]:
     return targets
 
 
-def get_notion_target(target_id: str) -> Dict[str, Any]:
+def get_notion_target(target_id: str, owner_id: Any = UNSET) -> Dict[str, Any]:
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
     with _connect() as conn:
         row = conn.execute(
-            "SELECT * FROM notion_targets WHERE target_id = ?", (target_id,)
+            f"SELECT * FROM notion_targets WHERE target_id = ?{scope_sql}", (target_id, *scope_params)
         ).fetchone()
 
     if row is None:
@@ -725,6 +799,7 @@ def save_notion_target(
     title_property: str = "",
     schema: Dict[str, Any] | None = None,
     target_id: str = "",
+    owner_id: Any = UNSET,
 ) -> Dict[str, Any]:
     trimmed_name = name.strip()
     trimmed_db = database_id.strip()
@@ -734,11 +809,14 @@ def save_notion_target(
         raise ValueError("database_id is required")
 
     timestamp = _now()
+    owner = resolve_owner(owner_id)
+    scope_sql, scope_params = _scope(owner)
 
     with _connect() as conn:
+        # Two users may point at the same Notion database; each keeps their own target.
         existing = conn.execute(
-            "SELECT target_id FROM notion_targets WHERE database_id = ?",
-            (trimmed_db,),
+            f"SELECT target_id FROM notion_targets WHERE database_id = ?{scope_sql}",
+            (trimmed_db, *scope_params),
         ).fetchone()
         resolved_id = target_id or (existing["target_id"] if existing else uuid.uuid4().hex)
 
@@ -746,9 +824,9 @@ def save_notion_target(
             """
             INSERT INTO notion_targets (
                 target_id, name, database_id, title_property, schema_json,
-                created_at, updated_at
+                created_at, updated_at, owner_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(target_id) DO UPDATE SET
                 name = excluded.name,
                 database_id = excluded.database_id,
@@ -764,17 +842,19 @@ def save_notion_target(
                 json.dumps(schema or {}),
                 timestamp,
                 timestamp,
+                owner,
             ),
         )
         conn.commit()
 
-    return get_notion_target(resolved_id)
+    return get_notion_target(resolved_id, owner_id=owner)
 
 
-def delete_notion_target(target_id: str) -> None:
+def delete_notion_target(target_id: str, owner_id: Any = UNSET) -> None:
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
     with _connect() as conn:
         cursor = conn.execute(
-            "DELETE FROM notion_targets WHERE target_id = ?", (target_id,)
+            f"DELETE FROM notion_targets WHERE target_id = ?{scope_sql}", (target_id, *scope_params)
         )
         conn.commit()
 

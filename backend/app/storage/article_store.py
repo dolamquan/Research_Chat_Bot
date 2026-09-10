@@ -4,6 +4,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.auth.context import UNSET, resolve_owner
+from app.storage.ownership import ensure_owner_column, owner_clause
+
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "researchmind.sqlite3"
@@ -54,6 +57,10 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     _ensure_column(conn, "authors_json", "TEXT NOT NULL DEFAULT '[]'")
     _ensure_column(conn, "published_at", "TEXT")
     _ensure_column(conn, "updated_at_source", "TEXT")
+    # NULL owner means public: every paper indexed before accounts existed is
+    # part of the shared library, and an administrator can publish more.
+    ensure_owner_column(conn, "articles")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_articles_source ON articles(source)")
     conn.commit()
 
     if owns_connection:
@@ -82,6 +89,7 @@ def _row_to_article(row: sqlite3.Row) -> Dict[str, Any]:
     except json.JSONDecodeError:
         article["authors"] = []
 
+    article["visibility"] = "public" if article.get("owner_id") is None else "private"
     return article
 
 
@@ -123,6 +131,8 @@ def _manifest_articles() -> List[Dict[str, Any]]:
                 "updated_at_source": "",
                 "created_at": "",
                 "updated_at": "",
+                "owner_id": None,
+                "visibility": "public",
             }
         )
 
@@ -140,6 +150,10 @@ def _article_matches_filters(
     if category and article.get("category") != category:
         return False
     return True
+
+
+def _visible(article: Dict[str, Any], owner: str | None) -> bool:
+    return owner is None or article.get("owner_id") in (None, owner)
 
 
 def _db_article_sources() -> set[str]:
@@ -163,10 +177,12 @@ def upsert_article(
     updated_at_source: str = "",
     status: str = "indexed",
     error: str | None = None,
+    owner_id: Any = UNSET,
 ) -> Dict[str, Any]:
     timestamp = _now()
     tags_json = json.dumps(tags or [])
     authors_json = json.dumps(authors or [])
+    owner = resolve_owner(owner_id)
 
     with _connect() as conn:
         existing = conn.execute(
@@ -175,14 +191,16 @@ def upsert_article(
         ).fetchone()
         created_at = existing["created_at"] if existing else timestamp
 
+        # Re-indexing never changes who owns a paper; publishing is explicit
+        # through set_article_visibility.
         conn.execute(
             """
             INSERT INTO articles (
                 article_id, title, source, url, pdf_url, domain, category,
                 tags_json, abstract, authors_json, published_at, updated_at_source,
-                status, error, created_at, updated_at
+                status, error, created_at, updated_at, owner_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(article_id) DO UPDATE SET
                 title = excluded.title,
                 source = excluded.source,
@@ -216,14 +234,26 @@ def upsert_article(
                 error,
                 created_at,
                 timestamp,
+                owner,
             ),
         )
         conn.commit()
 
-    return get_article(article_id)
+    return get_article(article_id, owner_id=None)
 
 
-def get_article(article_id: str) -> Dict[str, Any]:
+def find_articles_by_source(source: str) -> List[Dict[str, Any]]:
+    """Every indexed copy of a PDF filename, whoever owns it. Unscoped by design."""
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM articles WHERE source = ? ORDER BY created_at ASC",
+            (source,),
+        ).fetchall()
+    return [_row_to_article(row) for row in rows]
+
+
+def get_article(article_id: str, owner_id: Any = UNSET) -> Dict[str, Any]:
+    owner = resolve_owner(owner_id)
     with _connect() as conn:
         row = conn.execute(
             "SELECT * FROM articles WHERE article_id = ?",
@@ -231,7 +261,10 @@ def get_article(article_id: str) -> Dict[str, Any]:
         ).fetchone()
 
     if row is not None:
-        return _row_to_article(row)
+        article = _row_to_article(row)
+        if _visible(article, owner):
+            return article
+        raise ValueError(f"Article not found: {article_id}")
 
     # Papers from the arXiv manifest have no row in `articles`, but
     # list_articles() surfaces them alongside the indexed ones. Anything that
@@ -248,7 +281,9 @@ def list_articles(
     domain: str | None = None,
     category: str | None = None,
     limit: int = 100,
+    owner_id: Any = UNSET,
 ) -> List[Dict[str, Any]]:
+    owner = resolve_owner(owner_id)
     clauses = []
     params: List[Any] = []
 
@@ -259,6 +294,11 @@ def list_articles(
     if category:
         clauses.append("category = ?")
         params.append(category)
+
+    scope_sql, scope_params = owner_clause(owner, include_public=True)
+    if scope_sql:
+        clauses.append(scope_sql)
+        params.extend(scope_params)
 
     where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     params.append(limit)
@@ -287,15 +327,19 @@ def list_articles(
     return combined if limit < 0 else combined[:limit]
 
 
-def list_domains() -> List[Dict[str, Any]]:
+def list_domains(owner_id: Any = UNSET) -> List[Dict[str, Any]]:
+    owner = resolve_owner(owner_id)
+    scope_sql, scope_params = owner_clause(owner, include_public=True)
     with _connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT domain, category, COUNT(*) AS article_count
             FROM articles
+            {f'WHERE {scope_sql}' if scope_sql else ''}
             GROUP BY domain, category
             ORDER BY domain ASC, category ASC
-            """
+            """,
+            scope_params,
         ).fetchall()
 
     counts: Dict[tuple[str, str], int] = {}
@@ -318,3 +362,33 @@ def list_domains() -> List[Dict[str, Any]]:
         }
         for (domain, category), count in sorted(counts.items())
     ]
+
+
+def can_access_source(source: str, owner_id: Any = UNSET) -> bool:
+    """May the current user open this PDF filename? Manifest PDFs are always public."""
+    owner = resolve_owner(owner_id)
+    if owner is None:
+        return True
+    if any(str(article.get("source") or "") == source for article in _manifest_articles()):
+        return True
+    copies = find_articles_by_source(source)
+    if not copies:
+        # A file with no article row predates ownership tracking: shared library.
+        return True
+    return any(_visible(article, owner) for article in copies)
+
+
+def set_article_visibility(article_id: str, *, public: bool, owner_id: str | None = None) -> Dict[str, Any]:
+    """Publish a paper to everyone (public=True) or hand it to one owner."""
+    new_owner = None if public else owner_id
+    if not public and not new_owner:
+        raise ValueError("A private paper needs an owner_id")
+    with _connect() as conn:
+        updated = conn.execute(
+            "UPDATE articles SET owner_id = ?, updated_at = ? WHERE article_id = ?",
+            (new_owner, _now(), article_id),
+        ).rowcount
+        conn.commit()
+    if updated == 0:
+        raise ValueError(f"Article not found: {article_id}")
+    return get_article(article_id, owner_id=None)
