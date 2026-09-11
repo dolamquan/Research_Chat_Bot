@@ -19,6 +19,30 @@ const types = (effects: VoiceEffect[]) => effects.map((e) => e.type);
 const ready = () => initialVoiceContext({ recognition: true, synthesis: true, voiceEnabled: true });
 
 describe("voice machine", () => {
+  it("closes a muted one-shot microphone when a text-only response finishes", () => {
+    const pushed = transition({ ...ready(), muted: true }, { type: "PUSH_TO_TALK" });
+    const sent = transition(pushed.ctx, { type: "TRANSCRIPT", text: "open the library", isFinal: true, now: 1 });
+    const done = transition(sent.ctx, server({ type: "done", turn_id: "t-1", status: "ok", reason: null }));
+    expect(done.ctx.oneShot).toBe(false);
+    expect(done.ctx.state).toBe("muted");
+    expect(types(done.effects)).toContain("ABORT_RECOGNITION");
+  });
+
+  it("cancels a one-shot capture and releases the microphone", () => {
+    const pushed = transition({ ...ready(), muted: true }, { type: "PUSH_TO_TALK" });
+    const cancelled = transition(pushed.ctx, { type: "CANCEL" });
+    expect(cancelled.ctx.oneShot).toBe(false);
+    expect(types(cancelled.effects)).toContain("ABORT_RECOGNITION");
+  });
+
+  it("stops retries for provider failures and permits a manual retry", () => {
+    const failed = transition(ready(), { type: "RECOGNITION_ERROR", code: "provider", message: "Check billing", retryable: false });
+    expect(failed.ctx.error).toBe("Check billing");
+    expect(failed.ctx.voiceEnabled).toBe(false);
+    expect(transition(failed.ctx, { type: "RECOGNITION_ENDED" }).effects).toEqual([]);
+    expect(types(transition(failed.ctx, { type: "PUSH_TO_TALK" }).effects)).toContain("START_RECOGNITION");
+  });
+
   it("falls back to text only when recognition is unsupported", () => {
     const ctx = initialVoiceContext({ recognition: false, synthesis: true });
     expect(ctx.state).toBe("text_only");
@@ -45,11 +69,11 @@ describe("voice machine", () => {
     // "hey zoe" is enough to start listening for the command that follows.
     const woke = run(heard.ctx, { type: "TRANSCRIPT", text: "hey zoe", isFinal: false, now: 2 });
     expect(woke.ctx.state).toBe("capturing");
-    expect(types(woke.effects)).toEqual(["START_SILENCE_TIMER", "START_CAPTURE_TIMER"]);
+    expect(types(woke.effects)).toEqual(["CLEAR_SILENCE_TIMER", "START_CAPTURE_TIMER"]);
     const capturing = run(woke.ctx, { type: "TRANSCRIPT", text: "hey zoetrope open", isFinal: false, now: 3 });
     expect(capturing.ctx.state).toBe("capturing");
     expect(capturing.ctx.interim).toBe("open");
-    expect(types(capturing.effects)).toEqual(["START_SILENCE_TIMER"]);
+    expect(types(capturing.effects)).toEqual(["CLEAR_SILENCE_TIMER"]);
     const sent = run(capturing.ctx, { type: "TRANSCRIPT", text: "hey zoetrope open the library", isFinal: true, now: 3 });
     expect(sent.ctx.state).toBe("sending");
     expect(sent.effects).toContainEqual({ type: "SEND_MESSAGE", text: "open the library", source: "voice" });

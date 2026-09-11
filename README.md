@@ -49,6 +49,21 @@ http://127.0.0.1:5173
 
 Create `backend/.env` from `backend/.env.example` and add your OpenAI API key.
 
+Voice input uses `gpt-live-transcribe` through the authenticated
+`/agent/transcribe` WebSocket. It uses the backend's `OPENAI_API_KEY`, independently
+of the chat model. The browser captures 24 kHz PCM with an AudioWorklet, detects
+speech locally, and commits utterances after 700 ms of silence. Partial captions
+are reconciled with final transcripts before sending commands. The same audio
+stream drives the microphone orb; mute and sign-out close the audio connection.
+Use HTTPS or localhost for microphone access, and allow WebSocket upgrades through
+your proxy. `ASSISTANT_TRANSCRIPTION_LANGUAGES=en` and
+`ASSISTANT_TRANSCRIPTION_DELAY=low` are the defaults; set the delay to `medium`
+or `high` for more context at the cost of later partial captions.
+
+Unmuted wake-word listening sends detected speech to OpenAI, including speech
+before the wake word, and incurs transcription charges. Quiet periods are gated
+locally. For occasional commands, keep the mic muted and use push-to-talk.
+
 For multi-source paper search, use the Docker-backed Paper Search runner:
 
 ```env

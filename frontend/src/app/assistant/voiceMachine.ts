@@ -78,12 +78,12 @@ function settle(ctx: VoiceContext, effects: VoiceEffect[]): Transition {
   return { ctx: { ...ctx, state: restingState(ctx) }, effects };
 }
 
-function beginCapture(ctx: VoiceContext, remainder: string, source: "wake" | "push", effects: VoiceEffect[]): Transition {
+function beginCapture(ctx: VoiceContext, remainder: string, source: "wake" | "push", effects: VoiceEffect[], partial = false): Transition {
   const next: VoiceContext = { ...ctx, state: "capturing", committed: "", interim: remainder, captureSource: source };
   const wait = source === "push" ? PUSH_TO_TALK_WAIT_MS : remainder ? SILENCE_AFTER_SPEECH_MS : WAIT_FOR_COMMAND_MS;
   return {
     ctx: next,
-    effects: [...effects, { type: "START_SILENCE_TIMER", ms: wait }, { type: "START_CAPTURE_TIMER", ms: CAPTURE_HARD_CAP_MS }],
+    effects: [...effects, partial ? { type: "CLEAR_SILENCE_TIMER" } : { type: "START_SILENCE_TIMER", ms: wait }, { type: "START_CAPTURE_TIMER", ms: CAPTURE_HARD_CAP_MS }],
   };
 }
 
@@ -151,7 +151,12 @@ export function transition(ctx: VoiceContext, event: VoiceEvent): Transition {
       return isTurnState(next.state) || next.state === "awaiting_confirmation" ? { ctx: next, effects } : settle(next, effects);
     }
     case "RECOGNITION_STARTED":
-      return { ctx: { ...ctx, recognitionActive: true, restartDelayMs: RESTART_MIN_MS }, effects: [] };
+      return { ctx: { ...ctx, recognitionActive: true, error: null, restartDelayMs: RESTART_MIN_MS }, effects: ctx.state === "capturing" ? [
+        { type: "START_SILENCE_TIMER", ms: PUSH_TO_TALK_WAIT_MS },
+        { type: "START_CAPTURE_TIMER", ms: CAPTURE_HARD_CAP_MS },
+      ] : [] };
+    case "RECOGNITION_SPEECH_STARTED":
+      return { ctx, effects: ctx.state === "capturing" ? [{ type: "CLEAR_SILENCE_TIMER" }] : [] };
     case "RECOGNITION_ENDED": {
       const next: VoiceContext = { ...ctx, recognitionActive: false };
       if (!shouldListen(next)) return { ctx: next, effects: [] };
@@ -162,6 +167,11 @@ export function transition(ctx: VoiceContext, event: VoiceEvent): Transition {
     }
     case "RECOGNITION_ERROR": {
       if (event.code === "not-allowed" || event.code === "service-not-allowed") return micDenied(ctx);
+      if (event.retryable === false) {
+        return settle({ ...ctx, voiceEnabled: false, oneShot: false, recognitionActive: false,
+          committed: "", interim: "", captureSource: null, error: event.message ?? "Voice transcription is unavailable" },
+        [{ type: "ABORT_RECOGNITION" }, { type: "CLEAR_SILENCE_TIMER" }, { type: "CLEAR_CAPTURE_TIMER" }]);
+      }
       if (event.code === "no-speech" || event.code === "aborted") return { ctx, effects: [] };
       if (event.code === "network" || event.code === "audio-capture") {
         return { ctx: { ...ctx, error: event.code === "network" ? "Speech recognition lost its connection" : "No microphone input" }, effects: [{ type: "RESET_ERROR_LATER", ms: ERROR_DISPLAY_MS }] };
@@ -216,7 +226,8 @@ export function transition(ctx: VoiceContext, event: VoiceEvent): Transition {
     case "CANCEL": {
       const effects: VoiceEffect[] = [{ type: "CANCEL_TTS" }, { type: "CLEAR_SILENCE_TIMER" }, { type: "CLEAR_CAPTURE_TIMER" }, { type: "CLEAR_CONFIRM_TIMER" }];
       if (ctx.inTurn) effects.push({ type: "SEND_CANCEL", reason: "user" });
-      const next: VoiceContext = { ...ctx, inTurn: false, pendingTools: 0, committed: "", interim: "", captureSource: null, confirmation: null, error: null };
+      if (ctx.oneShot) effects.push({ type: "ABORT_RECOGNITION" });
+      const next: VoiceContext = { ...ctx, oneShot: false, inTurn: false, pendingTools: 0, committed: "", interim: "", captureSource: null, confirmation: null, error: null };
       return settle(next, effects);
     }
     case "SOCKET_STATUS": {
@@ -234,7 +245,10 @@ export function transition(ctx: VoiceContext, event: VoiceEvent): Transition {
 }
 
 function onTranscript(ctx: VoiceContext, text: string, isFinal: boolean, now: number): Transition {
-  if (!shouldListen(ctx) || !text.trim()) return { ctx, effects: [] };
+  if (!shouldListen(ctx)) return { ctx, effects: [] };
+  if (!text.trim()) return isFinal && ctx.state === "capturing"
+    ? { ctx: { ...ctx, interim: "" }, effects: [{ type: "START_SILENCE_TIMER", ms: WAIT_FOR_COMMAND_MS }] }
+    : { ctx, effects: [] };
   if (now < ctx.cooldownUntil) return { ctx, effects: [] };
 
   const wake = matchWakeWord(text);
@@ -242,7 +256,7 @@ function onTranscript(ctx: VoiceContext, text: string, isFinal: boolean, now: nu
   if (ctx.speaking) {
     // Everything heard while we talk is our own voice unless it is clearly a wake word.
     if (!wake.matched || isEchoOf(text, ctx.spokenText)) return { ctx, effects: [] };
-    return beginCapture({ ...ctx, speaking: false }, wake.remainder, "wake", [{ type: "CANCEL_TTS" }]);
+    return beginCapture({ ...ctx, speaking: false }, wake.remainder, "wake", [{ type: "CANCEL_TTS" }], !isFinal);
   }
 
   switch (ctx.state) {
@@ -252,7 +266,7 @@ function onTranscript(ctx: VoiceContext, text: string, isFinal: boolean, now: nu
     case "executing":
     case "error": {
       if (!wake.matched) return { ctx, effects: [] };
-      return beginCapture(ctx, wake.remainder, "wake", []);
+      return beginCapture(ctx, wake.remainder, "wake", [], !isFinal);
     }
     case "capturing": {
       const spoken = ctx.captureSource === "wake" && wake.matched ? wake.remainder : stripWakeWord(text);
@@ -260,7 +274,9 @@ function onTranscript(ctx: VoiceContext, text: string, isFinal: boolean, now: nu
         const next: VoiceContext = { ...ctx, committed: `${ctx.committed} ${spoken}`.trim(), interim: "" };
         return currentCommand(next) ? finishCapture(next, []) : { ctx: next, effects: [{ type: "START_SILENCE_TIMER", ms: WAIT_FOR_COMMAND_MS }] };
       }
-      return { ctx: { ...ctx, interim: spoken }, effects: [{ type: "START_SILENCE_TIMER", ms: SILENCE_AFTER_SPEECH_MS }] };
+      // Live partials can pause while speech continues; the completed turn
+      // (or the capture hard cap) submits the command.
+      return { ctx: { ...ctx, interim: spoken }, effects: [{ type: "CLEAR_SILENCE_TIMER" }] };
     }
     case "awaiting_confirmation": {
       if (!isFinal) return { ctx, effects: [] };
@@ -314,6 +330,9 @@ function onServer(ctx: VoiceContext, message: { type: string } & Record<string, 
     case "done": {
       const next: VoiceContext = { ...ctx, inTurn: false, pendingTools: 0 };
       if (next.confirmation) return { ctx: { ...next, state: "awaiting_confirmation" }, effects: [] };
+      if (next.oneShot && !next.speaking && next.state !== "capturing") {
+        return settle({ ...next, oneShot: false }, [{ type: "ABORT_RECOGNITION" }]);
+      }
       if (next.state === "error") return { ctx: next, effects: [] };
       if (next.speaking) return { ctx: { ...next, state: next.state === "capturing" ? "capturing" : "thinking" }, effects: [] };
       if (next.state === "capturing") return { ctx: next, effects: [] };

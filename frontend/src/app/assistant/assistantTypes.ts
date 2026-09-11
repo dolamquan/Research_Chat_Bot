@@ -206,7 +206,8 @@ export type VoiceEvent =
   | { type: "UNMUTE" }
   | { type: "RECOGNITION_STARTED" }
   | { type: "RECOGNITION_ENDED" }
-  | { type: "RECOGNITION_ERROR"; code: string }
+  | { type: "RECOGNITION_ERROR"; code: string; message?: string; retryable?: boolean }
+  | { type: "RECOGNITION_SPEECH_STARTED" }
   | { type: "TRANSCRIPT"; text: string; isFinal: boolean; now: number }
   | { type: "SILENCE_TIMEOUT" }
   | { type: "CAPTURE_TIMEOUT" }

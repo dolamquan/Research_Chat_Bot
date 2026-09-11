@@ -29,8 +29,7 @@ import type {
 import { CLIENT_TOOL_SPECS, createClientToolDispatcher } from "./clientTools";
 import { createUiActionRegistry, createWorkspaceStore, type UiActionRegistry, type WorkspaceStore } from "./uiActionRegistry";
 import { useAssistantHotkeys } from "./useAssistantHotkeys";
-import { useMicLevel } from "./useMicLevel";
-import { speechRecognitionSupported, useSpeechRecognition } from "./useSpeechRecognition";
+import { speechRecognitionSupported, useLiveTranscription } from "./useLiveTranscription";
 import { speechSynthesisSupported, useSpeechSynthesis } from "./useSpeechSynthesis";
 import { currentCommand, displayState, initialVoiceContext, shouldListen, transition } from "./voiceMachine";
 
@@ -119,6 +118,8 @@ function fromHistory(history: HistoryEntry[]): AssistantTurn[] {
 
 export function AssistantProvider({ children }: { children: ReactNode }) {
   const auth = useAuth();
+  const ready = auth.status === "signed_in" || auth.status === "disabled";
+  const userId = auth.user?.id ?? "";
   const registry = useRef<UiActionRegistry>(createUiActionRegistry()).current;
   const workspace = useRef<WorkspaceStore>(createWorkspaceStore()).current;
 
@@ -145,14 +146,15 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
   const timers = useRef<{ silence?: number; capture?: number; confirm?: number; error?: number; restart?: number; workspace?: number }>({});
   const dispatchRef = useRef<(event: VoiceEvent) => void>(() => undefined);
 
-  // ---- browser speech ----------------------------------------------------
+  // ---- live transcription and browser speech output -----------------------
 
-  const recognition = useSpeechRecognition({
+  const recognition = useLiveTranscription({
     onStart: () => dispatchRef.current({ type: "RECOGNITION_STARTED" }),
     onEnd: () => dispatchRef.current({ type: "RECOGNITION_ENDED" }),
-    onError: (code) => dispatchRef.current({ type: "RECOGNITION_ERROR", code }),
+    onError: (code, message, retryable) => dispatchRef.current({ type: "RECOGNITION_ERROR", code, message, retryable }),
+    onSpeechStart: () => dispatchRef.current({ type: "RECOGNITION_SPEECH_STARTED" }),
     onTranscript: (text, isFinal) => dispatchRef.current({ type: "TRANSCRIPT", text, isFinal, now: Date.now() }),
-  });
+  }, ready);
   const recognitionRef = useRef(recognition);
   recognitionRef.current = recognition;
 
@@ -166,7 +168,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
   const synthesisRef = useRef(synthesis);
   synthesisRef.current = synthesis;
 
-  const micLevel = useMicLevel(shouldListen(ctx), () => dispatchRef.current({ type: "MIC_DENIED" }));
+  const micLevel = recognition.level;
 
   // ---- turns -----------------------------------------------------------------
 
@@ -387,9 +389,6 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
 
   // ---- socket lifecycle -------------------------------------------------------------
 
-  const ready = auth.status === "signed_in" || auth.status === "disabled";
-  const userId = auth.user?.id ?? "";
-
   useEffect(() => {
     if (!ready) return;
     const socket = new AssistantSocket({
@@ -436,8 +435,11 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
   }, [ctx.muted]);
 
   useEffect(() => {
-    // Start listening on load when the user already granted the microphone before.
-    if (shouldListen(ctxRef.current) && !ctxRef.current.recognitionActive) recognitionRef.current.start();
+    if (ready && shouldListen(ctxRef.current)) recognitionRef.current.start();
+    return () => recognitionRef.current.abort();
+  }, [ready, userId]);
+
+  useEffect(() => {
     return () => {
       Object.values(timers.current).forEach((handle) => handle && window.clearTimeout(handle));
     };
@@ -536,11 +538,11 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
         status = "Muted";
         break;
       case "idle_listening":
-        status = assistantStorage.getHintSeen() ? "" : 'Listening for "Hey Zoe"';
+        status = !ctx.recognitionActive ? "Connecting microphone…" : assistantStorage.getHintSeen() ? "" : 'Listening for "Hey Zoe"';
         break;
       case "capturing":
-        primary = currentCommand(ctx) || (ctx.captureSource === "wake" ? "Yes?" : "Listening…");
-        status = "Hearing you";
+        primary = currentCommand(ctx) || (!ctx.recognitionActive ? "Connecting microphone…" : ctx.captureSource === "wake" ? "Yes?" : "Listening…");
+        status = ctx.recognitionActive ? "Hearing you" : "Please wait";
         break;
       case "sending":
         primary = lastTurn?.user.text ?? "";
@@ -570,6 +572,10 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
         break;
     }
     if (socketStatus !== "open" && display !== "text_only") status = socketStatus === "connecting" ? "Connecting…" : "Reconnecting…";
+    if (ctx.error && !ctx.voiceEnabled) {
+      primary = ctx.error;
+      status = "Voice unavailable — click the orb to retry";
+    }
     return { primary, status };
   }, [activeTool, ctx, display, socketStatus, turns]);
 

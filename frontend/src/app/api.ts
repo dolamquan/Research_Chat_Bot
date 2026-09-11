@@ -94,6 +94,15 @@ export function assistantSocketUrl(): string {
   return withAccessToken(base.toString());
 }
 
+/** Voice socket authenticates its first message; no token in the URL. */
+export function transcriptionSocketUrl(): string {
+  const base = new URL(API_URL, window.location.origin);
+  base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
+  base.pathname = `${base.pathname.replace(/\/$/, "")}/agent/transcribe`;
+  base.search = "";
+  return base.toString();
+}
+
 async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers);
   const token = accessTokenProvider();
