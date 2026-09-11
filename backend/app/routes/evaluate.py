@@ -6,7 +6,8 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.evaluation.evaluator import EVALUATION_RUNS_DIR, run_evaluation
+from app.auth.context import current_user
+from app.evaluation.evaluator import EVALUATION_RUNS_DIR, run_evaluation, runs_dir
 from app.evaluation.ragas_evaluator import run_ragas_evaluation
 from app.rag.generator import generate_answer
 
@@ -155,14 +156,19 @@ def _normalize_run(path: Path, include_cases: bool = False) -> Dict[str, Any]:
 
 
 def _run_paths() -> List[Path]:
-    if not EVALUATION_RUNS_DIR.exists():
-        return []
+    """The acting user's runs. Administrators also see the pre-account archive."""
+    directories = [runs_dir()]
+    user = current_user()
+    if user is not None and user.is_admin and EVALUATION_RUNS_DIR not in directories:
+        directories.append(EVALUATION_RUNS_DIR)
 
-    return sorted(
-        EVALUATION_RUNS_DIR.glob("*.json"),
-        key=lambda path: path.stat().st_mtime,
-        reverse=True,
-    )
+    paths = [
+        path
+        for directory in directories
+        if directory.exists()
+        for path in directory.glob("*.json")
+    ]
+    return sorted(paths, key=lambda path: path.stat().st_mtime, reverse=True)
 
 
 @router.post("", response_model=EvaluationResponse)

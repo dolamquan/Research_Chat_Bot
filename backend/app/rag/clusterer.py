@@ -8,12 +8,17 @@ from typing import Any, Dict, List
 import numpy as np
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 
+from app.auth.context import current_owner_id
 from app.rag.access_scope import owner_scope
 from app.rag.vector_store import COLLECTION_NAME, DATA_DIR, get_client
 
 
 CLUSTERS_PATH = DATA_DIR / "clusters.json"
 CLUSTERS_DIR = DATA_DIR / "clusters"
+
+
+def _user_clusters_dir(owner: str) -> Path:
+    return CLUSTERS_DIR / "users" / re.sub(r"[^A-Za-z0-9_.-]+", "_", owner)
 TITLE_STOPWORDS = {
     "a",
     "an",
@@ -125,13 +130,42 @@ def _safe_scope_part(value: str | None) -> str:
     return re.sub(r"[^a-z0-9._-]+", "_", normalized).strip("_") or "all"
 
 
-def _clusters_path(domain: str | None = None, category: str | None = None) -> Path:
+def _shared_clusters_path(domain: str | None = None, category: str | None = None) -> Path:
     scope = _scope_payload(domain=domain, category=category)
 
     if not scope["domain"] and not scope["category"]:
         return CLUSTERS_PATH
 
     return CLUSTERS_DIR / f"{_safe_scope_part(scope['domain'])}__{_safe_scope_part(scope['category'])}.json"
+
+
+def _clusters_path(domain: str | None = None, category: str | None = None) -> Path:
+    """Each user keeps their own topology (their private papers are in it)."""
+    owner = current_owner_id()
+    if owner is None:
+        return _shared_clusters_path(domain=domain, category=category)
+    scope = _scope_payload(domain=domain, category=category)
+    return _user_clusters_dir(owner) / (
+        f"{_safe_scope_part(scope['domain'])}__{_safe_scope_part(scope['category'])}.json"
+    )
+
+
+def _readable_clusters_path(domain: str | None = None, category: str | None = None) -> Path:
+    """A user without their own topology yet sees the shared, public-library one."""
+    own = _clusters_path(domain=domain, category=category)
+    if own.exists():
+        return own
+    return _shared_clusters_path(domain=domain, category=category)
+
+
+def cluster_sources(cluster_id: int, domain: str | None = None, category: str | None = None) -> List[str]:
+    """PDF filenames in one cluster of the acting user's topology."""
+    graph = load_clusters(domain=domain, category=category)
+    return sorted(
+        str(document.get("source"))
+        for document in graph.get("documents", [])
+        if document.get("cluster_id") == cluster_id and document.get("source")
+    )
 
 
 def _label_from_sources(sources: List[str]) -> str:
@@ -297,7 +331,7 @@ def load_clusters(
     domain: str | None = None,
     category: str | None = None,
 ) -> Dict[str, Any]:
-    path = _clusters_path(domain=domain, category=category)
+    path = _readable_clusters_path(domain=domain, category=category)
 
     if not path.exists():
         return {
@@ -310,6 +344,8 @@ def load_clusters(
     graph = json.loads(path.read_text(encoding="utf-8"))
     graph.setdefault("scope", _scope_payload(domain=domain, category=category))
     graph["stale"] = False
+    # Inherited from the shared library; rebuilding gives the user their own.
+    graph["shared"] = path != _clusters_path(domain=domain, category=category)
 
     return graph
 
@@ -503,5 +539,9 @@ def build_cluster_graph(
     }
 
     save_clusters(graph, domain=domain, category=category)
-    write_cluster_payloads(graph_documents)
+    # Cluster labels on the shared Qdrant points describe the shared library
+    # topology; a user's private topology lives in their file and is applied
+    # to retrieval through cluster_sources instead.
+    if current_owner_id() is None:
+        write_cluster_payloads(graph_documents)
     return graph

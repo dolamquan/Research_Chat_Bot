@@ -12,6 +12,9 @@ import type {
   AgentToolsResponse,
   Article,
   ArticleDomain,
+  AuthMe,
+  IntegrationStatus,
+  NotionDatabase,
   Annotation,
   AnnotationPayload,
   PaperSearchPayload,
@@ -58,7 +61,7 @@ import type {
 
 export const API_URL =
   import.meta.env.VITE_API_URL?.replace(/\/$/, "") ||
-  (import.meta.env.DEV ? "/api" : "http://127.0.0.1:8002");
+  "/api";
 
 let accessTokenProvider: () => string | null | undefined = () => undefined;
 
@@ -75,6 +78,20 @@ function withAccessToken(url: string): string {
   const token = accessTokenProvider();
   if (!token) return url;
   return `${url}${url.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}`;
+}
+
+/** The current session token, for transports that cannot set headers (the assistant websocket). */
+export function getAccessToken(): string | null {
+  return accessTokenProvider() ?? null;
+}
+
+/** ws(s):// address of the assistant socket, resolved against the page origin (dev: through the Vite proxy). */
+export function assistantSocketUrl(): string {
+  const base = new URL(API_URL, window.location.origin);
+  base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
+  base.pathname = `${base.pathname.replace(/\/$/, "")}/agent/ws`;
+  base.search = "";
+  return withAccessToken(base.toString());
 }
 
 async function requestJson<T>(path: string, options?: RequestInit): Promise<T> {
@@ -497,15 +514,34 @@ export function listNoteFolders(): Promise<{ folders: NoteFolder[] }> {
   return requestJson("/notes/folders");
 }
 
-export function createServerNoteFolder(name: string): Promise<{ folder: NoteFolder }> {
+export function createServerNoteFolder(
+  name: string,
+  parentId = "",
+): Promise<{ folder: NoteFolder }> {
   return requestJson("/notes/folders", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, parent_id: parentId }),
   });
 }
 
-export function deleteNoteFolder(folderId: string): Promise<{ status: string }> {
+export function updateNoteFolder(
+  folderId: string,
+  payload: { name?: string; parent_id?: string },
+): Promise<{ folder: NoteFolder }> {
+  return requestJson(`/notes/folders/${encodeURIComponent(folderId)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteNoteFolder(folderId: string): Promise<{
+  status: string;
+  parent_id: string;
+  notes_moved: number;
+  folders_moved: number;
+}> {
   return requestJson(`/notes/folders/${encodeURIComponent(folderId)}`, {
     method: "DELETE",
   });
@@ -811,6 +847,52 @@ export function callAgentTool({
 
 export function getAgentContext(): Promise<AgentContext> {
   return requestJson("/agent/context");
+}
+
+/** Identity as the backend sees it; an admin's first call adopts pre-account data. */
+export function getAuthMe(): Promise<AuthMe> {
+  return requestJson("/auth/me");
+}
+
+export function setArticleVisibility(
+  articleId: string,
+  isPublic: boolean,
+): Promise<Article> {
+  return requestJson(`/articles/${encodeURIComponent(articleId)}/visibility`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ public: isPublic }),
+  });
+}
+
+export function getIntegrations(): Promise<{ integrations: IntegrationStatus[] }> {
+  return requestJson("/integrations");
+}
+
+export function setIntegrationSecret(
+  provider: string,
+  secret: string,
+): Promise<{ integration: IntegrationStatus }> {
+  return requestJson(`/integrations/${encodeURIComponent(provider)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret }),
+  });
+}
+
+export function deleteIntegrationSecret(
+  provider: string,
+): Promise<{ status: string; integration: IntegrationStatus }> {
+  return requestJson(`/integrations/${encodeURIComponent(provider)}`, { method: "DELETE" });
+}
+
+/** Notion's consent page for the signed-in user; navigate the browser there. */
+export function getNotionAuthorizeUrl(): Promise<{ url: string }> {
+  return requestJson("/integrations/notion/authorize");
+}
+
+export function listNotionDatabases(): Promise<{ databases: NotionDatabase[] }> {
+  return requestJson("/integrations/notion/databases");
 }
 
 export function getAgentSessions(): Promise<{ sessions: AgentSession[] }> {

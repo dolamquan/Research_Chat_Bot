@@ -72,3 +72,13 @@ def test_cached_scene_works_during_outage(monkeypatch):
     monkeypatch.setattr(scene_service, "get_visualization_by_id", read)
     assert scene_service.build_stage_scene("viz", "stage") == cached
     read.assert_not_called()
+
+
+@pytest.fixture(autouse=True)
+def _act_as_local_admin():
+    """Sign-in is disabled in tests: rows seeded directly belong to the local administrator."""
+    from app.auth.context import LOCAL_USER, reset_current_user, set_current_user
+
+    token = set_current_user(LOCAL_USER)
+    yield
+    reset_current_user(token)

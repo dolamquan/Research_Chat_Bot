@@ -5,8 +5,38 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
+from app.auth.context import UNSET, resolve_owner
+
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "researchmind.sqlite3"
+
+# Visualizations are personal work. The owner is part of the uniqueness key so
+# two users can each hold their own diagram of the same paper; '' marks rows
+# from before accounts existed (adopted by the administrator on sign-in).
+_VISUALIZATION_COLUMNS = """
+    viz_id TEXT PRIMARY KEY,
+    article_id TEXT NOT NULL,
+    document_source TEXT NOT NULL,
+    diagram_kind TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    algorithm_name TEXT NOT NULL DEFAULT '',
+    diagram_json TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    key_insight TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    source_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    worked_example_json TEXT,
+    mechanism_domain TEXT,
+    owner_id TEXT NOT NULL DEFAULT '',
+    UNIQUE(article_id, diagram_kind, owner_id)
+"""
+_COPIED_COLUMNS = (
+    "viz_id, article_id, document_source, diagram_kind, title, algorithm_name, "
+    "diagram_json, summary, key_insight, model, source_count, created_at, updated_at, "
+    "worked_example_json, mechanism_domain"
+)
 
 
 def expansion_content_is_current(
@@ -59,38 +89,43 @@ def _connect() -> sqlite3.Connection:
     return connection
 
 
+def _table_columns(conn: sqlite3.Connection, table: str) -> Set[str]:
+    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def _migrate_to_owned_visualizations(conn: sqlite3.Connection) -> None:
+    """Rebuild the table so uniqueness includes the owner. SQLite cannot alter constraints."""
+    for column, column_sql in (("worked_example_json", "TEXT"), ("mechanism_domain", "TEXT")):
+        if column not in _table_columns(conn, "paper_visualizations"):
+            conn.execute(f"ALTER TABLE paper_visualizations ADD COLUMN {column} {column_sql}")
+    conn.execute("ALTER TABLE paper_visualizations RENAME TO paper_visualizations_legacy")
+    conn.execute(f"CREATE TABLE paper_visualizations ({_VISUALIZATION_COLUMNS})")
+    conn.execute(
+        f"INSERT INTO paper_visualizations ({_COPIED_COLUMNS}, owner_id) "
+        f"SELECT {_COPIED_COLUMNS}, '' FROM paper_visualizations_legacy"
+    )
+    conn.execute("DROP TABLE paper_visualizations_legacy")
+
+
 def init_db(connection: sqlite3.Connection | None = None) -> None:
     owns_connection = connection is None
     conn = connection or sqlite3.connect(DB_PATH)
 
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS paper_visualizations (
-            viz_id TEXT PRIMARY KEY,
-            article_id TEXT NOT NULL,
-            document_source TEXT NOT NULL,
-            diagram_kind TEXT NOT NULL,
-            title TEXT NOT NULL DEFAULT '',
-            algorithm_name TEXT NOT NULL DEFAULT '',
-            diagram_json TEXT NOT NULL,
-            summary TEXT NOT NULL DEFAULT '',
-            key_insight TEXT NOT NULL DEFAULT '',
-            model TEXT NOT NULL DEFAULT '',
-            source_count INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL,
-            UNIQUE(article_id, diagram_kind)
-        )
-        """
-    )
+    conn.execute(f"CREATE TABLE IF NOT EXISTS paper_visualizations ({_VISUALIZATION_COLUMNS})")
+    if "owner_id" not in _table_columns(conn, "paper_visualizations"):
+        _migrate_to_owned_visualizations(conn)
     conn.execute(
         """
         CREATE INDEX IF NOT EXISTS idx_paper_visualizations_article
         ON paper_visualizations(article_id)
         """
     )
-    _ensure_column(conn, "worked_example_json", "TEXT")
-    _ensure_column(conn, "mechanism_domain", "TEXT")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_paper_visualizations_owner
+        ON paper_visualizations(owner_id)
+        """
+    )
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS node_expansions (
@@ -112,17 +147,14 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         conn.close()
 
 
-def _ensure_column(
-    conn: sqlite3.Connection, column_name: str, column_sql: str
-) -> None:
-    columns = {
-        row[1]
-        for row in conn.execute("PRAGMA table_info(paper_visualizations)").fetchall()
-    }
-    if column_name not in columns:
-        conn.execute(
-            f"ALTER TABLE paper_visualizations ADD COLUMN {column_name} {column_sql}"
-        )
+def _owner_key(owner_id: Any) -> str | None:
+    """'' stands for "unowned" in this table; None means the caller wants no scoping."""
+    owner = resolve_owner(owner_id)
+    return None if owner is None else owner
+
+
+def _scope(owner: str | None) -> tuple[str, List[Any]]:
+    return ("", []) if owner is None else (" AND owner_id = ?", [owner])
 
 
 def _row_to_record(row: sqlite3.Row) -> Dict[str, Any]:
@@ -137,6 +169,7 @@ def _row_to_record(row: sqlite3.Row) -> Dict[str, Any]:
         record["worked_example"] = json.loads(raw_example) if raw_example else None
     except Exception:
         record["worked_example"] = None
+    record["owner_id"] = record.get("owner_id") or None
     return record
 
 
@@ -169,9 +202,11 @@ def upsert_visualization(
     key_insight: str,
     model: str,
     source_count: int = 0,
+    owner_id: Any = UNSET,
 ) -> Dict[str, Any]:
     timestamp = _now()
     diagram_json = json.dumps(diagram, ensure_ascii=False)
+    owner = _owner_key(owner_id) or ""
 
     with _connect() as conn:
         conn.execute(
@@ -179,10 +214,10 @@ def upsert_visualization(
             INSERT INTO paper_visualizations (
                 viz_id, article_id, document_source, diagram_kind, title,
                 algorithm_name, diagram_json, summary, key_insight, model,
-                source_count, created_at, updated_at
+                source_count, created_at, updated_at, owner_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(article_id, diagram_kind) DO UPDATE SET
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(article_id, diagram_kind, owner_id) DO UPDATE SET
                 document_source = excluded.document_source,
                 title = excluded.title,
                 algorithm_name = excluded.algorithm_name,
@@ -207,14 +242,15 @@ def upsert_visualization(
                 source_count,
                 timestamp,
                 timestamp,
+                owner,
             ),
         )
         row = conn.execute(
             """
             SELECT * FROM paper_visualizations
-            WHERE article_id = ? AND diagram_kind = ?
+            WHERE article_id = ? AND diagram_kind = ? AND owner_id = ?
             """,
-            (article_id, diagram_kind),
+            (article_id, diagram_kind, owner),
         ).fetchone()
         if row is not None:
             # Node ids change when a diagram is regenerated; drop stale expansions.
@@ -228,50 +264,66 @@ def upsert_visualization(
     return _row_to_record(row)
 
 
-def list_visualizations(article_id: str) -> List[Dict[str, Any]]:
+def list_visualizations(article_id: str, owner_id: Any = UNSET) -> List[Dict[str, Any]]:
+    scope_sql, scope_params = _scope(_owner_key(owner_id))
     with _connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT * FROM paper_visualizations
-            WHERE article_id = ?
+            WHERE article_id = ?{scope_sql}
             ORDER BY updated_at DESC
             """,
-            (article_id,),
+            (article_id, *scope_params),
         ).fetchall()
     return [_row_to_record(row) for row in rows]
 
 
 def get_visualization(
-    article_id: str, diagram_kind: str
+    article_id: str, diagram_kind: str, owner_id: Any = UNSET
 ) -> Dict[str, Any] | None:
+    scope_sql, scope_params = _scope(_owner_key(owner_id))
     with _connect() as conn:
         row = conn.execute(
-            """
+            f"""
             SELECT * FROM paper_visualizations
-            WHERE article_id = ? AND diagram_kind = ?
+            WHERE article_id = ? AND diagram_kind = ?{scope_sql}
             """,
-            (article_id, diagram_kind),
+            (article_id, diagram_kind, *scope_params),
         ).fetchone()
     return _row_to_record(row) if row else None
 
 
-def get_visualization_by_id(viz_id: str) -> Dict[str, Any] | None:
+def get_visualization_by_id(viz_id: str, owner_id: Any = UNSET) -> Dict[str, Any] | None:
+    scope_sql, scope_params = _scope(_owner_key(owner_id))
     with _connect() as conn:
         row = conn.execute(
-            "SELECT * FROM paper_visualizations WHERE viz_id = ?",
-            (viz_id,),
+            f"SELECT * FROM paper_visualizations WHERE viz_id = ?{scope_sql}",
+            (viz_id, *scope_params),
         ).fetchone()
     return _row_to_record(row) if row else None
 
 
-def delete_visualization(viz_id: str) -> bool:
+def delete_visualization(viz_id: str, owner_id: Any = UNSET) -> bool:
+    scope_sql, scope_params = _scope(_owner_key(owner_id))
     with _connect() as conn:
-        conn.execute("DELETE FROM node_expansions WHERE viz_id = ?", (viz_id,))
         cursor = conn.execute(
-            "DELETE FROM paper_visualizations WHERE viz_id = ?",
-            (viz_id,),
+            f"DELETE FROM paper_visualizations WHERE viz_id = ?{scope_sql}",
+            (viz_id, *scope_params),
         )
+        if cursor.rowcount:
+            conn.execute("DELETE FROM node_expansions WHERE viz_id = ?", (viz_id,))
     return cursor.rowcount > 0
+
+
+def claim_unowned(owner: str) -> Dict[str, int]:
+    """Adopt pre-account diagrams. Ones colliding with the owner's own stay unowned."""
+    with _connect() as conn:
+        count = conn.execute(
+            "UPDATE OR IGNORE paper_visualizations SET owner_id = ? WHERE owner_id = ''",
+            (owner,),
+        ).rowcount
+        conn.commit()
+    return {"visualizations": count}
 
 
 def _row_to_expansion(row: sqlite3.Row) -> Dict[str, Any]:

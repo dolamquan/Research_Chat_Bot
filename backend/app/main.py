@@ -8,6 +8,7 @@ from app.auth import routes as auth_routes
 from app.auth.deps import get_current_user
 from app.routes import (
     agent_chat,
+    agent_ws,
     annotations,
     articles,
     chat,
@@ -17,6 +18,7 @@ from app.routes import (
     evaluate,
     graph_rag,
     ingest,
+    integrations,
     mcp_bridge,
     notes,
     upload,
@@ -66,6 +68,7 @@ for router in (
     evaluate.router,
     graph_rag.router,
     ingest.router,
+    integrations.router,
     mcp_bridge.router,
     notes.router,
     upload.router,
@@ -76,6 +79,11 @@ for router in (
     app.include_router(router, dependencies=SIGNED_IN)
 
 app.include_router(auth_routes.router)
+# Notion's OAuth redirect lands here without a bearer token; the signed state
+# identifies the user instead.
+app.include_router(integrations.public_router)
+# The assistant websocket authenticates its first frame itself (see agent_ws).
+app.include_router(agent_ws.router)
 
 
 @app.get("/health")

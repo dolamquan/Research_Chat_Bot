@@ -5,9 +5,6 @@ import type {
   PointerEvent as ReactPointerEvent,
   ReactNode,
 } from "react";
-import ReactMarkdown from "react-markdown";
-import rehypeKatex from "rehype-katex";
-import remarkMath from "remark-math";
 import {
   Bot,
   BrainCircuit,
@@ -48,8 +45,11 @@ import {
   searchPapers,
   sendAgentChat,
   sendChat,
+  setArticleVisibility,
 } from "./api";
 import { AgentConsoleView } from "./components/AgentConsoleView";
+import { AssistantDock, AssistantProvider, useRegisterUiActions, useReportWorkspace } from "./assistant";
+import { FormattedText } from "./components/MarkdownBody";
 import { useAuth } from "./auth/AuthProvider";
 import ZoetropeMark from "./components/ZoetropeMark";
 import { CrawlerView } from "./components/CrawlerView";
@@ -82,7 +82,6 @@ import type {
 } from "./types";
 
 const EMPTY_GRAPH: ClusterGraph = { clusters: [], documents: [] };
-const KATEX_OPTIONS = { throwOnError: false, strict: false };
 
 class AppErrorBoundary extends Component<
   { children: ReactNode },
@@ -243,135 +242,6 @@ function documentFromArticle(article: Article): ClusterDocument {
     x: 0,
     y: 0,
   };
-}
-
-function repairMathText(content: string): string {
-  const replacements: Array<[RegExp, string]> = [
-    [/â†|â/g, "←"],
-    [/â†’|â/g, "→"],
-    [/âˆˆ|â/g, "∈"],
-    [/âˆ‰|â/g, "∉"],
-    [/â‰¤|â¤/g, "≤"],
-    [/â‰¥|â¥/g, "≥"],
-    [/â‰ˆ|â/g, "≈"],
-    [/â‰ |â /g, "≠"],
-    [/âˆ’|â/g, "−"],
-    [/âˆ‘|â/g, "∑"],
-    [/âˆ|â/g, "∏"],
-    [/âˆž|â/g, "∞"],
-    [/âˆ¥|â¥/g, "∥"],
-    [/âˆ—|â/g, "∗"],
-    [/Î±/g, "α"],
-    [/Î²/g, "β"],
-    [/Î³/g, "γ"],
-    [/Î´/g, "δ"],
-    [/Îµ/g, "ε"],
-    [/Î»/g, "λ"],
-    [/Î¼/g, "μ"],
-    [/Ïƒ/g, "σ"],
-    [/Ï„/g, "τ"],
-    [/Ï†/g, "φ"],
-  ];
-
-  return replacements.reduce(
-    (text, [pattern, replacement]) => text.replace(pattern, replacement),
-    content,
-  );
-}
-
-function latexEscape(text: string): string {
-  return text
-    .replace(/\\/g, "\\backslash ")
-    .replace(/([{}&#%])/g, "\\$1")
-    .replace(/_/g, "\\_")
-    .replace(/\^/g, "\\^{}");
-}
-
-function mathTextToLatex(text: string): string {
-  return repairMathText(text)
-    .split("\n")
-    .map((line) => latexEscape(line.trim()))
-    .filter(Boolean)
-    .join(" \\\\ ");
-}
-
-function hasPdfFormulaExtractionArtifact(text: string): boolean {
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.length < 12) return false;
-
-  const tinyLines = lines.filter((line) => line.length <= 2).length;
-  return tinyLines / lines.length > 0.5;
-}
-
-function shouldRenderTextBlockAsMath(text: string): boolean {
-  if (!text || text.length > 500 || hasPdfFormulaExtractionArtifact(text)) return false;
-
-  const mathSignalCount =
-    text.match(/[=←→∈∉≤≥≈≠∑∏∞∥∗α-ωΑ-Ω]|\\frac|\\sum|\\prod|\\min|\\max|\\operatorname/g)?.length ??
-    0;
-  const proseWordCount =
-    text.match(/\b(the|this|that|context|figure|table|paper|formula|component|retrieval|graph)\b/gi)
-      ?.length ?? 0;
-
-  if (mathSignalCount === 0 && !/\b(arg|max|min|top-k|k\s*=|d\s*=)\b/i.test(text)) {
-    return false;
-  }
-
-  return proseWordCount <= 8 || mathSignalCount >= 4;
-}
-
-function normalizeMathMarkdown(content: string): string {
-  const repaired = repairMathText(content);
-
-  return repaired.replace(
-    /```text\n([\s\S]*?)```/g,
-    (_match, body: string) => {
-      const cleaned = body.trim();
-
-      if (!shouldRenderTextBlockAsMath(cleaned)) {
-        return `\`\`\`text\n${cleaned}\n\`\`\``;
-      }
-
-      return `$$\n\\begin{aligned}\n${mathTextToLatex(cleaned)}\n\\end{aligned}\n$$`;
-    },
-  );
-}
-
-function FormattedText({ content }: { content: string }) {
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkMath]}
-      rehypePlugins={[[rehypeKatex, KATEX_OPTIONS]]}
-      components={{
-        p: ({ children }) => <p className="mb-2 leading-relaxed last:mb-0">{children}</p>,
-        strong: ({ children }) => (
-          <strong className="font-semibold text-foreground">{children}</strong>
-        ),
-        ul: ({ children }) => <ul className="mb-2 list-disc space-y-1 pl-5">{children}</ul>,
-        ol: ({ children }) => <ol className="mb-2 list-decimal space-y-1 pl-5">{children}</ol>,
-        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-        code: ({ className, children }) => {
-          const block = typeof className === "string" && className.startsWith("language-");
-          return block ? (
-            <code className="block overflow-x-auto whitespace-pre rounded border border-border bg-background px-3 py-2 font-mono text-xs text-foreground">
-              {children}
-            </code>
-          ) : (
-            <code className="rounded border border-border bg-background px-1 py-0.5 font-mono text-[0.85em]">
-              {children}
-            </code>
-          );
-        },
-        pre: ({ children }) => <pre className="mb-2 overflow-x-auto">{children}</pre>,
-      }}
-    >
-      {normalizeMathMarkdown(content)}
-    </ReactMarkdown>
-  );
 }
 
 function contextLabel(source: Source, index: number): string {
@@ -678,7 +548,10 @@ function AppContent() {
   const [contextMode, setContextMode] = useState<ContextMode>("retrieval");
   const [retrievalStrategy, setRetrievalStrategy] = useState<RetrievalStrategy>("hybrid");
   const [input, setInput] = useState("");
-  const [activeView, setActiveView] = useState<"chat" | "library" | "crawler" | "reddit" | "notes" | "agent" | "graph" | "evaluation" | "visualizer">("chat");
+  const [activeView, setActiveView] = useState<"chat" | "library" | "crawler" | "reddit" | "notes" | "agent" | "graph" | "evaluation" | "visualizer">(
+    // Coming back from Notion's consent screen lands on the Notes view.
+    () => (new URLSearchParams(window.location.search).has("notion") ? "notes" : "chat"),
+  );
   const visibleActiveView = activeView === "graph" ? "chat" : activeView;
   const [librarySearch, setLibrarySearch] = useState("");
   const [crawlerDescription, setCrawlerDescription] = useState("");
@@ -1532,6 +1405,192 @@ function AppContent() {
     activeScopeLabel ||
     "All indexed papers";
 
+  // ---- assistant: lend this shell's handlers and report what is on screen ----
+  const visibleLibraryCount = useMemo(() => {
+    const needle = librarySearch.trim().toLowerCase();
+    return libraryArticles.filter(
+      (article) =>
+        (!selectedDomain || article.domain === selectedDomain) &&
+        (!selectedCategory || article.category === selectedCategory) &&
+        (!needle ||
+          articleTitle(article).toLowerCase().includes(needle) ||
+          article.source.toLowerCase().includes(needle)),
+    ).length;
+  }, [libraryArticles, librarySearch, selectedDomain, selectedCategory]);
+
+  function navigateToView(view: string) {
+    setActiveView(view as typeof activeView);
+    if (window.innerWidth < 768) setSidebarOpen(false);
+  }
+
+  function resolveArticle(ref: { article_id?: unknown; source?: unknown; title?: unknown }): Article | Article[] | undefined {
+    if (typeof ref.article_id === "string" && ref.article_id) {
+      const hit = libraryArticles.find((article) => article.article_id === ref.article_id);
+      if (hit) return hit;
+    }
+    if (typeof ref.source === "string" && ref.source) {
+      const hit = libraryArticles.find((article) => article.source === ref.source);
+      if (hit) return hit;
+    }
+    const needle = String(ref.title ?? ref.source ?? ref.article_id ?? "").trim().toLowerCase();
+    if (!needle) return undefined;
+    const exact = libraryArticles.filter((article) => articleTitle(article).toLowerCase() === needle);
+    if (exact.length === 1) return exact[0];
+    const hits = libraryArticles.filter(
+      (article) =>
+        articleTitle(article).toLowerCase().includes(needle) || article.source.toLowerCase().includes(needle),
+    );
+    if (hits.length === 1) return hits[0];
+    return hits.length ? hits : undefined;
+  }
+
+  function resolveCluster(ref: { cluster_id?: unknown; label?: unknown }): Cluster | undefined {
+    if (typeof ref.cluster_id === "number") {
+      return graph.clusters.find((cluster) => cluster.cluster_id === ref.cluster_id);
+    }
+    const needle = String(ref.label ?? "").trim().toLowerCase();
+    if (!needle) return undefined;
+    return (
+      graph.clusters.find((cluster) => cluster.cluster_label.toLowerCase() === needle) ??
+      graph.clusters.find((cluster) => cluster.cluster_label.toLowerCase().includes(needle))
+    );
+  }
+
+  function describeScreen(): string {
+    const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
+    const readerTitle = readerDocument ? readerDocument.title || titleFromSource(readerDocument.source) : "";
+    const parts = [
+      `View: ${headerTitle} (${headerSubtitle}).`,
+      `Chat scope: ${scopeLabel}; ${retrievalStrategy} retrieval, ${contextMode} context.`,
+      readerDocument
+        ? `PDF reader open on "${readerTitle}"${readerInitialPage ? ` at page ${readerInitialPage}` : ""}.`
+        : "PDF reader closed.",
+      `Library: ${libraryArticles.length} papers, ${visibleLibraryCount} match the current filter${
+        librarySearch ? ` (search "${librarySearch}")` : ""
+      }.`,
+      pinnedSources.length ? `${pinnedSources.length} pinned passage(s).` : "",
+      topologyExplorerOpen ? "Topology explorer is open." : "",
+      `Backend ${backendOnline ? "online" : "offline"}.`,
+      lastAssistant && activeView === "chat"
+        ? `Last chat answer: ${lastAssistant.content.replace(/[#*_`>]/g, "").slice(0, 300)}`
+        : "",
+    ];
+    return parts.filter(Boolean).join(" ").slice(0, 1200);
+  }
+
+  useRegisterUiActions({
+    navigateToView,
+    openArticle: openLibraryArticle,
+    openDocument: (document: ClusterDocument) => {
+      setSelectedDocument(document);
+      setReaderDocument(document);
+      setReaderInitialPage(undefined);
+      setSidebarOpen(false);
+    },
+    openSource: openSourceCitation,
+    setReaderPage: (page: number) => {
+      const target = readerDocument ?? selectedDocument;
+      if (!target) throw new Error("No paper is open in the reader; open one first");
+      setReaderDocument(target);
+      setReaderInitialPage(page);
+      setActiveView("chat");
+      return { page, source: target.source, title: target.title || titleFromSource(target.source) };
+    },
+    chooseCluster,
+    clearCluster,
+    pinSource,
+    unpinSource: ({ source }: { source: string }) => {
+      setPinnedSources((current) =>
+        current.filter((item) => sourceTextValue(item.source) !== source && item.title !== source),
+      );
+      return { unpinned: true };
+    },
+    setLibraryFilter: ({
+      domain,
+      category,
+      search,
+      openLibrary,
+    }: {
+      domain?: string;
+      category?: string;
+      search?: string;
+      openLibrary?: boolean;
+    }) => {
+      if (domain !== undefined) {
+        setSelectedDomain(domain);
+        setSelectedCategory("");
+      }
+      if (category !== undefined) setSelectedCategory(category);
+      if (search !== undefined) setLibrarySearch(search);
+      if (openLibrary !== false) setActiveView("library");
+      return {
+        domain: domain ?? selectedDomain,
+        category: category ?? (domain !== undefined ? "" : selectedCategory),
+        search: search ?? librarySearch,
+      };
+    },
+    startNewChat,
+    loadChatSession,
+    setContextMode: (mode: ContextMode) => setContextMode(mode),
+    setRetrievalStrategy: (strategy: RetrievalStrategy) => setRetrievalStrategy(strategy),
+    describeScreen,
+    resolveArticle,
+    resolveCluster,
+  });
+
+  useReportWorkspace(
+    () => ({
+      active_view: visibleActiveView,
+      selected_paper: selectedDocument
+        ? {
+            title: selectedDocument.title || titleFromSource(selectedDocument.source),
+            source: selectedDocument.source,
+            article_id: selectedDocument.article_id,
+            cluster_label: selectedDocument.cluster_label,
+          }
+        : null,
+      reader: readerDocument
+        ? {
+            source: readerDocument.source,
+            title: readerDocument.title || titleFromSource(readerDocument.source),
+            page: readerInitialPage ?? null,
+          }
+        : null,
+      selected_cluster: selectedCluster
+        ? { cluster_id: selectedCluster.cluster_id, cluster_label: selectedCluster.cluster_label }
+        : null,
+      pinned_sources: pinnedSources.map((source) => ({
+        source: source.source,
+        title: source.title,
+        page: source.page,
+        article_id: source.article_id,
+        text: typeof source.text === "string" ? source.text.slice(0, 300) : undefined,
+      })),
+      library_filter: { domain: selectedDomain || null, category: selectedCategory || null },
+      library_search: librarySearch || null,
+      active_chat_session: activeSessionId
+        ? { id: activeSessionId, title: chatSessions.find((session) => session.id === activeSessionId)?.title ?? null }
+        : null,
+      context_mode: contextMode,
+      retrieval_strategy: retrievalStrategy,
+    }),
+    [
+      visibleActiveView,
+      selectedDocument,
+      readerDocument,
+      readerInitialPage,
+      selectedCluster,
+      pinnedSources,
+      selectedDomain,
+      selectedCategory,
+      librarySearch,
+      activeSessionId,
+      chatSessions,
+      contextMode,
+      retrievalStrategy,
+    ],
+  );
+
   return (
     <div
       className="rm-app-shell h-screen w-screen bg-background text-foreground flex overflow-hidden"
@@ -2199,6 +2258,24 @@ function AppContent() {
               onOpenArticle={openLibraryArticle}
               onChatWithArticle={chatWithLibraryArticle}
               onRebuildTopology={() => void rebuildCurrentTopology()}
+              isAdmin={auth.isAdmin}
+              onPublishArticle={(article) => {
+                void setArticleVisibility(article.article_id, true)
+                  .then((published) => {
+                    setLibraryArticles((current) =>
+                      current.map((item) =>
+                        item.article_id === published.article_id ? { ...item, ...published } : item,
+                      ),
+                    );
+                  })
+                  .catch((error: unknown) => {
+                    setLoadError(
+                      error instanceof Error
+                        ? `Could not publish paper: ${error.message}`
+                        : "Could not publish paper.",
+                    );
+                  });
+              }}
             />
           ) : activeView === "agent" ? (
             <AgentConsoleView onRun={runAgentCommand} />
@@ -2424,6 +2501,8 @@ function AppContent() {
           onPinSource={pinSource}
         />
       ) : null}
+
+      <AssistantDock yieldGpu={activeView === "visualizer"} />
     </div>
   );
 }
@@ -2431,7 +2510,9 @@ function AppContent() {
 export default function App() {
   return (
     <AppErrorBoundary>
-      <AppContent />
+      <AssistantProvider>
+        <AppContent />
+      </AssistantProvider>
     </AppErrorBoundary>
   );
 }

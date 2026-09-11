@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { Session } from "@supabase/supabase-js";
 
-import { UNAUTHORIZED_EVENT, setAccessTokenProvider } from "../api";
+import { UNAUTHORIZED_EVENT, getAuthMe, setAccessTokenProvider } from "../api";
 import { authEnabled, supabase } from "./supabase";
 
 export type AuthStatus = "disabled" | "loading" | "signed_out" | "signed_in";
@@ -23,6 +23,9 @@ export type AuthUser = {
 type AuthValue = {
   status: AuthStatus;
   user: AuthUser | null;
+  /** "admin" or "user"; "admin" when sign-in is disabled (local development). */
+  role: string;
+  isAdmin: boolean;
   signIn: (email: string, password: string) => Promise<string | null>;
   signUp: (
     email: string,
@@ -41,6 +44,7 @@ function toUser(session: Session | null): AuthUser | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>(authEnabled ? "loading" : "disabled");
   const [session, setSession] = useState<Session | null>(null);
+  const [role, setRole] = useState<string>(authEnabled ? "user" : "admin");
   // The API layer reads the token synchronously on every request, so it has
   // to come from a ref rather than the state captured by an older closure.
   const sessionRef = useRef<Session | null>(null);
@@ -48,14 +52,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setAccessTokenProvider(() => sessionRef.current?.access_token ?? null);
     const client = supabase;
-    if (!client) return;
+    if (!client) {
+      // Sign-in disabled: the backend acts as one local administrator. Asking
+      // it who we are also adopts any data written before accounts existed.
+      void getAuthMe()
+        .then((me) => setRole(me.role))
+        .catch(() => setRole("admin"));
+      return;
+    }
 
     let active = true;
+    let knownUser = "";
     const apply = (next: Session | null) => {
       sessionRef.current = next;
       if (!active) return;
       setSession(next);
       setStatus(next ? "signed_in" : "signed_out");
+      // The role lives in the token's app_metadata, which the backend reads;
+      // asking it once per sign-in also lets an admin adopt pre-account data.
+      const userId = next?.user?.id ?? "";
+      if (userId && userId !== knownUser) {
+        knownUser = userId;
+        void getAuthMe()
+          .then((me) => {
+            if (active && sessionRef.current?.user?.id === me.id) setRole(me.role);
+          })
+          .catch(() => {
+            if (active) setRole("user");
+          });
+      } else if (!userId) {
+        knownUser = "";
+        setRole("user");
+      }
     };
 
     void client.auth.getSession().then(({ data }) => apply(data.session));
@@ -96,8 +124,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthValue>(
-    () => ({ status, user: toUser(session), signIn, signUp, signOut }),
-    [status, session, signIn, signUp, signOut],
+    () => ({
+      status,
+      user: toUser(session),
+      role,
+      isAdmin: role === "admin",
+      signIn,
+      signUp,
+      signOut,
+    }),
+    [status, session, role, signIn, signUp, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

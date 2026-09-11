@@ -188,6 +188,34 @@ export type Article = {
   error?: string | null;
   created_at: string;
   updated_at: string;
+  /** null = public library paper; otherwise the owning user's id. */
+  owner_id?: string | null;
+  visibility?: "public" | "private";
+};
+
+export type IntegrationStatus = {
+  provider: "notion" | "github" | string;
+  label: string;
+  configured: boolean;
+  source: "user" | "environment" | null;
+  /** How the credential in effect was obtained. */
+  method?: "oauth" | "token" | "environment" | null;
+  meta?: { workspace_name?: string | null; workspace_icon?: string | null };
+  /** Notion only: whether this server can run the "Connect Notion" sign-in. */
+  oauth_available?: boolean;
+};
+
+export type NotionDatabase = {
+  database_id: string;
+  title: string;
+  url: string;
+};
+
+export type AuthMe = {
+  id: string;
+  email: string;
+  role: string;
+  claimed: Record<string, number>;
 };
 
 export type IngestUrlPayload = {
@@ -290,6 +318,8 @@ export type ResearchNote = {
 export type NoteFolder = {
   folder_id: string;
   name: string;
+  /** "" for a top-level folder; otherwise the parent folder's id. */
+  parent_id: string;
   created_at: string;
   updated_at: string;
 };

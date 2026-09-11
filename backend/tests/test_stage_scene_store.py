@@ -155,3 +155,13 @@ def test_cached_scope_error_is_filtered_and_rebuilt(client, sample_visualization
     monkeypatch.setattr(scene_service, 'get_visualization_by_id', lambda _: None)
     response = client.post('/visualizer/generate-stage-scene', json={'viz_id': 'viz_1', 'node_id': 'encoder'})
     assert response.status_code == 404
+
+
+@pytest.fixture(autouse=True)
+def _act_as_local_admin():
+    """Sign-in is disabled in tests: rows seeded directly belong to the local administrator."""
+    from app.auth.context import LOCAL_USER, reset_current_user, set_current_user
+
+    token = set_current_user(LOCAL_USER)
+    yield
+    reset_current_user(token)

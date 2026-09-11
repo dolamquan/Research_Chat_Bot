@@ -35,6 +35,7 @@ import {
   proposeModification,
   verifyTarget,
 } from "../api";
+import { useRegisterUiActions, useReportWorkspace } from "../assistant";
 import type {
   AlgorithmVariant,
   Article,
@@ -429,6 +430,30 @@ export function VisualizerView() {
         if (selectionRef.current === article.article_id) setSaved([]);
       });
   }, []);
+
+  // The assistant can open a paper here by id and sees which one is showing.
+  const articlesRef = useRef(articles);
+  articlesRef.current = articles;
+  useRegisterUiActions({
+    "visualizer.selectArticle": async (articleId: string) => {
+      let article = articlesRef.current.find((item) => item.article_id === articleId);
+      if (!article) {
+        const result = await getArticles({ limit: 500 });
+        article = result.articles.find((item) => item.article_id === articleId);
+      }
+      if (!article) throw new Error("No library paper with that id");
+      selectArticle(article);
+      return { opened: true, article_id: article.article_id, title: article.title };
+    },
+  });
+  useReportWorkspace(
+    () => ({
+      visualizer: selectedArticle
+        ? { article_id: selectedArticle.article_id, title: selectedArticle.title, viz_id: viz?.viz_id ?? null }
+        : null,
+    }),
+    [selectedArticle, viz],
+  );
 
   function selectArticle(article: Article) {
     selectionRef.current = article.article_id;

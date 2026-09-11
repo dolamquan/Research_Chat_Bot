@@ -163,3 +163,16 @@ def test_agent_tool_routes(client):
 
     context = client.get("/agent/context").json()
     assert context["application"] == "Zoetrope" and context["paper_count"] == 2
+
+
+def test_aexecute_runs_api_and_builtin_tools_inside_a_running_loop(app):
+    import asyncio
+
+    async def go():
+        health = await catalog.aexecute_tool("api.health.health_check", {})
+        papers = await catalog.aexecute_tool("app.papers", {"query": "graph", "limit": 5})
+        return health, papers
+
+    health, papers = asyncio.run(go())
+    assert health == {"status": "ok"}
+    assert [p["article_id"] for p in papers["papers"]] == ["a1"]

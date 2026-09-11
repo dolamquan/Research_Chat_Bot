@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.auth.context import UNSET, resolve_owner
+from app.storage.ownership import ensure_owner_column, owner_clause
+
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "researchmind.sqlite3"
@@ -64,6 +67,8 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         )
         """
     )
+    # NULL owner = a figure of a public paper (shared); otherwise the user's own.
+    ensure_owner_column(conn, "visual_assets")
     conn.commit()
 
     if owns_connection:
@@ -82,11 +87,15 @@ def create_visual_asset(
     article_id: str = "",
     title: str = "",
     asset_type: str = "pdf_image",
+    owner_id: Any = UNSET,
 ) -> Dict[str, Any]:
     asset_id = uuid.uuid4().hex
     timestamp = _now()
     filename = _filename_from_url_or_path(image_url=image_url, image_path=image_path)
     stored_image_path = f"{VISUAL_ASSET_BLOB_PREFIX}{filename}" if image_bytes is not None else image_path
+    # Figures of public papers have no owner (part of the shared library);
+    # uploads, captures and private papers' figures belong to their user.
+    owner = resolve_owner(owner_id)
 
     with _connect() as conn:
         if image_bytes is not None:
@@ -100,9 +109,9 @@ def create_visual_asset(
             """
             INSERT INTO visual_assets (
                 asset_id, source, article_id, title, page, image_path, image_url,
-                caption, asset_type, created_at, updated_at
+                caption, asset_type, created_at, updated_at, owner_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 asset_id,
@@ -116,30 +125,52 @@ def create_visual_asset(
                 asset_type,
                 timestamp,
                 timestamp,
+                owner,
             ),
         )
         conn.commit()
 
-    return get_visual_asset(asset_id)
+    return get_visual_asset(asset_id, owner_id=None)
 
 
-def get_visual_asset(asset_id: str) -> Dict[str, Any]:
+def _visible(row: Dict[str, Any], owner: str | None) -> bool:
+    return owner is None or row.get("owner_id") in (None, owner)
+
+
+def get_visual_asset(asset_id: str, owner_id: Any = UNSET) -> Dict[str, Any]:
     with _connect() as conn:
         row = conn.execute(
             "SELECT * FROM visual_assets WHERE asset_id = ?",
             (asset_id,),
         ).fetchone()
 
-    if row is None:
+    if row is None or not _visible(dict(row), resolve_owner(owner_id)):
         raise ValueError(f"Visual asset not found: {asset_id}")
 
     return dict(row)
+
+
+def can_access_visual_file(filename: str, owner_id: Any = UNSET) -> bool:
+    """May the current user load this image? Unknown files are legacy and shared."""
+    owner = resolve_owner(owner_id)
+    if owner is None:
+        return True
+    safe_name = Path(filename).name
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT owner_id FROM visual_assets WHERE image_url LIKE ? OR image_path LIKE ?",
+            (f"%/{safe_name}/image", f"%{safe_name}"),
+        ).fetchall()
+    if not rows:
+        return True
+    return any(dict(row).get("owner_id") in (None, owner) for row in rows)
 
 
 def list_visual_assets(
     *,
     source: str | None = None,
     limit: int = 100,
+    owner_id: Any = UNSET,
 ) -> List[Dict[str, Any]]:
     clauses = []
     params: List[Any] = []
@@ -147,6 +178,11 @@ def list_visual_assets(
     if source:
         clauses.append("source = ?")
         params.append(source)
+
+    scope_sql, scope_params = owner_clause(resolve_owner(owner_id), include_public=True)
+    if scope_sql:
+        clauses.append(scope_sql)
+        params.extend(scope_params)
 
     where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     params.append(limit)

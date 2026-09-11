@@ -136,6 +136,11 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     # accounts and are adopted by the administrator on sign-in.
     for table in ("notes", "note_folders", "notion_targets"):
         ensure_owner_column(conn, table)
+    # Folders nest: '' is the top level. Kept as text so the legacy flat list
+    # needs no rewrite.
+    folder_columns = {row[1] for row in conn.execute("PRAGMA table_info(note_folders)")}
+    if "parent_id" not in folder_columns:
+        conn.execute("ALTER TABLE note_folders ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
     _migrate_legacy_annotations(conn)
@@ -665,6 +670,50 @@ def delete_attachment(attachment_id: str, owner_id: Any = UNSET) -> None:
 # --- folders ------------------------------------------------------------------
 
 
+def _folder_row(row: sqlite3.Row) -> Dict[str, Any]:
+    folder = dict(row)
+    folder["parent_id"] = folder.get("parent_id") or ""
+    return folder
+
+
+def _root_folder() -> Dict[str, Any]:
+    return {
+        "folder_id": DEFAULT_FOLDER_ID,
+        "name": "All notes",
+        "parent_id": "",
+        "created_at": "",
+        "updated_at": "",
+    }
+
+
+def _normalize_parent(parent_id: Any) -> str:
+    """The root is spelled '' in storage; the UI's default folder id means the same."""
+    if parent_id in (None, "", DEFAULT_FOLDER_ID):
+        return ""
+    return str(parent_id)
+
+
+def _folder_exists(conn: sqlite3.Connection, folder_id: str, owner: str | None) -> bool:
+    scope_sql, scope_params = _scope(owner)
+    return conn.execute(
+        f"SELECT 1 FROM note_folders WHERE folder_id = ?{scope_sql}", (folder_id, *scope_params)
+    ).fetchone() is not None
+
+
+def _descendant_ids(conn: sqlite3.Connection, folder_id: str, owner: str | None) -> set[str]:
+    scope_sql, scope_params = _scope(owner)
+    found: set[str] = set()
+    frontier = [folder_id]
+    while frontier:
+        rows = conn.execute(
+            f"SELECT folder_id FROM note_folders WHERE parent_id IN ({','.join('?' * len(frontier))}){scope_sql}",
+            (*frontier, *scope_params),
+        ).fetchall()
+        frontier = [row["folder_id"] for row in rows if row["folder_id"] not in found]
+        found.update(frontier)
+    return found
+
+
 def list_folders(owner_id: Any = UNSET) -> List[Dict[str, Any]]:
     scope_sql, scope_params = owner_clause(resolve_owner(owner_id))
     with _connect() as conn:
@@ -674,80 +723,136 @@ def list_folders(owner_id: Any = UNSET) -> List[Dict[str, Any]]:
         ).fetchall()
 
     return [
-        {
-            "folder_id": DEFAULT_FOLDER_ID,
-            "name": "All notes",
-            "created_at": "",
-            "updated_at": "",
-        },
-        *[dict(row) for row in rows if row["folder_id"] != DEFAULT_FOLDER_ID],
+        _root_folder(),
+        *[_folder_row(row) for row in rows if row["folder_id"] != DEFAULT_FOLDER_ID],
     ]
 
 
-def create_folder(name: str, *, folder_id: str = "", owner_id: Any = UNSET) -> Dict[str, Any]:
+def create_folder(
+    name: str,
+    *,
+    folder_id: str = "",
+    parent_id: Any = "",
+    owner_id: Any = UNSET,
+) -> Dict[str, Any]:
     trimmed = name.strip()
     if not trimmed:
         raise ValueError("Folder name is required")
 
     resolved_id = folder_id or uuid.uuid4().hex
+    parent = _normalize_parent(parent_id)
     timestamp = _now()
     owner = resolve_owner(owner_id)
 
     with _connect() as conn:
+        if parent and not _folder_exists(conn, parent, owner):
+            raise ValueError(f"Parent folder not found: {parent}")
         conn.execute(
             """
-            INSERT OR IGNORE INTO note_folders (folder_id, name, created_at, updated_at, owner_id)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT OR IGNORE INTO note_folders (folder_id, name, created_at, updated_at, owner_id, parent_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (resolved_id, trimmed, timestamp, timestamp, owner),
+            (resolved_id, trimmed, timestamp, timestamp, owner, parent),
         )
         conn.commit()
         row = conn.execute(
             "SELECT * FROM note_folders WHERE folder_id = ?", (resolved_id,)
         ).fetchone()
 
-    return dict(row)
+    return _folder_row(row)
 
 
-def rename_folder(folder_id: str, name: str, owner_id: Any = UNSET) -> Dict[str, Any]:
-    trimmed = name.strip()
-    if not trimmed:
-        raise ValueError("Folder name is required")
-    scope_sql, scope_params = _scope(resolve_owner(owner_id))
+def update_folder(
+    folder_id: str,
+    *,
+    name: str | None = None,
+    parent_id: Any = None,
+    owner_id: Any = UNSET,
+) -> Dict[str, Any]:
+    """Rename and/or move a folder. Moving into itself or a descendant is refused."""
+    if folder_id == DEFAULT_FOLDER_ID:
+        raise ValueError("The default folder cannot be changed")
+    owner = resolve_owner(owner_id)
+    scope_sql, scope_params = _scope(owner)
+    assignments: List[str] = []
+    params: List[Any] = []
 
     with _connect() as conn:
-        cursor = conn.execute(
-            f"UPDATE note_folders SET name = ?, updated_at = ? WHERE folder_id = ?{scope_sql}",
-            (trimmed, _now(), folder_id, *scope_params),
+        row = conn.execute(
+            f"SELECT * FROM note_folders WHERE folder_id = ?{scope_sql}", (folder_id, *scope_params)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Folder not found: {folder_id}")
+
+        if name is not None:
+            trimmed = name.strip()
+            if not trimmed:
+                raise ValueError("Folder name is required")
+            assignments.append("name = ?")
+            params.append(trimmed)
+
+        if parent_id is not None:
+            parent = _normalize_parent(parent_id)
+            if parent == folder_id or parent in _descendant_ids(conn, folder_id, owner):
+                raise ValueError("A folder cannot be moved into itself or one of its subfolders")
+            if parent and not _folder_exists(conn, parent, owner):
+                raise ValueError(f"Parent folder not found: {parent}")
+            assignments.append("parent_id = ?")
+            params.append(parent)
+
+        if not assignments:
+            return _folder_row(row)
+
+        assignments.append("updated_at = ?")
+        params.append(_now())
+        conn.execute(
+            f"UPDATE note_folders SET {', '.join(assignments)} WHERE folder_id = ?",
+            (*params, folder_id),
         )
         conn.commit()
-        if cursor.rowcount == 0:
-            raise ValueError(f"Folder not found: {folder_id}")
         row = conn.execute(
             "SELECT * FROM note_folders WHERE folder_id = ?", (folder_id,)
         ).fetchone()
 
-    return dict(row)
+    return _folder_row(row)
 
 
-def delete_folder(folder_id: str, owner_id: Any = UNSET) -> None:
+def rename_folder(folder_id: str, name: str, owner_id: Any = UNSET) -> Dict[str, Any]:
+    return update_folder(folder_id, name=name, owner_id=owner_id)
+
+
+def delete_folder(folder_id: str, owner_id: Any = UNSET) -> Dict[str, Any]:
+    """Remove a folder; its notes and subfolders move up to its parent."""
     if folder_id == DEFAULT_FOLDER_ID:
         raise ValueError("The default folder cannot be deleted")
-    scope_sql, scope_params = _scope(resolve_owner(owner_id))
+    owner = resolve_owner(owner_id)
+    scope_sql, scope_params = _scope(owner)
 
     with _connect() as conn:
-        cursor = conn.execute(
-            f"DELETE FROM note_folders WHERE folder_id = ?{scope_sql}", (folder_id, *scope_params)
-        )
-        if cursor.rowcount:
-            conn.execute(
-                f"UPDATE notes SET folder_id = ? WHERE folder_id = ?{scope_sql}",
-                (DEFAULT_FOLDER_ID, folder_id, *scope_params),
-            )
+        row = conn.execute(
+            f"SELECT * FROM note_folders WHERE folder_id = ?{scope_sql}", (folder_id, *scope_params)
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Folder not found: {folder_id}")
+        parent = _folder_row(row)["parent_id"]
+
+        folders_moved = conn.execute(
+            f"UPDATE note_folders SET parent_id = ?, updated_at = ? WHERE parent_id = ?{scope_sql}",
+            (parent, _now(), folder_id, *scope_params),
+        ).rowcount
+        notes_moved = conn.execute(
+            f"UPDATE notes SET folder_id = ? WHERE folder_id = ?{scope_sql}",
+            (parent or DEFAULT_FOLDER_ID, folder_id, *scope_params),
+        ).rowcount
+        conn.execute("DELETE FROM note_folders WHERE folder_id = ?", (folder_id,))
         conn.commit()
 
-    if cursor.rowcount == 0:
-        raise ValueError(f"Folder not found: {folder_id}")
+    return {
+        "folder_id": folder_id,
+        "parent_id": parent,
+        "notes_moved": notes_moved,
+        "folders_moved": folders_moved,
+    }
 
 
 def claim_unowned(owner: str) -> Dict[str, int]:

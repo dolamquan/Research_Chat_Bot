@@ -236,3 +236,13 @@ def test_existing_visualizer_routes_still_exist(client):
     response = client.get("/visualizer/some_article_id")
     assert response.status_code == 200
     assert "visualizations" in response.json()
+
+
+@pytest.fixture(autouse=True)
+def _act_as_local_admin():
+    """Sign-in is disabled in tests: rows seeded directly belong to the local administrator."""
+    from app.auth.context import LOCAL_USER, reset_current_user, set_current_user
+
+    token = set_current_user(LOCAL_USER)
+    yield
+    reset_current_user(token)

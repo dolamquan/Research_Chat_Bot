@@ -12,12 +12,33 @@ from app.rag.visual_analyzer import (
     extract_pdf_visuals,
     save_captured_pdf_visual,
 )
-from app.storage.visual_assets import get_visual_asset_blob, list_visual_assets
+from app.auth.context import current_owner_id
+from app.storage.article_store import can_access_source, find_articles_by_source
+from app.storage.visual_assets import (
+    can_access_visual_file,
+    get_visual_asset_blob,
+    list_visual_assets,
+)
 
 
 router = APIRouter(prefix="/visuals", tags=["visuals"])
 
 UPLOAD_FOLDER = Path(__file__).resolve().parents[1] / "data" / "uploaded_docs"
+
+
+def _figure_owner(source: str) -> str | None:
+    """Extracted figures inherit the paper's visibility: public paper, public figures."""
+    copies = find_articles_by_source(source)
+    if not copies or any(article.get("owner_id") is None for article in copies):
+        return None
+    return current_owner_id()
+
+
+def _require_readable_pdf(safe_source: str) -> Path:
+    pdf_path = UPLOAD_FOLDER / safe_source
+    if not pdf_path.exists() or not can_access_source(safe_source):
+        raise HTTPException(status_code=404, detail=f"PDF not found: {safe_source}")
+    return pdf_path
 
 
 class CaptureVisualRequest(BaseModel):
@@ -47,28 +68,21 @@ def get_visual_assets(source: str | None = None, limit: int = 100) -> Dict[str, 
 @router.post("/extract")
 def extract_document_visuals(source: str, max_images: int = 20) -> Dict[str, Any]:
     safe_source = _safe_pdf_source(source)
-    pdf_path = UPLOAD_FOLDER / safe_source
-
-    if not pdf_path.exists():
-        raise HTTPException(status_code=404, detail=f"PDF not found: {safe_source}")
+    pdf_path = _require_readable_pdf(safe_source)
+    metadata = {
+        "title": Path(safe_source).stem.replace("_", " "),
+        "tags": ["pdf-figure", "visual", "graph"],
+        "owner_id": _figure_owner(safe_source),
+    }
 
     try:
         assets = extract_pdf_visuals(
             pdf_path,
             source=safe_source,
-            article_metadata={
-                "title": Path(safe_source).stem.replace("_", " "),
-                "tags": ["pdf-figure", "visual", "graph"],
-            },
+            article_metadata=metadata,
             max_images=max_images,
         )
-        index_visual_assets(
-            assets,
-            article_metadata={
-                "title": Path(safe_source).stem.replace("_", " "),
-                "tags": ["pdf-figure", "visual", "graph"],
-            },
-        )
+        index_visual_assets(assets, article_metadata=metadata)
     except Exception as exc:
         raise HTTPException(
             status_code=500,
@@ -84,15 +98,15 @@ def extract_document_visuals(source: str, max_images: int = 20) -> Dict[str, Any
 @router.post("/capture")
 def capture_document_visual(request: CaptureVisualRequest) -> Dict[str, Any]:
     safe_source = _safe_pdf_source(request.source)
-    pdf_path = UPLOAD_FOLDER / safe_source
+    _require_readable_pdf(safe_source)
 
-    if not pdf_path.exists():
-        raise HTTPException(status_code=404, detail=f"PDF not found: {safe_source}")
-
+    # A captured region is the user's own work, so it stays private even when
+    # the paper is public.
     metadata = {
         "article_id": request.article_id or "",
         "title": request.title or Path(safe_source).stem.replace("_", " "),
         "tags": ["pdf-region", "visual", "figure", "graph"],
+        "owner_id": current_owner_id(),
     }
 
     try:
@@ -122,6 +136,8 @@ def get_visual_image(filename: str):
     safe_name = Path(filename).name
     if safe_name != filename:
         raise HTTPException(status_code=400, detail="Invalid image filename.")
+    if not can_access_visual_file(safe_name):
+        raise HTTPException(status_code=404, detail="Image not found.")
 
     blob = get_visual_asset_blob(safe_name)
     if blob is not None:

@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 
 from dotenv import load_dotenv
 
+from app.auth.context import UNSET
 from app.storage.visual_assets import create_visual_asset, get_visual_asset_blob_by_ref
 
 
@@ -319,6 +320,9 @@ def extract_pdf_visuals(
                         image_bytes=image_bytes,
                         mime_type=mimetypes.guess_type(output_name)[0] or "image/png",
                         asset_type="pdf_image",
+                        # Figures follow their paper: the ingest metadata says
+                        # whether the paper is public (None) or private.
+                        owner_id=metadata["owner_id"] if "owner_id" in metadata else UNSET,
                     )
                 finally:
                     if output_path.exists():

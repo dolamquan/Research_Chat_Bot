@@ -6,6 +6,7 @@ from pathlib import Path
 from statistics import mean
 from typing import Any, Dict, List
 
+from app.auth.context import UNSET
 from app.rag.generator import generate_answer, get_llm
 
 
@@ -193,11 +194,23 @@ def summarize_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def runs_dir(owner_id: Any = UNSET) -> Path:
+    """Where the acting user's evaluation runs live; the top level is the pre-account archive."""
+    from app.auth.context import resolve_owner
+
+    owner = resolve_owner(owner_id)
+    if owner is None:
+        return EVALUATION_RUNS_DIR
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", owner)
+    return EVALUATION_RUNS_DIR / "users" / safe
+
+
 def save_evaluation_run(results: List[Dict[str, Any]], summary: Dict[str, Any]) -> Path:
-    EVALUATION_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    target_dir = runs_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = EVALUATION_RUNS_DIR / f"rag_eval_{timestamp}.json"
+    output_path = target_dir / f"rag_eval_{timestamp}.json"
 
     payload = {
         "summary": summary,

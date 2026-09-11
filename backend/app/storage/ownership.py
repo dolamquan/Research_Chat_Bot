@@ -9,10 +9,15 @@ import sqlite3
 from typing import Any, List
 
 
-def ensure_owner_column(conn: sqlite3.Connection, table: str) -> None:
+def ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    """Add `column` with the given DDL if the table does not have it yet (in-place migration)."""
     columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-    if "owner_id" not in columns:
-        conn.execute(f"ALTER TABLE {table} ADD COLUMN owner_id TEXT")
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
+def ensure_owner_column(conn: sqlite3.Connection, table: str) -> None:
+    ensure_column(conn, table, "owner_id", "TEXT")
     conn.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_owner ON {table}(owner_id)")
 
 

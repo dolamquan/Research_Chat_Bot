@@ -10,6 +10,7 @@ from app.rag.variant_lab import (
     delete_variant_tree,
     get_variant_detail,
     propose_modification,
+    resolve_target,
     variant_tree,
     verify_target,
 )
@@ -29,6 +30,14 @@ def _fail(error: Exception) -> HTTPException:
         status = 404 if "not found" in message.lower() else 422
         return HTTPException(status_code=status, detail=message)
     return HTTPException(status_code=502, detail=f"Variant operation failed: {message}")
+
+
+def _require_owned(target_id: str) -> None:
+    """Runs and discussions hang off a diagram or variant the user must own."""
+    try:
+        resolve_target(target_id)
+    except ValueError as error:
+        raise _fail(error) from error
 
 
 class DiscussRequest(BaseModel):
@@ -75,6 +84,7 @@ def apply(request: ApplyRequest) -> Dict[str, Any]:
 
 @router.get("/for-visualization/{viz_id}")
 def for_visualization(viz_id: str) -> Dict[str, Any]:
+    _require_owned(viz_id)
     return {
         "variants": list_variants_for_visualization(viz_id),
         "tree": variant_tree(viz_id),
@@ -105,6 +115,7 @@ def verify(target_id: str) -> Dict[str, Any]:
 
 @router.get("/item/{target_id}/verifications")
 def verifications(target_id: str, limit: int = 10) -> Dict[str, Any]:
+    _require_owned(target_id)
     return {"runs": list_runs(target_id, limit=limit)}
 
 
@@ -119,11 +130,13 @@ def discuss(target_id: str, request: DiscussRequest) -> Dict[str, Any]:
 
 @router.get("/item/{target_id}/chat")
 def chat_history(target_id: str) -> Dict[str, Any]:
+    _require_owned(target_id)
     return {"history": discussion_history(target_id)}
 
 
 @router.delete("/item/{target_id}/chat")
 def clear_chat(target_id: str) -> Dict[str, Any]:
+    _require_owned(target_id)
     return {"status": "cleared", "removed": reset_discussion(target_id)}
 
 

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ChevronDown,
+  ChevronRight,
+  CornerLeftUp,
   ExternalLink,
   FileText,
   Folder,
-  FolderOpen,
   FolderPlus,
   Image,
   Loader2,
@@ -18,23 +19,51 @@ import {
   Pencil,
 } from "lucide-react";
 import { NoteEditor, NotePreview } from "./notes";
+import { NotesExplorer } from "./notes/NotesExplorer";
+import {
+  NOTE_DRAG_TYPE,
+  childFolders,
+  countNotesByFolder,
+  descendantIds,
+  folderPath,
+} from "./notes/folderTree";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "./ui/context-menu";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
 
 import {
   createNotionTarget,
   createServerNoteFolder,
+  deleteIntegrationSecret,
   deleteNote,
+  deleteNoteFolder,
   deleteNotionTarget,
   exportNoteToNotion,
+  getIntegrations,
+  getNotionAuthorizeUrl,
   listNoteFolders,
   listNotes,
+  listNotionDatabases,
   listNotionTargets,
   noteAttachmentUrl,
+  setIntegrationSecret,
   updateNote,
+  updateNoteFolder,
 } from "../api";
+import { useRegisterUiActions, useReportWorkspace } from "../assistant";
 import type {
   Annotation,
+  IntegrationStatus,
   NoteFolder,
+  NotionDatabase,
   NotionTarget,
   ResearchNote,
   Source,
@@ -124,12 +153,137 @@ export function NotesView({
   const [noteFilter, setNoteFilter] = useState<"all" | "with-note" | "highlight-only">("all");
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
+  const [folderParentId, setFolderParentId] = useState(DEFAULT_FOLDER_ID);
   const [folderError, setFolderError] = useState("");
+  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(() => new Set());
   const [targetsDialogOpen, setTargetsDialogOpen] = useState(false);
   const [targetName, setTargetName] = useState("");
   const [targetDatabaseId, setTargetDatabaseId] = useState("");
   const [targetError, setTargetError] = useState("");
   const [isSavingTarget, setIsSavingTarget] = useState(false);
+  const [integrationStatus, setIntegrationStatus] = useState<IntegrationStatus[]>([]);
+  const [secretDrafts, setSecretDrafts] = useState<Record<string, string>>({});
+  const [savingSecret, setSavingSecret] = useState("");
+  const [secretError, setSecretError] = useState("");
+  const [connectingNotion, setConnectingNotion] = useState(false);
+  const [notionDatabases, setNotionDatabases] = useState<NotionDatabase[]>([]);
+  const [pickedDatabaseId, setPickedDatabaseId] = useState("");
+
+  const notionStatus = integrationStatus.find((item) => item.provider === "notion");
+  const notionConnected = Boolean(notionStatus?.configured);
+
+  // Returning from Notion's consent screen: open the dialog and report the outcome.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get("notion");
+    if (!outcome) return;
+    if (outcome === "connected") {
+      setStatus("Notion connected. Pick the database your notes should be published to.");
+    } else {
+      setSecretError(params.get("detail") || "Connecting Notion failed.");
+    }
+    setTargetsDialogOpen(true);
+    params.delete("notion");
+    params.delete("detail");
+    const remaining = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${remaining ? `?${remaining}` : ""}`);
+  }, []);
+
+  useEffect(() => {
+    if (!targetsDialogOpen) return;
+    let active = true;
+    getIntegrations()
+      .then((result) => {
+        if (active) setIntegrationStatus(result.integrations);
+      })
+      .catch(() => {
+        if (active) setIntegrationStatus([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [targetsDialogOpen]);
+
+  useEffect(() => {
+    if (!targetsDialogOpen || !notionConnected) {
+      setNotionDatabases([]);
+      return;
+    }
+    let active = true;
+    listNotionDatabases()
+      .then((result) => {
+        if (active) setNotionDatabases(result.databases);
+      })
+      .catch(() => {
+        if (active) setNotionDatabases([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [notionConnected, targetsDialogOpen]);
+
+  async function connectNotion() {
+    setConnectingNotion(true);
+    setSecretError("");
+    try {
+      const { url } = await getNotionAuthorizeUrl();
+      window.location.assign(url);
+    } catch (error) {
+      setSecretError(error instanceof Error ? error.message : "Could not start Notion sign-in.");
+      setConnectingNotion(false);
+    }
+  }
+
+  async function addPickedDatabase() {
+    const database = notionDatabases.find((item) => item.database_id === pickedDatabaseId);
+    if (!database) return;
+    setIsSavingTarget(true);
+    setTargetError("");
+    try {
+      const result = await createNotionTarget({ name: database.title, database_id: database.database_id });
+      const targetsResult = await listNotionTargets();
+      setTargets(targetsResult.targets);
+      setSelectedTargetId(result.target.target_id);
+      setPickedDatabaseId("");
+    } catch (error) {
+      setTargetError(error instanceof Error ? error.message : "Could not add the Notion database.");
+    } finally {
+      setIsSavingTarget(false);
+    }
+  }
+
+  async function saveSecret(provider: string) {
+    const secret = (secretDrafts[provider] ?? "").trim();
+    if (!secret) return;
+    setSavingSecret(provider);
+    setSecretError("");
+    try {
+      const result = await setIntegrationSecret(provider, secret);
+      setIntegrationStatus((current) =>
+        current.map((item) => (item.provider === provider ? result.integration : item)),
+      );
+      setSecretDrafts((current) => ({ ...current, [provider]: "" }));
+    } catch (error) {
+      setSecretError(error instanceof Error ? error.message : "Could not save the credential.");
+    } finally {
+      setSavingSecret("");
+    }
+  }
+
+  async function forgetSecret(provider: string) {
+    setSavingSecret(provider);
+    setSecretError("");
+    try {
+      const result = await deleteIntegrationSecret(provider);
+      setIntegrationStatus((current) =>
+        current.map((item) => (item.provider === provider ? result.integration : item)),
+      );
+    } catch (error) {
+      setSecretError(error instanceof Error ? error.message : "Could not remove the credential.");
+    } finally {
+      setSavingSecret("");
+    }
+  }
   const [exportingNoteId, setExportingNoteId] = useState("");
   const [editingNote, setEditingNote] = useState<ResearchNote | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -140,6 +294,29 @@ export function NotesView({
   function editNote(note: ResearchNote) {
     setEditingNote(note); setEditTitle(note.title); setEditBody(note.body_md); setEditError("");
   }
+
+  // The assistant can open a note by id and sees which note is being edited.
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+  useRegisterUiActions({
+    "notes.openNote": async (noteId: string) => {
+      let note = notesRef.current.find((item) => item.note_id === noteId);
+      if (!note) {
+        const result = await listNotes({ limit: 500 });
+        note = result.notes.find((item) => item.note_id === noteId);
+      }
+      if (!note) throw new Error("No note with that id exists");
+      setActiveFolderId(note.folder_id || DEFAULT_FOLDER_ID);
+      setSelectedNoteIds(new Set([noteId]));
+      editNote(note);
+      return { opened: true, note_id: note.note_id, title: note.title };
+    },
+    "notes.refresh": () => loadAll(),
+  });
+  useReportWorkspace(
+    () => ({ open_note: editingNote ? { id: editingNote.note_id, title: editingNote.title } : null }),
+    [editingNote],
+  );
   async function saveEdit() {
     if (!editingNote || savingEdit) return;
     setSavingEdit(true); setEditError("");
@@ -256,20 +433,41 @@ export function NotesView({
     });
   }, [activeFolderId, query, workspaceNotes]);
 
-  const workspaceNoteCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    counts.set(DEFAULT_FOLDER_ID, workspaceNotes.length);
-    workspaceNotes.forEach((note) => {
-      if (note.folder_id === DEFAULT_FOLDER_ID) return;
-      counts.set(note.folder_id, (counts.get(note.folder_id) || 0) + 1);
-    });
-    return counts;
-  }, [workspaceNotes]);
-
-  const activeFolder = useMemo(
-    () => folders.find((folder) => folder.folder_id === activeFolderId) || folders[0],
+  const folderCounts = useMemo(
+    () => countNotesByFolder(workspaceNotes, folders),
+    [folders, workspaceNotes],
+  );
+  const activePath = useMemo(() => folderPath(folders, activeFolderId), [activeFolderId, folders]);
+  const activeSubfolders = useMemo(
+    () => childFolders(folders, activeFolderId),
     [activeFolderId, folders],
   );
+  const moveTargets = useMemo(
+    () =>
+      folders.map((folder) => ({
+        id: folder.folder_id,
+        label:
+          folder.folder_id === DEFAULT_FOLDER_ID
+            ? "All workspace notes"
+            : folderPath(folders, folder.folder_id).map((item) => item.name).join(" / "),
+      })),
+    [folders],
+  );
+
+  function selectFolder(folderId: string) {
+    setActiveExplorerNode("workspace");
+    setActiveFolderId(folderId);
+    setSelectedNoteIds(new Set());
+  }
+
+  function toggleSelected(noteId: string) {
+    setSelectedNoteIds((current) => {
+      const next = new Set(current);
+      if (next.has(noteId)) next.delete(noteId);
+      else next.add(noteId);
+      return next;
+    });
+  }
 
   function replaceNote(updated: ResearchNote) {
     setNotes((current) =>
@@ -291,15 +489,112 @@ export function NotesView({
     }
   }
 
-  async function moveNote(note: ResearchNote, folderId: string) {
+  async function moveNotes(noteIds: string[], folderId: string) {
+    const targets = notes.filter(
+      (note) => noteIds.includes(note.note_id) && note.folder_id !== folderId,
+    );
+    if (targets.length === 0) return;
     try {
-      const result = await updateNote(note.note_id, { folder_id: folderId });
-      replaceNote(result.note);
+      const results = await Promise.all(
+        targets.map((note) => updateNote(note.note_id, { folder_id: folderId })),
+      );
+      const updated = new Map(results.map((result) => [result.note.note_id, result.note]));
+      setNotes((current) => current.map((note) => updated.get(note.note_id) ?? note));
+      setSelectedNoteIds(new Set());
+      const destination =
+        moveTargets.find((target) => target.id === folderId)?.label ?? "the folder";
+      setStatus(`Moved ${targets.length} note${targets.length === 1 ? "" : "s"} to ${destination}.`);
     } catch (error) {
       setStatus(
         error instanceof Error
-          ? `Could not move note: ${error.message}`
-          : "Could not move note.",
+          ? `Could not move notes: ${error.message}`
+          : "Could not move notes.",
+      );
+      void loadAll();
+    }
+  }
+
+  function moveNote(note: ResearchNote, folderId: string) {
+    return moveNotes([note.note_id], folderId);
+  }
+
+  async function deleteSelectedNotes() {
+    const ids = [...selectedNoteIds];
+    if (ids.length === 0) return;
+    setNotes((current) => current.filter((note) => !selectedNoteIds.has(note.note_id)));
+    setSelectedNoteIds(new Set());
+    try {
+      await Promise.all(ids.map((id) => deleteNote(id)));
+      setStatus(`Deleted ${ids.length} note${ids.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? `Could not delete notes: ${error.message}`
+          : "Could not delete notes.",
+      );
+      void loadAll();
+    }
+  }
+
+  async function renameFolder(folderId: string, name: string) {
+    try {
+      const result = await updateNoteFolder(folderId, { name });
+      setFolders((current) =>
+        current.map((folder) => (folder.folder_id === folderId ? result.folder : folder)),
+      );
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? `Could not rename folder: ${error.message}`
+          : "Could not rename folder.",
+      );
+    }
+  }
+
+  async function moveFolder(folderId: string, parentId: string) {
+    try {
+      const result = await updateNoteFolder(folderId, { parent_id: parentId });
+      setFolders((current) =>
+        current.map((folder) => (folder.folder_id === folderId ? result.folder : folder)),
+      );
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? `Could not move folder: ${error.message}`
+          : "Could not move folder.",
+      );
+    }
+  }
+
+  async function deleteFolder(folderId: string) {
+    const removed = folders.find((folder) => folder.folder_id === folderId);
+    const affected = descendantIds(folders, folderId);
+    try {
+      const result = await deleteNoteFolder(folderId);
+      const [foldersResult, notesResult] = await Promise.all([
+        listNoteFolders(),
+        listNotes({ limit: 500 }),
+      ]);
+      setFolders(foldersResult.folders);
+      setNotes(notesResult.notes);
+      if (activeFolderId === folderId || affected.has(activeFolderId)) {
+        selectFolder(result.parent_id || DEFAULT_FOLDER_ID);
+      }
+      const parts = [
+        `Deleted folder "${removed?.name ?? folderId}".`,
+        result.notes_moved > 0
+          ? `${result.notes_moved} note${result.notes_moved === 1 ? "" : "s"} moved up.`
+          : "",
+        result.folders_moved > 0
+          ? `${result.folders_moved} subfolder${result.folders_moved === 1 ? "" : "s"} moved up.`
+          : "",
+      ];
+      setStatus(parts.filter(Boolean).join(" "));
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? `Could not delete folder: ${error.message}`
+          : "Could not delete folder.",
       );
     }
   }
@@ -359,11 +654,17 @@ export function NotesView({
     });
   }
 
-  function openFolderDialog() {
+  function openFolderDialog(parentId: string = DEFAULT_FOLDER_ID) {
     setFolderName("");
+    setFolderParentId(parentId);
     setFolderError("");
     setFolderDialogOpen(true);
   }
+
+  const folderDialogParentName =
+    folderParentId === DEFAULT_FOLDER_ID
+      ? ""
+      : folders.find((folder) => folder.folder_id === folderParentId)?.name ?? "";
 
   async function createFolder() {
     const name = folderName.trim();
@@ -373,11 +674,13 @@ export function NotesView({
     }
 
     try {
-      const result = await createServerNoteFolder(name);
+      const result = await createServerNoteFolder(
+        name,
+        folderParentId === DEFAULT_FOLDER_ID ? "" : folderParentId,
+      );
       const foldersResult = await listNoteFolders();
       setFolders(foldersResult.folders);
-      setActiveFolderId(result.folder.folder_id);
-      setActiveExplorerNode("workspace");
+      selectFolder(result.folder.folder_id);
       setFolderName("");
       setFolderDialogOpen(false);
     } catch (error) {
@@ -556,113 +859,149 @@ export function NotesView({
 
       <div className="flex-1 min-h-0 overflow-y-auto px-5 md:px-10 py-8">
         <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-[260px_minmax(0,1fr)]">
-          <aside className="min-h-[520px] rounded border border-border bg-card">
-            <div className="flex items-center justify-between border-b border-border px-3 py-3">
-              <div className="flex min-w-0 items-center gap-2">
-                <FolderOpen size={15} className="shrink-0 text-primary" />
-                <h3 className="truncate text-sm font-semibold text-foreground">
-                  Notes explorer
-                </h3>
-              </div>
-              <button
-                type="button"
-                title="Create folder"
-                onClick={openFolderDialog}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded border border-border text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                <FolderPlus size={14} />
-              </button>
-            </div>
-
-            <div className="p-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveExplorerNode("workspace");
-                  setActiveFolderId(DEFAULT_FOLDER_ID);
-                }}
-                className={`flex h-9 w-full items-center gap-2 rounded px-2 text-left text-sm ${
-                  activeExplorerNode === "workspace" && activeFolderId === DEFAULT_FOLDER_ID
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                }`}
-              >
-                <FolderOpen size={15} className="shrink-0" />
-                <span className="min-w-0 flex-1 truncate">All workspace notes</span>
-                <span className="font-mono text-[10px]">
-                  {workspaceNoteCounts.get(DEFAULT_FOLDER_ID) || 0}
-                </span>
-              </button>
-
-              <div className="mt-1 space-y-1 border-l border-border/80 pl-3">
-                {folders
-                  .filter((folder) => folder.folder_id !== DEFAULT_FOLDER_ID)
-                  .map((folder) => {
-                    const active =
-                      activeExplorerNode === "workspace" && activeFolderId === folder.folder_id;
-                    return (
-                      <button
-                        key={folder.folder_id}
-                        type="button"
-                        onClick={() => {
-                          setActiveExplorerNode("workspace");
-                          setActiveFolderId(folder.folder_id);
-                        }}
-                        className={`flex h-8 w-full items-center gap-2 rounded px-2 text-left text-sm ${
-                          active
-                            ? "bg-primary/10 text-primary"
-                            : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                        }`}
-                      >
-                        <Folder size={14} className="shrink-0" />
-                        <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-                        <span className="font-mono text-[10px]">
-                          {workspaceNoteCounts.get(folder.folder_id) || 0}
-                        </span>
-                      </button>
-                    );
-                  })}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setActiveExplorerNode("pdf")}
-                className={`mt-3 flex h-9 w-full items-center gap-2 rounded px-2 text-left text-sm ${
-                  activeExplorerNode === "pdf"
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-                }`}
-              >
-                <FileText size={15} className="shrink-0" />
-                <span className="min-w-0 flex-1 truncate">PDF highlights</span>
-                <span className="font-mono text-[10px]">
-                  {filteredHighlights.length}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={openFolderDialog}
-                className="mt-4 flex h-9 w-full items-center justify-center gap-2 rounded border border-border text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                <FolderPlus size={13} />
-                New folder
-              </button>
-            </div>
-          </aside>
+          <NotesExplorer
+            folders={folders}
+            counts={folderCounts}
+            highlightCount={filteredHighlights.length}
+            activeNode={activeExplorerNode}
+            activeFolderId={activeFolderId}
+            onSelectFolder={selectFolder}
+            onSelectHighlights={() => setActiveExplorerNode("pdf")}
+            onCreateFolder={openFolderDialog}
+            onRenameFolder={renameFolder}
+            onMoveFolder={moveFolder}
+            onDeleteFolder={deleteFolder}
+            onDropNotes={(noteIds, folderId) => void moveNotes(noteIds, folderId)}
+          />
 
           <div className="min-w-0 space-y-8">
             {activeExplorerNode === "workspace" && (
               <section>
-                <div className="mb-3 flex items-center gap-2">
-                  <NotebookPen size={14} className="text-primary" />
-                  <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">
-                    {activeFolder?.name || "Workspace notes"}
-                  </h3>
-                  <span className="font-mono text-[10px] text-muted-foreground">
+                <nav
+                  aria-label="Folder path"
+                  className="mb-3 flex flex-wrap items-center gap-1 text-sm"
+                >
+                  <NotebookPen size={14} className="mr-1 text-primary" />
+                  <button
+                    type="button"
+                    onClick={() => selectFolder(DEFAULT_FOLDER_ID)}
+                    className={`rounded px-1 font-semibold ${
+                      activePath.length === 0
+                        ? "text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    All workspace notes
+                  </button>
+                  {activePath.map((folder, index) => (
+                    <span key={folder.folder_id} className="flex items-center gap-1">
+                      <ChevronRight size={12} className="text-muted-foreground" />
+                      <button
+                        type="button"
+                        onClick={() => selectFolder(folder.folder_id)}
+                        className={`rounded px-1 font-semibold ${
+                          index === activePath.length - 1
+                            ? "text-foreground"
+                            : "text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {folder.name}
+                      </button>
+                    </span>
+                  ))}
+                  <span className="ml-1 font-mono text-[10px] text-muted-foreground">
                     {filteredWorkspaceNotes.length}
                   </span>
-                </div>
+                </nav>
+
+                {activeSubfolders.length > 0 && (
+                  <div className="mb-4 flex flex-wrap gap-2">
+                    {activeSubfolders.map((folder) => (
+                      <button
+                        key={folder.folder_id}
+                        type="button"
+                        onClick={() => selectFolder(folder.folder_id)}
+                        className="inline-flex h-8 items-center gap-2 rounded border border-border bg-card px-3 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"
+                      >
+                        <Folder size={13} />
+                        {folder.name}
+                        <span className="font-mono text-[10px]">
+                          {folderCounts.total.get(folder.folder_id) ?? 0}
+                        </span>
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => openFolderDialog(activeFolderId)}
+                      className="inline-flex h-8 items-center gap-2 rounded border border-dashed border-border px-3 text-xs text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    >
+                      <FolderPlus size={13} />
+                      New folder
+                    </button>
+                  </div>
+                )}
+
+                {filteredWorkspaceNotes.length > 0 && (
+                  <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+                    <label className="inline-flex h-8 items-center gap-2 rounded border border-border px-3 text-muted-foreground hover:text-foreground">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all notes in this folder"
+                        checked={
+                          filteredWorkspaceNotes.length > 0 &&
+                          filteredWorkspaceNotes.every((note) => selectedNoteIds.has(note.note_id))
+                        }
+                        onChange={(event) =>
+                          setSelectedNoteIds(
+                            event.target.checked
+                              ? new Set(filteredWorkspaceNotes.map((note) => note.note_id))
+                              : new Set(),
+                          )
+                        }
+                      />
+                      Select all
+                    </label>
+                    {selectedNoteIds.size > 0 && (
+                      <>
+                        <span className="font-mono text-[10px] text-muted-foreground">
+                          {selectedNoteIds.size} selected
+                        </span>
+                        <select
+                          aria-label="Move selected notes to folder"
+                          value=""
+                          onChange={(event) => {
+                            if (event.target.value) {
+                              void moveNotes([...selectedNoteIds], event.target.value);
+                            }
+                          }}
+                          className="h-8 rounded border border-border bg-background px-2 text-xs text-muted-foreground outline-none hover:bg-secondary hover:text-foreground"
+                        >
+                          <option value="">Move to...</option>
+                          {moveTargets.map((target) => (
+                            <option key={target.id} value={target.id}>
+                              {target.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => void deleteSelectedNotes()}
+                          className="inline-flex h-8 items-center gap-2 rounded border border-border px-3 text-muted-foreground hover:bg-secondary hover:text-destructive"
+                        >
+                          <Trash2 size={13} />
+                          Delete selected
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedNoteIds(new Set())}
+                          className="inline-flex h-8 items-center rounded px-2 text-muted-foreground hover:text-foreground"
+                        >
+                          Clear
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
 
                 {isLoading ? (
                   <div className="h-60 rounded border border-border bg-card flex items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -677,15 +1016,31 @@ export function NotesView({
                 ) : (
                   <div className="grid gap-4 xl:grid-cols-2">
                     {filteredWorkspaceNotes.map((note) => (
+                      <ContextMenu key={note.note_id}>
+                      <ContextMenuTrigger asChild>
                       <article
-                        key={note.note_id}
-                        className="flex min-h-[240px] min-w-0 flex-col overflow-hidden rounded border border-border bg-card px-5 py-5 transition-colors hover:border-border/80 hover:bg-secondary/40"
+                        draggable
+                        onDragStart={(event) => {
+                          const ids = selectedNoteIds.has(note.note_id)
+                            ? [...selectedNoteIds]
+                            : [note.note_id];
+                          event.dataTransfer.setData(NOTE_DRAG_TYPE, JSON.stringify(ids));
+                          event.dataTransfer.effectAllowed = "move";
+                        }}
+                        className={`flex min-h-[240px] min-w-0 flex-col overflow-hidden rounded border bg-card px-5 py-5 transition-colors hover:bg-secondary/40 ${
+                          selectedNoteIds.has(note.note_id)
+                            ? "border-foreground/50"
+                            : "border-border hover:border-border/80"
+                        }`}
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start gap-3">
-                            <NotebookPen
-                              size={15}
-                              className="mt-1 shrink-0 text-muted-foreground"
+                            <input
+                              type="checkbox"
+                              aria-label={`Select note ${note.title || note.source_title || "Workspace note"}`}
+                              checked={selectedNoteIds.has(note.note_id)}
+                              onChange={() => toggleSelected(note.note_id)}
+                              className="mt-1.5 shrink-0"
                             />
                             <div className="min-w-0 flex-1">
                               <h3 className="line-clamp-2 break-words text-base font-semibold leading-snug text-foreground">
@@ -749,13 +1104,14 @@ export function NotesView({
                           <button type="button" className="inline-flex h-9 items-center gap-2 rounded border border-border px-3 text-xs" onClick={() => editNote(note)}><Pencil size={13} /> Edit</button>
                           {renderExportButton(note)}
                           <select
+                            aria-label="Move note to folder"
                             value={note.folder_id}
                             onChange={(event) => void moveNote(note, event.target.value)}
-                            className="h-9 min-w-32 rounded border border-border bg-background px-2 text-xs text-muted-foreground outline-none hover:bg-secondary hover:text-foreground"
+                            className="h-9 min-w-32 max-w-56 rounded border border-border bg-background px-2 text-xs text-muted-foreground outline-none hover:bg-secondary hover:text-foreground"
                           >
-                            {folders.map((folder) => (
-                              <option key={folder.folder_id} value={folder.folder_id}>
-                                {folder.name}
+                            {moveTargets.map((target) => (
+                              <option key={target.id} value={target.id}>
+                                {target.label}
                               </option>
                             ))}
                           </select>
@@ -769,6 +1125,43 @@ export function NotesView({
                           </button>
                         </div>
                       </article>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent className="w-52">
+                        <ContextMenuItem onSelect={() => pinWorkspaceNote(note)}>
+                          <MessageSquarePlus size={14} /> Use in chat
+                        </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => editNote(note)}>
+                          <Pencil size={14} /> Edit
+                        </ContextMenuItem>
+                        <ContextMenuSub>
+                          <ContextMenuSubTrigger>
+                            <CornerLeftUp size={14} className="mr-2" /> Move to
+                          </ContextMenuSubTrigger>
+                          <ContextMenuSubContent className="max-h-72 w-56 overflow-y-auto">
+                            {moveTargets
+                              .filter((target) => target.id !== note.folder_id)
+                              .map((target) => (
+                                <ContextMenuItem
+                                  key={target.id}
+                                  onSelect={() => void moveNote(note, target.id)}
+                                >
+                                  <Folder size={13} /> {target.label}
+                                </ContextMenuItem>
+                              ))}
+                          </ContextMenuSubContent>
+                        </ContextMenuSub>
+                        <ContextMenuItem onSelect={() => toggleSelected(note.note_id)}>
+                          {selectedNoteIds.has(note.note_id) ? "Deselect" : "Select"}
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                          variant="destructive"
+                          onSelect={() => void removeNote(note.note_id)}
+                        >
+                          <Trash2 size={14} /> Delete
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                      </ContextMenu>
                     ))}
                   </div>
                 )}
@@ -885,10 +1278,12 @@ export function NotesView({
               </div>
               <div className="min-w-0 flex-1">
                 <h3 className="text-base font-semibold text-foreground">
-                  Create folder
+                  {folderDialogParentName ? `New folder in "${folderDialogParentName}"` : "Create folder"}
                 </h3>
                 <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                  Organize saved workspace notes into a research folder.
+                  {folderDialogParentName
+                    ? "Folders can nest as deep as you like. Drag it later to move it."
+                    : "Organize saved workspace notes into a research folder."}
                 </p>
               </div>
               <button
@@ -963,11 +1358,11 @@ export function NotesView({
               </div>
               <div className="min-w-0 flex-1">
                 <h3 className="text-base font-semibold text-foreground">
-                  Notion databases
+                  Notion &amp; integrations
                 </h3>
                 <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                  Register the Notion databases notes can be published to. Share each
-                  database with your integration in Notion first.
+                  Your own credentials and Notion databases. Nothing here is shared with
+                  other users; share each database with your Notion integration first.
                 </p>
               </div>
               <button
@@ -978,6 +1373,128 @@ export function NotesView({
               >
                 <X size={15} />
               </button>
+            </div>
+
+            <div className="border-b border-border px-5 py-4 space-y-3">
+              <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                Your credentials
+              </p>
+              {integrationStatus.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Loading credential status...</p>
+              ) : (
+                integrationStatus.map((item) => {
+                  const viaOauth = item.source === "user" && item.method === "oauth";
+                  const tokenField = (
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        aria-label={`${item.label} credential`}
+                        value={secretDrafts[item.provider] ?? ""}
+                        onChange={(event) =>
+                          setSecretDrafts((current) => ({ ...current, [item.provider]: event.target.value }))
+                        }
+                        placeholder={
+                          item.provider === "notion"
+                            ? "Notion internal integration token (ntn_...)"
+                            : "GitHub personal access token"
+                        }
+                        className="h-9 rounded border border-border bg-background px-3 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-primary/60"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void saveSecret(item.provider)}
+                          disabled={savingSecret === item.provider || !(secretDrafts[item.provider] ?? "").trim()}
+                          className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+                        >
+                          Save
+                        </button>
+                        {item.source === "user" && !viaOauth && (
+                          <button
+                            type="button"
+                            title="Forget this credential"
+                            onClick={() => void forgetSecret(item.provider)}
+                            disabled={savingSecret === item.provider}
+                            className="h-9 w-9 rounded flex items-center justify-center text-muted-foreground hover:bg-secondary hover:text-destructive disabled:opacity-40"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+
+                  return (
+                    <div key={item.provider} className="grid gap-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{item.label}</p>
+                        <p className="font-mono text-[10px] text-muted-foreground">
+                          {!item.configured
+                            ? "not connected"
+                            : viaOauth
+                              ? "connected"
+                              : item.source === "user"
+                                ? "your token"
+                                : "server default"}
+                        </p>
+                      </div>
+
+                      {item.provider === "notion" && item.oauth_available ? (
+                        viaOauth ? (
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm text-foreground">
+                              {item.meta?.workspace_icon ? `${item.meta.workspace_icon} ` : ""}
+                              {item.meta?.workspace_name || "Notion workspace"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void connectNotion()}
+                              disabled={connectingNotion}
+                              className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+                            >
+                              Change pages
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void forgetSecret(item.provider)}
+                              disabled={savingSecret === item.provider}
+                              className="h-9 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-destructive disabled:opacity-40"
+                            >
+                              Disconnect
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => void connectNotion()}
+                                disabled={connectingNotion}
+                                className="h-9 rounded bg-foreground px-3 text-xs font-medium text-background hover:bg-foreground/90 disabled:opacity-40"
+                              >
+                                {connectingNotion ? "Opening Notion..." : "Connect Notion"}
+                              </button>
+                              <span className="text-xs text-muted-foreground">
+                                You will sign in to Notion and choose which pages Zoetrope may use.
+                              </span>
+                            </div>
+                            <details className="text-xs text-muted-foreground">
+                              <summary className="cursor-pointer hover:text-foreground">
+                                Use an internal integration token instead
+                              </summary>
+                              <div className="mt-2">{tokenField}</div>
+                            </details>
+                          </div>
+                        )
+                      ) : (
+                        tokenField
+                      )}
+                    </div>
+                  );
+                })
+              )}
+              {secretError && <p className="text-xs text-destructive">{secretError}</p>}
             </div>
 
             <div className="max-h-56 overflow-y-auto px-5 py-4 space-y-2">
@@ -1016,6 +1533,33 @@ export function NotesView({
             </div>
 
             <div className="border-t border-border px-5 py-4 space-y-3">
+              {notionConnected && notionDatabases.length > 0 && (
+                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <select
+                    aria-label="Notion database to add"
+                    value={pickedDatabaseId}
+                    onChange={(event) => setPickedDatabaseId(event.target.value)}
+                    className="h-10 rounded border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-primary/60"
+                  >
+                    <option value="">Pick a database Zoetrope can reach...</option>
+                    {notionDatabases
+                      .filter((database) => !targets.some((target) => target.database_id === database.database_id))
+                      .map((database) => (
+                        <option key={database.database_id} value={database.database_id}>
+                          {database.title}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void addPickedDatabase()}
+                    disabled={isSavingTarget || !pickedDatabaseId}
+                    className="h-10 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+                  >
+                    Add
+                  </button>
+                </div>
+              )}
               <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
                 <input
                   value={targetName}

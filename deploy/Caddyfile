@@ -1,0 +1,18 @@
+# Copy this to /etc/caddy/Caddyfile after replacing the placeholder domain.
+# Caddy obtains and renews the TLS certificate automatically when the public
+# DNS A/AAAA record points at this host and ports 80 and 443 reach it.
+
+your-domain.example {
+    encode zstd gzip
+
+    # `handle_path` removes /api before proxying, so /api/health reaches
+    # FastAPI as /health. WebSocket upgrades (the assistant socket) are
+    # handled by reverse_proxy automatically.
+    handle_path /api/* {
+        reverse_proxy 127.0.0.1:8002
+    }
+
+    root * /var/www/zoetrope
+    try_files {path} /index.html
+    file_server
+}

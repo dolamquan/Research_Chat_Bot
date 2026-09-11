@@ -36,6 +36,8 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8002',
         changeOrigin: true,
+        // The assistant talks over a websocket (/api/agent/ws); upgrades go through too.
+        ws: true,
         rewrite: (requestPath) => requestPath.replace(/^\/api/, ''),
       },
     },

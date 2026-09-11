@@ -37,6 +37,30 @@ def _extract_token(request: Request, credentials: HTTPAuthorizationCredentials |
     return ""
 
 
+class AuthError(Exception):
+    """Token verification failed; `status` mirrors the HTTP code a route would return."""
+
+    def __init__(self, status: int, detail: str) -> None:
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
+
+
+async def authenticate_token(token: str) -> CurrentUser:
+    """Resolve a bearer token to a user. Shared by HTTP routes and the assistant websocket."""
+    if auth_mode() == "disabled":
+        return LOCAL_USER
+    if not token:
+        raise AuthError(401, "Sign in required.")
+    try:
+        claims = await run_in_threadpool(verify_token, token)
+    except AuthNotConfigured as exc:
+        raise AuthError(503, str(exc)) from exc
+    except jwt.PyJWTError as exc:
+        raise AuthError(401, f"Invalid or expired session: {exc}") from exc
+    return user_from_claims(claims, token)
+
+
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -44,19 +68,11 @@ async def get_current_user(
     # This dependency is async on purpose: it runs in the request's own task,
     # so the context variable it sets is visible to the endpoint, to sync
     # code running in the threadpool, and to background tasks.
-    if auth_mode() == "disabled":
-        user = LOCAL_USER
-    else:
-        token = _extract_token(request, credentials)
-        if not token:
-            raise HTTPException(status_code=401, detail="Sign in required.", headers={"WWW-Authenticate": "Bearer"})
-        try:
-            claims = await run_in_threadpool(verify_token, token)
-        except AuthNotConfigured as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        except jwt.PyJWTError as exc:
-            raise HTTPException(status_code=401, detail=f"Invalid or expired session: {exc}", headers={"WWW-Authenticate": "Bearer"}) from exc
-        user = user_from_claims(claims, token)
+    try:
+        user = await authenticate_token(_extract_token(request, credentials))
+    except AuthError as exc:
+        headers = {"WWW-Authenticate": "Bearer"} if exc.status == 401 else None
+        raise HTTPException(status_code=exc.status, detail=exc.detail, headers=headers) from exc
     request.state.user = user
     set_current_user(user)
     return user

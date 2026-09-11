@@ -98,12 +98,36 @@ def _scope_name(
     return "__".join(parts)
 
 
-def _graph_path(
+def _shared_graph_path(
     domain: str | None = None,
     category: str | None = None,
     article_ids: List[str] | None = None,
 ) -> Path:
     return GRAPH_DIR / f"{_scope_name(domain, category, article_ids)}.json"
+
+
+def _graph_path(
+    domain: str | None = None,
+    category: str | None = None,
+    article_ids: List[str] | None = None,
+) -> Path:
+    """Each user's concept graph covers their own papers, so it is stored per user."""
+    from app.auth.context import current_owner_id
+
+    owner = current_owner_id()
+    if owner is None:
+        return _shared_graph_path(domain, category, article_ids)
+    return GRAPH_DIR / "users" / _slug(owner) / f"{_scope_name(domain, category, article_ids)}.json"
+
+
+def _readable_graph_path(
+    domain: str | None = None,
+    category: str | None = None,
+    article_ids: List[str] | None = None,
+) -> Path:
+    """Fall back to the shared, public-library graph until the user builds their own."""
+    own = _graph_path(domain, category, article_ids)
+    return own if own.exists() else _shared_graph_path(domain, category, article_ids)
 
 
 def _terms(text: str) -> List[str]:
@@ -321,8 +345,9 @@ def build_graph_rag(
         "stale": False,
     }
 
-    GRAPH_DIR.mkdir(parents=True, exist_ok=True)
-    _graph_path(domain, category, selected_ids).write_text(
+    output_path = _graph_path(domain, category, selected_ids)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
         json.dumps(graph, indent=2),
         encoding="utf-8",
     )
@@ -335,7 +360,7 @@ def load_graph_rag(
     article_ids: List[str] | None = None,
 ) -> Dict[str, Any]:
     selected_ids = _normalize_article_ids(article_ids)
-    path = _graph_path(domain, category, selected_ids)
+    path = _readable_graph_path(domain, category, selected_ids)
     if not path.exists():
         return {
             "nodes": [],

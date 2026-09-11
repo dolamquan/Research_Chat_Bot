@@ -36,6 +36,8 @@ async def upload_image(
             domain=domain,
             category=category,
         )
+        # The asset was stored under the signed-in user; its search vector
+        # carries the same owner so only they retrieve it.
         index_visual_assets(
             [asset],
             article_metadata={
@@ -43,6 +45,7 @@ async def upload_image(
                 "domain": domain,
                 "category": category,
                 "tags": ["uploaded-image", "visual", "graph"],
+                "owner_id": asset.get("owner_id"),
             },
         )
     except Exception as exc:

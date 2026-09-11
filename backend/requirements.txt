@@ -1,6 +1,7 @@
 fastapi
 starlette>=0.40.0,<0.50.0
 uvicorn
+websockets>=13  # uvicorn's WebSocket protocol for the assistant socket (/agent/ws)
 python-dotenv
 qdrant-client
 sentence-transformers

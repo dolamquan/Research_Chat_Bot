@@ -1,0 +1,27 @@
+[Unit]
+Description=Zoetrope FastAPI application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=zoetrope
+Group=zoetrope
+WorkingDirectory=/opt/zoetrope/app/backend
+EnvironmentFile=/etc/zoetrope/zoetrope.env
+ExecStart=/opt/zoetrope/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8002 --proxy-headers
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# The API writes only its application data. These restrictions deliberately
+# exclude Docker access; enabling the optional Docker-backed MCP tools should
+# be a conscious, separately reviewed decision.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/opt/zoetrope/app/backend/app/data
+
+[Install]
+WantedBy=multi-user.target

@@ -124,8 +124,16 @@ def _notion_create_visualization_page(args: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+def _github_token() -> str:
+    from app.storage.integrations import get_secret
+
+    return get_secret("github")
+
+
 def _github_headers() -> Dict[str, str]:
-    token = _require_env("GITHUB_TOKEN")
+    token = _github_token()
+    if not token:
+        raise ValueError("No GitHub token for your account. Add one under Notes > Notion & integrations (or set GITHUB_TOKEN for the administrator).")
     return {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
@@ -180,7 +188,7 @@ def _github_search_repositories(args: Dict[str, Any]) -> Dict[str, Any]:
     limit = min(int(args.get("limit") or 5), 10)
 
     headers = {"Accept": "application/vnd.github+json"}
-    if _env("GITHUB_TOKEN"):
+    if _github_token():
         headers = _github_headers()
 
     result = requests.get(

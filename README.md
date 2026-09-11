@@ -111,9 +111,15 @@ Data is divided by an `owner_id` column:
 - Administrators (`app_metadata.role = "admin"` in Supabase) can publish a
   private paper with `POST /articles/{article_id}/visibility {"public": true}`.
 
-Not yet per-user: visualizations/scenes/variants, evaluation runs, extracted
-figures, integration credentials, and the browser extension (which needs a
-token to call the API).
+Also per-user: diagrams, scenes and variants (each user generates their own
+for a paper), evaluation runs (`evaluation_runs/users/<id>/`; the pre-account
+archive is admin-only), topology and Graph RAG caches (`clusters/users/<id>/`,
+`graph_rag/users/<id>/`, falling back to the shared library's until rebuilt),
+uploaded images and captured regions, and Notion/GitHub credentials
+(`user_integrations`, encrypted with `INTEGRATION_SECRET_KEY`; the env vars stay
+the administrator's defaults). Figures extracted from a public paper stay public.
+
+Still shared: the browser extension has no token path yet and gets 401s.
 
 ### Agent tab
 

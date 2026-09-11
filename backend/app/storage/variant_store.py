@@ -12,6 +12,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+from app.auth.context import UNSET, resolve_owner
+from app.storage import ownership
+from app.storage.ownership import ensure_owner_column, owner_clause
+
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "researchmind.sqlite3"
@@ -100,6 +104,7 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         """
     )
     init_message_table(conn)
+    ensure_owner_column(conn, "diagram_variants")
     conn.commit()
 
     if owns_connection:
@@ -157,6 +162,7 @@ def create_variant(
     changed_node_ids: List[str],
     depth: int,
     model: str,
+    owner_id: Any = UNSET,
 ) -> Dict[str, Any]:
     if depth > MAX_VARIANT_DEPTH:
         raise ValueError(
@@ -166,6 +172,7 @@ def create_variant(
 
     variant_id = uuid.uuid4().hex
     timestamp = _now()
+    owner = resolve_owner(owner_id)
 
     with _connect() as conn:
         existing = conn.execute(
@@ -185,9 +192,9 @@ def create_variant(
                 document_source, diagram_kind, title, algorithm_name,
                 variant_title, diagram_json, summary, key_insight,
                 worked_example_json, intent, patch_json, patch_result_json,
-                changed_node_ids_json, depth, model, created_at, updated_at
+                changed_node_ids_json, depth, model, created_at, updated_at, owner_id
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 variant_id,
@@ -213,6 +220,7 @@ def create_variant(
                 model,
                 timestamp,
                 timestamp,
+                owner,
             ),
         )
         row = conn.execute(
@@ -224,38 +232,54 @@ def create_variant(
     return _row_to_variant(row)
 
 
-def get_variant(variant_id: str) -> Dict[str, Any] | None:
+def _scope(owner: str | None) -> tuple[str, List[Any]]:
+    sql, params = owner_clause(owner)
+    return (f" AND {sql}" if sql else ""), params
+
+
+def get_variant(variant_id: str, owner_id: Any = UNSET) -> Dict[str, Any] | None:
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
     with _connect() as conn:
         row = conn.execute(
-            "SELECT * FROM diagram_variants WHERE variant_id = ?", (variant_id,)
+            f"SELECT * FROM diagram_variants WHERE variant_id = ?{scope_sql}",
+            (variant_id, *scope_params),
         ).fetchone()
     return _row_to_variant(row) if row else None
 
 
-def list_variants_for_visualization(root_viz_id: str) -> List[Dict[str, Any]]:
+def list_variants_for_visualization(root_viz_id: str, owner_id: Any = UNSET) -> List[Dict[str, Any]]:
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
     with _connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT * FROM diagram_variants
-            WHERE root_viz_id = ?
+            WHERE root_viz_id = ?{scope_sql}
             ORDER BY created_at DESC
             """,
-            (root_viz_id,),
+            (root_viz_id, *scope_params),
         ).fetchall()
     return [_row_to_variant(row) for row in rows]
 
 
-def list_variants_for_article(article_id: str) -> List[Dict[str, Any]]:
+def list_variants_for_article(article_id: str, owner_id: Any = UNSET) -> List[Dict[str, Any]]:
+    scope_sql, scope_params = _scope(resolve_owner(owner_id))
     with _connect() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT * FROM diagram_variants
-            WHERE article_id = ?
+            WHERE article_id = ?{scope_sql}
             ORDER BY created_at DESC
             """,
-            (article_id,),
+            (article_id, *scope_params),
         ).fetchall()
     return [_row_to_variant(row) for row in rows]
+
+
+def claim_unowned(owner: str) -> Dict[str, int]:
+    with _connect() as conn:
+        count = ownership.claim_unowned(conn, "diagram_variants", owner)
+        conn.commit()
+    return {"variants": count}
 
 
 def lineage_of(variant_id: str) -> List[Dict[str, Any]]:

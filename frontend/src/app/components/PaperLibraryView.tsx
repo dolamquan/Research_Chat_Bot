@@ -63,6 +63,8 @@ export function PaperLibraryView({
   onOpenArticle,
   onChatWithArticle,
   onRebuildTopology,
+  isAdmin = false,
+  onPublishArticle,
 }: {
   articles: Article[];
   ingestionJobs: IngestionJob[];
@@ -78,6 +80,9 @@ export function PaperLibraryView({
   onOpenArticle: (article: Article) => void;
   onChatWithArticle: (article: Article) => void;
   onRebuildTopology: () => void;
+  /** Administrators can move a private paper into the shared library. */
+  isAdmin?: boolean;
+  onPublishArticle?: (article: Article) => void;
 }) {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imageTitle, setImageTitle] = useState("");
@@ -347,6 +352,16 @@ export function PaperLibraryView({
                               {dateLabel(article.updated_at)}
                             </span>
                           )}
+                          <span
+                            className="rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground"
+                            title={
+                              article.visibility === "private"
+                                ? "Only you can see this paper"
+                                : "Shared library: visible to every user"
+                            }
+                          >
+                            {article.visibility === "private" ? "private" : "library"}
+                          </span>
                           {(article.tags || []).slice(0, 3).map((tag) => (
                             <span
                               key={tag}
@@ -390,6 +405,16 @@ export function PaperLibraryView({
                         <ExternalLink size={13} />
                         Open
                       </a>
+                      {isAdmin && onPublishArticle && article.visibility === "private" && !failed && (
+                        <button
+                          type="button"
+                          onClick={() => onPublishArticle(article)}
+                          className="inline-flex h-9 items-center gap-2 rounded border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground sm:ml-auto"
+                          title="Make this paper part of the shared library for every user"
+                        >
+                          Publish to library
+                        </button>
+                      )}
                     </div>
                   </article>
                 );

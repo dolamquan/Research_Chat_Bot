@@ -39,6 +39,10 @@ EXCLUDED = {
     ("POST", "/mcp/call"): "Every MCP tool is callable individually through execute_tool.",
     ("GET", "/auth/config"): "Sign-in plumbing; the agent already runs as the signed-in user.",
     ("GET", "/auth/me"): "Sign-in plumbing; the current user is part of app.context's workspace.",
+    ("PUT", "/integrations/{provider}"): "Credentials never pass through the model; users add them in the Notes view.",
+    ("DELETE", "/integrations/{provider}"): "Credentials are managed by the user in the Notes view.",
+    ("GET", "/integrations/notion/authorize"): "Browser-only sign-in step; the user connects Notion from the Notes view.",
+    ("GET", "/integrations/notion/callback"): "Notion's OAuth redirect target; not callable as a tool.",
 }
 
 APP_GUIDE = {
@@ -183,14 +187,15 @@ def _mcp_effect(name: str) -> str:
 
 def tool_catalog() -> list[dict]:
     from app.mcp.bridge import list_mcp_tools
+    from app.storage.integrations import get_secret
     tools = list(_api_tools())
     for tool in list_mcp_tools():
         name = tool["name"]
         configured = True
         if name.startswith("notion."):
-            configured = bool(os.getenv("NOTION_API_KEY", "").strip())
+            configured = bool(get_secret("notion"))
         elif name == "github.create_issue":
-            configured = bool(os.getenv("GITHUB_TOKEN", "").strip())
+            configured = bool(get_secret("github"))
         tools.append({**tool, "category": name.split(".")[0], "execution": "mcp",
                       "effect": _mcp_effect(name),
                       "available": configured, "unavailable_reason": "Integration credentials are not configured." if not configured else ""})
@@ -316,11 +321,17 @@ def validate_arguments(tool: dict, arguments: dict) -> None:
         )
 
 
-def execute_tool(name: str, arguments: dict, workspace: dict | None = None) -> Any:
+def _prepare_execution(name: str, arguments: dict) -> dict:
+    """Resolve and validate a call; shared by the sync and async executors."""
     tool = describe_tool(name)
     validate_arguments(tool, arguments)
     if not tool["available"]:
         raise ValueError(tool.get("unavailable_reason", "Tool is not available"))
+    return tool
+
+
+def execute_tool(name: str, arguments: dict, workspace: dict | None = None) -> Any:
+    tool = _prepare_execution(name, arguments)
     if name == "app.context":
         return application_context(workspace)
     if name == "app.papers":
@@ -329,3 +340,22 @@ def execute_tool(name: str, arguments: dict, workspace: dict | None = None) -> A
         from app.mcp.bridge import call_mcp_tool
         return call_mcp_tool(name, arguments)
     return asyncio.run(_call_api(tool, arguments))
+
+
+async def aexecute_tool(name: str, arguments: dict, workspace: dict | None = None) -> Any:
+    """`execute_tool` for callers already inside the event loop (the assistant websocket).
+
+    `asyncio.run` cannot be nested, so api.* calls await the ASGI transport
+    directly and blocking work (sqlite, MCP subprocesses) moves to the threadpool.
+    """
+    from fastapi.concurrency import run_in_threadpool
+
+    tool = _prepare_execution(name, arguments)
+    if name == "app.context":
+        return await run_in_threadpool(application_context, workspace)
+    if name == "app.papers":
+        return await run_in_threadpool(lambda: library_papers(**arguments))
+    if tool["execution"] == "mcp":
+        from app.mcp.bridge import call_mcp_tool
+        return await run_in_threadpool(call_mcp_tool, name, arguments)
+    return await _call_api(tool, arguments)

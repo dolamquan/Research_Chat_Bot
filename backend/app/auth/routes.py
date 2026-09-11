@@ -6,7 +6,7 @@ from app.auth.context import CurrentUser
 from app.auth.deps import auth_mode, get_current_user
 from app.auth.verifier import supabase_url
 from app.rag import notes_index
-from app.storage import agent_history, chat_history, notes
+from app.storage import agent_history, chat_history, notes, variant_store, visualization_store
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -28,6 +28,8 @@ def claim_legacy_rows(user: CurrentUser) -> Dict[str, int]:
         **notes.claim_unowned(user.id),
         **chat_history.claim_unowned(user.id),
         **agent_history.claim_unowned(user.id),
+        **visualization_store.claim_unowned(user.id),
+        **variant_store.claim_unowned(user.id),
     }
     if claimed.get("notes"):
         notes_index.claim_unowned_safe(user.id)

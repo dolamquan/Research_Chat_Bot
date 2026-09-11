@@ -1,17 +1,31 @@
-// Brand mark: a zoetrope drum seen from above — solid disc, eight viewing
-// slits, and a play wedge at the axle. Disc color follows currentColor; the
-// cutouts are the app's fixed near-black ground (the app is dark-only).
+// Brand mark: a zoetrope drum seen from above. The drum wall is an open ring
+// broken by eight viewing slits (gaps sit on the cardinal and diagonal axes);
+// the axle is a small solid disc. Everything follows currentColor, so the mark
+// sits on any ground without hard-coded cutout colors.
+const RADIUS = 11.5;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+const SLITS = 8;
+const SLIT_DEGREES = 15;
+const SLIT = (CIRCUMFERENCE * SLIT_DEGREES) / 360;
+const WALL = CIRCUMFERENCE / SLITS - SLIT;
+// Dashes start at 3 o'clock; rotate so a slit is centered there instead.
+const ROTATION = -(((WALL + SLIT / 2) / CIRCUMFERENCE) * 360);
+
 export default function ZoetropeMark({ size = 24 }: { size?: number }) {
-  const slits = [22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5];
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-      <circle cx="16" cy="16" r="12.5" fill="currentColor" />
-      <g stroke="#0b0b0b" strokeWidth="2">
-        {slits.map((a) => (
-          <line key={a} x1="16" y1="4.5" x2="16" y2="9.5" transform={`rotate(${a} 16 16)`} />
-        ))}
-      </g>
-      <path d="M14 11.6 L21.4 16 L14 20.4 Z" fill="#0b0b0b" />
+      <circle
+        cx="16"
+        cy="16"
+        r={RADIUS}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="3.1"
+        strokeLinecap="butt"
+        strokeDasharray={`${WALL} ${SLIT}`}
+        transform={`rotate(${ROTATION} 16 16)`}
+      />
+      <circle cx="16" cy="16" r="2.8" fill="currentColor" />
     </svg>
   );
 }

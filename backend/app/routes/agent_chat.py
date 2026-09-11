@@ -56,6 +56,7 @@ class AgentSessionCreateRequest(BaseModel):
     cluster_id: int | None = None
     document_source: str | None = None
     context_mode: str = "retrieval"
+    kind: str = "agent"
 
 
 class AgentToolCallRequest(BaseModel):
@@ -178,9 +179,10 @@ def get_agent_context() -> Dict[str, Any]:
 
 
 @router.get("/sessions")
-def get_agent_sessions(limit: int = 50) -> Dict[str, Any]:
+def get_agent_sessions(limit: int = 50, kind: str | None = "agent") -> Dict[str, Any]:
+    """List agent sessions; `kind=assistant` lists the always-present assistant's sessions, `kind=all` every kind."""
     return {
-        "sessions": list_sessions(limit=limit),
+        "sessions": list_sessions(limit=limit, kind=None if kind in (None, "", "all") else kind),
     }
 
 
@@ -191,6 +193,7 @@ def create_agent_session(request: AgentSessionCreateRequest) -> Dict[str, Any]:
         cluster_id=request.cluster_id,
         document_source=request.document_source,
         context_mode=request.context_mode,
+        kind=request.kind,
     )
 
 

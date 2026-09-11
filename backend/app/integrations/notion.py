@@ -31,11 +31,15 @@ class NotionError(Exception):
 
 
 def _api_key() -> str:
-    key = os.getenv("NOTION_API_KEY", "").strip()
+    # Each user brings their own Notion integration token; the environment
+    # variable is only the administrator's default.
+    from app.storage.integrations import get_secret
+
+    key = get_secret("notion")
     if not key:
         raise NotionError(
             "not_configured",
-            "NOTION_API_KEY is not set in backend/.env.",
+            "No Notion API key for your account. Add one under Notes > Notion (or set NOTION_API_KEY for the administrator).",
         )
     return key
 
@@ -278,6 +282,24 @@ def markdown_to_blocks(markdown: str) -> List[Dict[str, Any]]:
 
 
 # --- database schema ------------------------------------------------------------
+
+
+def search_databases(limit: int = 50) -> List[Dict[str, Any]]:
+    """Databases the current credential can see — for OAuth, exactly what the user granted."""
+    result = _request(
+        "POST",
+        "/search",
+        json_body={"filter": {"property": "object", "value": "database"}, "page_size": max(1, min(limit, 100))},
+    )
+    databases = []
+    for item in result.get("results", []):
+        title = "".join(part.get("plain_text", "") for part in item.get("title", [])).strip()
+        databases.append({
+            "database_id": str(item.get("id", "")),
+            "title": title or "Untitled database",
+            "url": str(item.get("url", "")),
+        })
+    return databases
 
 
 def get_database(database_id: str) -> Dict[str, Any]:

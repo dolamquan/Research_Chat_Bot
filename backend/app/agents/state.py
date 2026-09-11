@@ -47,3 +47,15 @@ class AgentState(TypedDict, total=False):
     tool_trace: List[Dict[str, Any]]
     workflow_plan: List[Dict[str, Any]]
     error: str | None
+
+    # What the user has open elsewhere in the app (free-form; see context_schema).
+    workspace: Dict[str, Any]
+
+    # Always-present assistant (websocket) additions. All optional.
+    mode: str                          # "agent" (tab) | "assistant" (voice/dock)
+    source: str                        # "voice" | "text"
+    turn_id: str
+    client_tools: List[Dict[str, Any]]  # browser-executed tool specs
+    resume_action: Dict[str, Any] | None   # a confirmed pending action to run first
+    declined_action: Dict[str, Any] | None  # a pending action the user refused
+    spoken: str

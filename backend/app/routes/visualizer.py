@@ -22,12 +22,14 @@ from app.rag.scene_service import (
     fetch_stage_scenes,
     reverify_scene,
 )
+from app.auth.context import current_user
 from app.storage.scene_store import delete_scenes_for_visualization
 from app.storage.stage_scene_store import delete_stage_scenes_for_visualization
-from app.storage.variant_store import delete_variants_for_visualization
+from app.storage.variant_store import delete_variants_for_visualization, get_variant
 from app.storage.visualization_store import (
     delete_node_expansions,
     delete_visualization,
+    get_visualization_by_id,
     list_expanded_node_ids,
     list_node_expansions,
     list_visualizations,
@@ -35,6 +37,29 @@ from app.storage.visualization_store import (
 
 
 router = APIRouter(prefix="/visualizer", tags=["visualizer"])
+
+
+def _owned_by_caller(target_id: str) -> bool:
+    """Scenes, expansions and stage scenes hang off a diagram (or variant).
+
+    When that diagram exists and belongs to someone else, its derived data
+    must look absent. A diagram that no longer exists protects nothing, so
+    the scene lookups keep their own "no scene" answers.
+    """
+    record = get_visualization_by_id(target_id, owner_id=None) or get_variant(target_id, owner_id=None)
+    if record is None:
+        return True
+    owner = record.get("owner_id")
+    user = current_user()
+    if owner is None:
+        # Pre-account data: the administrator's until claimed.
+        return user is None or user.is_admin
+    return user is not None and user.id == owner
+
+
+def _require_owned(target_id: str) -> None:
+    if not _owned_by_caller(target_id):
+        raise HTTPException(status_code=404, detail=f"Diagram not found: {target_id}")
 
 
 class GenerateVisualizationRequest(BaseModel):
@@ -98,6 +123,7 @@ def list_prepared_stages(viz_id: str) -> Dict[str, Any]:
     The 3D scene builds each stage's internal machinery from these primitives,
     so it needs the content, not just which stages exist.
     """
+    _require_owned(viz_id)
     return {
         "prepared": list_expanded_node_ids(viz_id),
         "expansions": list_node_expansions(viz_id),
@@ -118,6 +144,8 @@ class GenerateSceneRequest(BaseModel):
 @router.post("/generate-scene")
 def generate_scene_endpoint(request: GenerateSceneRequest) -> Dict[str, Any]:
     """Generate, check and persist Three.js scene code for one visualization."""
+    # No pre-check here: build_scene resolves the diagram through the scoped
+    # store itself, so someone else's id already surfaces as VisualizationNotFound.
     try:
         record = build_scene(
             viz_id=request.viz_id,
@@ -145,6 +173,7 @@ def generate_scene_endpoint(request: GenerateSceneRequest) -> Dict[str, Any]:
 
 @router.get("/item/{viz_id}/scene")
 def get_scene_endpoint(viz_id: str) -> Dict[str, Any]:
+    _require_owned(viz_id)
     try:
         return {"scene": fetch_scene(viz_id)}
     except SceneNotFound as error:
@@ -154,6 +183,7 @@ def get_scene_endpoint(viz_id: str) -> Dict[str, Any]:
 @router.post("/item/{viz_id}/verify-scene")
 def verify_scene_endpoint(viz_id: str) -> Dict[str, Any]:
     """Re-run deterministic verification. No model call, no regeneration."""
+    _require_owned(viz_id)
     try:
         return {"scene": reverify_scene(viz_id)}
     except SceneNotFound as error:
@@ -199,6 +229,8 @@ def generate_stage_scene_endpoint(request: GenerateStageSceneRequest) -> Dict[st
 def list_stage_scenes_endpoint(viz_id: str) -> Dict[str, Any]:
     """Every stored stage scene for a visualization. Empty list, never 404:
     the frontend polls this to decide which nodes can play dynamically."""
+    if not _owned_by_caller(viz_id):
+        return {"stage_scenes": []}
     return {"stage_scenes": fetch_stage_scenes(viz_id)}
 
 
@@ -210,11 +242,13 @@ def list_providers_endpoint() -> Dict[str, Any]:
 
 @router.get("/{article_id}")
 def get_article_visualizations(article_id: str) -> Dict[str, Any]:
+    """The signed-in user's diagrams for a paper."""
     return {"visualizations": list_visualizations(article_id)}
 
 
 @router.delete("/item/{viz_id}")
 def delete_visualization_endpoint(viz_id: str) -> Dict[str, Any]:
+    _require_owned(viz_id)
     # Variants descend from this diagram, so they go first. Done here rather
     # than in the store to keep the two storage modules independent.
     variant_ids = delete_variants_for_visualization(viz_id)

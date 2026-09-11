@@ -11,8 +11,8 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 from app.evaluation.evaluator import (
     DEFAULT_DATASET_PATH,
-    EVALUATION_RUNS_DIR,
     load_eval_dataset,
+    runs_dir,
 )
 from app.rag.generator import generate_answer
 
@@ -151,10 +151,11 @@ def save_ragas_run(
     scores: Dict[str, Any],
     summary: Dict[str, Any],
 ) -> Path:
-    EVALUATION_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+    target_dir = runs_dir()
+    target_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = EVALUATION_RUNS_DIR / f"ragas_eval_{timestamp}.json"
+    output_path = target_dir / f"ragas_eval_{timestamp}.json"
 
     payload = {
         "summary": summary,

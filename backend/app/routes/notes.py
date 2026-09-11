@@ -39,6 +39,13 @@ class NoteUpdateRequest(BaseModel):
 
 class FolderRequest(BaseModel):
     name: str = Field(..., min_length=1)
+    # '' or the default folder id creates a top-level folder.
+    parent_id: str = ""
+
+
+class FolderUpdateRequest(BaseModel):
+    name: str | None = None
+    parent_id: str | None = None
 
 
 class AttachmentRequest(BaseModel):
@@ -116,26 +123,40 @@ def list_folders() -> Dict[str, Any]:
     return {"folders": notes_store.list_folders()}
 
 
+def _folder_error(exc: ValueError) -> HTTPException:
+    return HTTPException(status_code=404 if "not found" in str(exc) else 400, detail=str(exc))
+
+
 @router.post("/folders")
 def create_folder(request: FolderRequest) -> Dict[str, Any]:
-    return {"folder": notes_store.create_folder(request.name)}
+    """Create a folder, optionally inside another one."""
+    try:
+        return {"folder": notes_store.create_folder(request.name, parent_id=request.parent_id)}
+    except ValueError as exc:
+        raise _folder_error(exc) from exc
 
 
 @router.patch("/folders/{folder_id}")
-def rename_folder(folder_id: str, request: FolderRequest) -> Dict[str, Any]:
+def update_folder(folder_id: str, request: FolderUpdateRequest) -> Dict[str, Any]:
+    """Rename a folder and/or move it under another parent ('' for top level)."""
     try:
-        return {"folder": notes_store.rename_folder(folder_id, request.name)}
+        return {
+            "folder": notes_store.update_folder(
+                folder_id, name=request.name, parent_id=request.parent_id
+            )
+        }
     except ValueError as exc:
-        raise _http_error(exc) from exc
+        raise _folder_error(exc) from exc
 
 
 @router.delete("/folders/{folder_id}")
-def delete_folder(folder_id: str) -> Dict[str, str]:
+def delete_folder(folder_id: str) -> Dict[str, Any]:
+    """Delete a folder; its notes and subfolders move to the parent folder."""
     try:
-        notes_store.delete_folder(folder_id)
+        result = notes_store.delete_folder(folder_id)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "deleted"}
+        raise _folder_error(exc) from exc
+    return {"status": "deleted", **result}
 
 
 # --- Notion targets ---------------------------------------------------------------

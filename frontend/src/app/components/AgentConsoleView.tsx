@@ -1,12 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import {
-  CheckCircle2,
-  CircleDot,
-  Loader2,
-  MinusCircle,
-  XCircle,
-} from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import {
   callAgentTool,
@@ -18,6 +12,7 @@ import {
   getAgentTools,
   getMcpTools,
 } from "../api";
+import { ToolTimeline } from "./agent/ToolTimeline";
 import type {
   AgentContext,
   AgentSession,
@@ -612,62 +607,6 @@ function AgentContent({ content, kind }: { content: string; kind: ConsoleEntry["
         </pre>
       )}
     </>
-  );
-}
-
-function ToolStatusIcon({ status }: { status?: string }) {
-  if (status === "error") {
-    return <XCircle size={12} className="text-destructive" />;
-  }
-
-  if (status === "skipped") {
-    return <MinusCircle size={12} className="text-muted-foreground" />;
-  }
-
-  if (status === "planned") {
-    return <CircleDot size={12} className="text-primary" />;
-  }
-
-  return <CheckCircle2 size={12} className="text-primary" />;
-}
-
-function ToolTimeline({ trace }: { trace: ChatResponse["tool_trace"] }) {
-  if (!trace || trace.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="ml-6 mt-3 border-l border-primary/20 pl-3">
-      <div className="mb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-        Tool timeline
-      </div>
-      <div className="space-y-1.5">
-        {trace.map((step, index) => (
-          <div
-            key={`${step.tool}-${step.timestamp}-${index}`}
-            className="grid grid-cols-[0.9rem_minmax(8rem,12rem)_1fr] items-start gap-2 text-[11px]"
-          >
-            <ToolStatusIcon status={step.status} />
-            <span className="break-words text-primary" title={step.arguments || undefined}>
-              {step.tool}
-              {step.effect && step.effect !== "read" && (
-                <span className="ml-1 text-muted-foreground">[{step.effect}]</span>
-              )}
-            </span>
-            <span
-              title={step.message}
-              className={
-                step.status === "error"
-                  ? "break-words text-destructive"
-                  : "break-words text-muted-foreground"
-              }
-            >
-              {step.message}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 

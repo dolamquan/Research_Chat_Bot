@@ -1,8 +1,9 @@
 from typing import Any, Dict, List
 
-from qdrant_client.models import FieldCondition, Filter, MatchValue
+from qdrant_client.models import FieldCondition, Filter, MatchAny, MatchValue
 from qdrant_client.http.exceptions import ResponseHandlingException
 
+from app.auth.context import current_owner_id
 from app.rag.access_scope import owner_scope
 from app.rag.embedder import embed_text
 from app.rag.vector_store import COLLECTION_NAME, get_client, search_vectors
@@ -60,6 +61,17 @@ def format_retrieved_point(point: Any) -> Dict[str, Any]:
         "page": payload.get("page"),
     }
 
+def _cluster_condition(cluster_id: int, domain: str | None, category: str | None) -> FieldCondition:
+    """A user's clusters live in their own topology file, not on the shared points."""
+    if current_owner_id() is not None:
+        from app.rag.clusterer import cluster_sources
+
+        sources = cluster_sources(cluster_id, domain=domain, category=category)
+        if sources:
+            return FieldCondition(key="source", match=MatchAny(any=sources))
+    return FieldCondition(key="cluster_id", match=MatchValue(value=cluster_id))
+
+
 @traceable(name="build_retrieval_filter",run_type="retriever")
 def build_retrieval_filter(
     cluster_id: int | None = None,
@@ -71,12 +83,7 @@ def build_retrieval_filter(
     conditions = []
 
     if cluster_id is not None:
-        conditions.append(
-            FieldCondition(
-                key="cluster_id",
-                match=MatchValue(value=cluster_id),
-            )
-        )
+        conditions.append(_cluster_condition(cluster_id, domain=domain, category=category))
 
     if document_source:
         conditions.append(
