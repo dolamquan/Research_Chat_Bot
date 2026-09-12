@@ -136,7 +136,9 @@ Back up these before updates or host maintenance:
 
 - `/opt/zoetrope/app/backend/app/data/` — SQLite databases, uploaded PDFs,
   visual assets, and generated caches.
-- The Docker volume `research-chatbot_qdrant_storage` — vector index.
+- The Docker volume `app_qdrant_storage` — vector index. Compose derives the
+  prefix from the directory name, which is `app` for the `/opt/zoetrope/app`
+  checkout; confirm with `docker volume ls` before relying on the name.
 - `/etc/zoetrope/zoetrope.env` — encrypted, access-controlled copy only.
 
 Test restoring a backup onto a non-production machine. SQLite's `.backup`
