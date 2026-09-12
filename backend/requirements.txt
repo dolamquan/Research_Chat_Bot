@@ -19,6 +19,7 @@ datasets
 ragas
 PyMuPDF
 python-multipart
+pyjwt[crypto]  # Supabase token verification (app/auth); crypto extra supplies ES256
 langsmith
 networkx
 tree-sitter==0.25.2

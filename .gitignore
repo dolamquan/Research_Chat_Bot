@@ -40,3 +40,6 @@ backend/app/data/uploads/
 .scene-check/
 benchmarks/results/
 backend/app/data/scene-repair-backups/
+
+# Secrets file misnamed without a dot; must never be committed
+backend/env
