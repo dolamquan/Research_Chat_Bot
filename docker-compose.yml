@@ -2,6 +2,10 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     container_name: mini-chatbot-qdrant
+    # The API depends on Qdrant, so bring it back automatically after a
+    # daemon or host restart. Without this the container stays down and the
+    # API serves requests against a vector store that is not there.
+    restart: unless-stopped
     ports:
       # Qdrant is an internal dependency. The API reaches it through loopback;
       # it must not be reachable directly from the LAN or Internet.
