@@ -15,8 +15,12 @@ git switch "$BRANCH"
 git pull --ff-only origin "$BRANCH"
 
 "$VENV_DIR/bin/python" -m pip install --requirement backend/requirements.txt
-corepack pnpm --dir frontend install --frozen-lockfile
-corepack pnpm --dir frontend run build
+# Run pnpm from inside frontend/ rather than with `--dir` from the repository
+# root. Corepack resolves the pnpm version from the working directory, and the
+# root package.json has no packageManager field, so `--dir` runs the newest
+# pnpm and then fails ERR_PNPM_BAD_PM_VERSION against the version pinned in
+# frontend/package.json.
+(cd frontend && corepack pnpm install --frozen-lockfile && corepack pnpm run build)
 
 rsync -a --delete frontend/dist/ "$WEB_ROOT/"
 sudo systemctl restart zoetrope-api
