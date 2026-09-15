@@ -36,6 +36,12 @@ export type Message = {
   pinnedSources?: Source[];
   toolTrace?: AgentToolTrace[];
   timestamp: Date;
+  /**
+   * UI chrome rendered in the transcript that was never part of the
+   * conversation: welcome copy, client-side error notices. The model must not
+   * see these as its own prior turns, so `toChatHistory` drops them.
+   */
+  synthetic?: boolean;
 };
 
 export type Cluster = {
@@ -519,7 +525,8 @@ export type ChatSessionDetail = {
   messages: StoredChatMessage[];
 };
 
-export type AgentSession = ChatSession;
+/** `kind` separates the retired Agent tab's sessions ("agent") from Zoe's ("assistant"). */
+export type AgentSession = ChatSession & { kind?: string };
 
 export type StoredAgentMessage = StoredChatMessage & {
   intent?: string | null;

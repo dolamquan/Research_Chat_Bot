@@ -10,7 +10,6 @@ init, keyed by their original ids so the migration is re-runnable.
 import base64
 import hashlib
 import json
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +18,7 @@ from typing import Any, Dict, List
 from app.auth.context import UNSET, resolve_owner
 from app.storage import ownership
 from app.storage.ownership import ensure_owner_column, owner_clause
+from app.storage import db
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "researchmind.sqlite3"
@@ -33,17 +33,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    init_db(connection)
-    return connection
+def _connect():
+    return db.connect(DB_PATH, init_db)
 
 
-def init_db(connection: sqlite3.Connection | None = None) -> None:
-    owns_connection = connection is None
-    conn = connection or sqlite3.connect(DB_PATH)
+def init_db(connection: db.Connection | None = None) -> None:
+    if connection is None:
+        with db.connect(DB_PATH) as conn:
+            init_db(conn)
+        return
+    conn = connection
 
     conn.execute(
         """
@@ -113,7 +112,7 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         ON note_attachments(note_id, created_at)
         """
     )
-    columns = {row[1] for row in conn.execute("PRAGMA table_info(note_attachments)")}
+    columns = db.table_columns(conn, "note_attachments")
     for column in ("client_id", "content_hash"):
         if column not in columns:
             conn.execute(f"ALTER TABLE note_attachments ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
@@ -138,31 +137,23 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         ensure_owner_column(conn, table)
     # Folders nest: '' is the top level. Kept as text so the legacy flat list
     # needs no rewrite.
-    folder_columns = {row[1] for row in conn.execute("PRAGMA table_info(note_folders)")}
+    folder_columns = db.table_columns(conn, "note_folders")
     if "parent_id" not in folder_columns:
         conn.execute("ALTER TABLE note_folders ADD COLUMN parent_id TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
     _migrate_legacy_annotations(conn)
 
-    if owns_connection:
-        conn.close()
 
 
-def _migrate_legacy_annotations(conn: sqlite3.Connection) -> None:
+def _migrate_legacy_annotations(conn: db.Connection) -> None:
     """Copy old `annotations` rows into `notes`, keyed by annotation_id."""
-    tables = {
-        row[0]
-        for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table'"
-        ).fetchall()
-    }
-    if "annotations" not in tables:
+    if "annotations" not in db.table_names(conn):
         return
 
     conn.execute(
         """
-        INSERT OR IGNORE INTO notes (
+        INSERT INTO notes (
             note_id, note_type, source_type, source_ref, source_title,
             article_id, page, selected_text, title, body_md,
             created_at, updated_at
@@ -172,6 +163,8 @@ def _migrate_legacy_annotations(conn: sqlite3.Connection) -> None:
             COALESCE(article_id, ''), page, selected_text, COALESCE(title, ''),
             note, created_at, updated_at
         FROM annotations
+        WHERE true
+        ON CONFLICT DO NOTHING
         """
     )
     conn.commit()
@@ -186,7 +179,7 @@ def _parse_json(raw: str, fallback: Any) -> Any:
         return fallback
 
 
-def _row_to_note(row: sqlite3.Row) -> Dict[str, Any]:
+def _row_to_note(row: db.Row) -> Dict[str, Any]:
     note = dict(row)
     note["tags"] = _parse_json(note.get("tags", "[]"), [])
     note["sketch"] = _parse_json(note.pop("sketch_json", ""), None)
@@ -222,7 +215,7 @@ def note_content_hash(note: Dict[str, Any], attachment_ids: List[str]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _attach_meta(conn: sqlite3.Connection, note_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
+def _attach_meta(conn: db.Connection, note_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
     if not note_ids:
         return {}
     placeholders = ",".join("?" for _ in note_ids)
@@ -245,7 +238,7 @@ def _attach_meta(conn: sqlite3.Connection, note_ids: List[str]) -> Dict[str, Lis
     return grouped
 
 
-def _decorate(conn: sqlite3.Connection, rows: List[sqlite3.Row]) -> List[Dict[str, Any]]:
+def _decorate(conn: db.Connection, rows: List[db.Row]) -> List[Dict[str, Any]]:
     notes = [_row_to_note(row) for row in rows]
     attachments = _attach_meta(conn, [note["note_id"] for note in notes])
     for note in notes:
@@ -670,7 +663,7 @@ def delete_attachment(attachment_id: str, owner_id: Any = UNSET) -> None:
 # --- folders ------------------------------------------------------------------
 
 
-def _folder_row(row: sqlite3.Row) -> Dict[str, Any]:
+def _folder_row(row: db.Row) -> Dict[str, Any]:
     folder = dict(row)
     folder["parent_id"] = folder.get("parent_id") or ""
     return folder
@@ -693,14 +686,14 @@ def _normalize_parent(parent_id: Any) -> str:
     return str(parent_id)
 
 
-def _folder_exists(conn: sqlite3.Connection, folder_id: str, owner: str | None) -> bool:
+def _folder_exists(conn: db.Connection, folder_id: str, owner: str | None) -> bool:
     scope_sql, scope_params = _scope(owner)
     return conn.execute(
         f"SELECT 1 FROM note_folders WHERE folder_id = ?{scope_sql}", (folder_id, *scope_params)
     ).fetchone() is not None
 
 
-def _descendant_ids(conn: sqlite3.Connection, folder_id: str, owner: str | None) -> set[str]:
+def _descendant_ids(conn: db.Connection, folder_id: str, owner: str | None) -> set[str]:
     scope_sql, scope_params = _scope(owner)
     found: set[str] = set()
     frontier = [folder_id]
@@ -749,8 +742,9 @@ def create_folder(
             raise ValueError(f"Parent folder not found: {parent}")
         conn.execute(
             """
-            INSERT OR IGNORE INTO note_folders (folder_id, name, created_at, updated_at, owner_id, parent_id)
+            INSERT INTO note_folders (folder_id, name, created_at, updated_at, owner_id, parent_id)
             VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT DO NOTHING
             """,
             (resolved_id, trimmed, timestamp, timestamp, owner, parent),
         )

@@ -6,7 +6,6 @@ append-only — re-verifying creates a new run rather than mutating an old one.
 """
 
 import json
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -15,6 +14,7 @@ from typing import Any, Dict, List
 from app.auth.context import UNSET, resolve_owner
 from app.storage import ownership
 from app.storage.ownership import ensure_owner_column, owner_clause
+from app.storage import db
 
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
@@ -28,17 +28,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    init_db(connection)
-    return connection
+def _connect():
+    return db.connect(DB_PATH, init_db)
 
 
-def init_db(connection: sqlite3.Connection | None = None) -> None:
-    owns_connection = connection is None
-    conn = connection or sqlite3.connect(DB_PATH)
+def init_db(connection: db.Connection | None = None) -> None:
+    if connection is None:
+        with db.connect(DB_PATH) as conn:
+            init_db(conn)
+        return
+    conn = connection
 
     conn.execute(
         """
@@ -107,8 +106,6 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     ensure_owner_column(conn, "diagram_variants")
     conn.commit()
 
-    if owns_connection:
-        conn.close()
 
 
 def _loads(raw: Any, fallback: Any) -> Any:
@@ -118,7 +115,7 @@ def _loads(raw: Any, fallback: Any) -> Any:
         return fallback
 
 
-def _row_to_variant(row: sqlite3.Row) -> Dict[str, Any]:
+def _row_to_variant(row: db.Row) -> Dict[str, Any]:
     record = dict(row)
     record["diagram"] = _loads(
         record.pop("diagram_json", None), {"nodes": [], "edges": [], "groups": []}
@@ -132,7 +129,7 @@ def _row_to_variant(row: sqlite3.Row) -> Dict[str, Any]:
     return record
 
 
-def _row_to_run(row: sqlite3.Row) -> Dict[str, Any]:
+def _row_to_run(row: db.Row) -> Dict[str, Any]:
     record = dict(row)
     record["layers"] = _loads(record.pop("layers_json", None), [])
     record["report"] = _loads(record.pop("report_json", None), None)
@@ -476,9 +473,12 @@ def active_run(target_id: str) -> Dict[str, Any] | None:
 
 # ------------------------------------------------------- discussion history
 
-def init_message_table(connection: sqlite3.Connection | None = None) -> None:
-    owns_connection = connection is None
-    conn = connection or sqlite3.connect(DB_PATH)
+def init_message_table(connection: db.Connection | None = None) -> None:
+    if connection is None:
+        with db.connect(DB_PATH) as conn:
+            init_message_table(conn)
+        return
+    conn = connection
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS variant_messages (
@@ -500,11 +500,9 @@ def init_message_table(connection: sqlite3.Connection | None = None) -> None:
         """
     )
     conn.commit()
-    if owns_connection:
-        conn.close()
 
 
-def _row_to_message(row: sqlite3.Row) -> Dict[str, Any]:
+def _row_to_message(row: db.Row) -> Dict[str, Any]:
     record = dict(row)
     record["node_ids"] = _loads(record.pop("node_ids_json", None), [])
     record["suggestions"] = _loads(record.pop("suggestions_json", None), [])

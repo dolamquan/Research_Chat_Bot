@@ -2,8 +2,14 @@ import { useMemo, useState } from "react";
 import { Code2, Pause, Play, RotateCcw } from "lucide-react";
 
 import SceneFrame from "./SceneFrame";
+import SceneRefinePanel, { type RefineHandler } from "./SceneRefinePanel";
 import { checkSceneCode } from "./sceneRuntime";
-import type { PlayableSceneRecord } from "./sceneTypes";
+import {
+  sceneDivergesFromPaper,
+  sceneRuntimeStatus,
+  type PlayableSceneRecord,
+  type SceneVerificationReport,
+} from "./sceneTypes";
 
 /**
  * The player for one generated scene-code record: the sandboxed frame plus
@@ -13,16 +19,31 @@ import type { PlayableSceneRecord } from "./sceneTypes";
  * contract the backend enforced at generation time. A record that fails —
  * tampered storage, or a contract that tightened since it was stored — is
  * refused with the reasons listed, never executed.
+ *
+ * Passing the static checks is not the same as running: the runtime status
+ * shown under the controls says whether the browser has actually executed
+ * this code through a full cycle, and a crash in the live frame can be sent
+ * back as a repair when the host provides `onRepair`.
  */
 export function SceneCodePlayer({
   record,
   className = "",
+  onRepair,
+  onRefine,
+  verifying = false,
 }: {
-  record: PlayableSceneRecord;
+  record: PlayableSceneRecord & { verification?: SceneVerificationReport };
   className?: string;
+  /** Regenerate the stored code against the crash the frame just reported. */
+  onRepair?: (runtimeError: string) => void;
+  /** Apply a user-described change; see `SceneRefinePanel`. */
+  onRefine?: RefineHandler;
+  /** The scene is being probed off-screen right now. */
+  verifying?: boolean;
 }) {
   const { scene } = record;
   const findings = useMemo(() => checkSceneCode(scene.code), [scene.code]);
+  const runtimeStatus = sceneRuntimeStatus(record);
 
   const [playing, setPlaying] = useState(true);
   const [restartToken, setRestartToken] = useState(0);
@@ -54,6 +75,21 @@ export function SceneCodePlayer({
     );
   }
 
+  const statusText = verifying
+    ? "Verifying: running a full cycle off-screen…"
+    : runtimeStatus === "passed"
+      ? "Verified: runs through a full cycle"
+      : runtimeStatus === "failed"
+        ? "Crashed the last time it ran"
+        : "Not yet run in the browser";
+  const statusTone = verifying
+    ? "text-accent-300 animate-pulse"
+    : runtimeStatus === "passed"
+      ? "text-ivory-300"
+      : runtimeStatus === "failed"
+        ? "text-pen-red"
+        : "text-ivory-500";
+
   return (
     <div className={`flex min-h-0 flex-col gap-2 ${className}`} data-testid="scene-code-player">
       <div className="relative min-h-[18rem] flex-1 overflow-hidden rounded-lg border border-desk-700 bg-desk-950">
@@ -76,12 +112,24 @@ export function SceneCodePlayer({
       </div>
 
       {runtimeError ? (
-        <p
-          className="max-h-24 overflow-auto rounded border border-pen-red/40 bg-pen-red/10 px-2 py-1.5 font-mono text-[10px] leading-relaxed text-pen-red"
+        <div
+          className="max-h-32 overflow-auto rounded border border-pen-red/40 bg-pen-red/10 px-2 py-1.5"
           data-testid="scene-runtime-error"
         >
-          The scene crashed while running: {runtimeError}
-        </p>
+          <p className="font-mono text-[10px] leading-relaxed text-pen-red">
+            The scene crashed while running: {runtimeError}
+          </p>
+          {onRepair ? (
+            <button
+              type="button"
+              onClick={() => onRepair(runtimeError)}
+              title="Send this error back to the model and fix the existing scene"
+              className="mt-1 rounded border border-pen-red/50 px-2 py-0.5 text-[11px] text-pen-red hover:bg-pen-red/20"
+            >
+              Repair animation
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       <div className="flex items-center gap-1.5">
@@ -119,8 +167,28 @@ export function SceneCodePlayer({
         </button>
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 text-[10px]">
+        <span data-testid="scene-runtime-status" className={statusTone}>
+          {statusText}
+        </span>
+        {sceneDivergesFromPaper(scene) ? (
+          <span className="rounded border border-pen-red/50 px-1.5 py-0.5 text-pen-red">
+            Diverges from the paper
+          </span>
+        ) : null}
+      </div>
+
       {scene.summary ? (
         <p className="text-[11px] leading-relaxed text-ivory-500">{scene.summary}</p>
+      ) : null}
+
+      {onRefine ? (
+        <SceneRefinePanel
+          className="border-t border-desk-800 pt-2"
+          onRefine={onRefine}
+          edits={scene.edits}
+          busy={verifying}
+        />
       ) : null}
 
       <p className="text-[10px] leading-relaxed text-ivory-700">

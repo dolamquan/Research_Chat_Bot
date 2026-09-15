@@ -78,6 +78,83 @@ PDF (indexed)
         makeLabel(), setCaption(); play / pause / restart via postMessage
 ```
 
+## Verification: a scene is ready only after the browser has run it
+
+The static checks prove that the code parses and obeys the contract. They
+cannot prove it runs: `TypeError: row.forEach is not a function` on the first
+frame passes every one of them. The backend cannot execute Three.js, so the
+browser closes the loop and reports back.
+
+```
+generate (or use the stored scene)
+  │
+  ├─ probe   sceneProbe.ts mounts the code in an OFF-SCREEN frame with the
+  │          same `sandbox="allow-scripts"` boundary, in probe mode
+  │          (`buildSceneSrcDoc(code, title, {probe: true})`): the harness
+  │          runs init, sweeps update(ctx, t) over t = 0…24 s in 0.25 s steps,
+  │          renders a sample every 3 s, and at each sample records the label
+  │          pairs its own nudging pass could NOT separate. One
+  │          `scene-verified {ok, error, samples}` message comes back.
+  │
+  ├─ repair  a crash → POST generate-*-scene {force, runtime_error}
+  │          persistent overlaps (a pair colliding in ≥ 2 samples) →
+  │          POST generate-*-scene {force, layout_report}
+  │          Either turns the request into a REPAIR of the stored code — the
+  │          model sees the previous program plus the real error text or the
+  │          exact colliding pairs and the seconds they collide — instead of
+  │          a fresh attempt. Budget: 2 repairs per scene (sceneVerification.ts).
+  │
+  └─ report  POST /visualizer/item/{viz_id}/runtime  or
+             POST /visualizer/item/{viz_id}/stage-scenes/{node_id}/runtime
+             `verification.runtime = {status: passed|failed, error, overlaps,
+             samples, checked_at}` is stored on the record, so "ready"
+             survives a reload and a failed scene is never counted prepared.
+```
+
+`verification.runtime.status` starts as `unverified` for every stored scene.
+In the UI, **ready** means `passed`; **playable** only means the contract
+check passes. "All stages ready" and the Prepare-all counter use ready. A
+stage whose scene was saved before this existed shows as unprepared until
+Prepare all has probed it — that costs a probe, not a model call. A crash in
+the live player is also reported, and its **Repair animation** action sends
+the stack back rather than regenerating blind.
+
+Overlap avoidance is enforced twice: the prompt's LAYOUT rules (explicit grid
+pitch, one label per anchor, value rows below baselines, captions via
+`setCaption`) and the measured `layout_report` repair above. The player's own
+label-collision pass still runs on every frame; the probe only reports what
+that pass could not fix.
+
+## Refinement: the user describes a change
+
+`SceneRefinePanel` (in the stage caption bar and under the whole-method
+player) takes free text — "the value labels overlap the bars, move them below
+the baseline" — and calls
+
+| Method | Path | Body |
+|---|---|---|
+| `POST` | `/visualizer/item/{viz_id}/refine` | `{instruction, acknowledge_fundamental}` |
+| `POST` | `/visualizer/item/{viz_id}/stage-scenes/{node_id}/refine` | same |
+
+The server first classifies the request (`classify_refinement`): **cosmetic**
+changes presentation only; **fundamental** changes what the animation shows
+about the method — a step added, removed or reordered, a different operation
+or formula, different data flow or component counts. The model decides when a
+provider is reachable; conservative whole-word marker lists decide offline,
+and the result carries `basis: model | heuristic` so the UI does not overstate
+its certainty.
+
+A fundamental request without `acknowledge_fundamental` returns **409** with
+`{code: "needs_acknowledgement", kind, reason, basis}` and generates nothing.
+The panel shows the reason and offers "Change it anyway" / "Keep the paper's
+version". Cosmetic or acknowledged requests go to `refine_scene_code`, which
+rewrites the stored program under "apply exactly this change and nothing
+else", then the usual static checks. The record keeps an `edits` trail
+(`{instruction, kind, basis, at}`) so the UI can say "Edited by you" and,
+after a fundamental edit, "Diverges from the paper" — claims that must
+survive reloads. Refined code starts `unverified` and is probed like any
+other scene.
+
 ## The runtime contract
 
 Generated code sees exactly one object, `ctx`, built by the harness in
@@ -170,8 +247,11 @@ table (the store is format-agnostic):
 }
 ```
 
-The verification report is now the static check result:
-`{"valid": bool, "findings": [string], "checks": "static"}`.
+The verification report is the static check result plus the browser's
+verdict once it has run the code:
+`{"valid": bool, "findings": [string], "checks": "static", "runtime": {"status": "unverified" | "passed" | "failed", …}}`.
+`valid` and `runtime.status` are kept apart on purpose: a scene can be
+contract-complete and still crash, and the UI says which.
 
 ## Per-stage scenes (the dynamic stage theater)
 
@@ -182,8 +262,10 @@ Records live in `stage_scene_store` keyed `(viz_id, node_id, schema_version)`.
 
 | Method | Path | Notes |
 |---|---|---|
-| `POST` | `/visualizer/generate-stage-scene` | `{viz_id, node_id, force, provider, model}` |
+| `POST` | `/visualizer/generate-stage-scene` | `{viz_id, node_id, force, provider, model, runtime_error, layout_report}` — with `force`, evidence turns the rebuild into a repair of the stored code |
 | `GET` | `/visualizer/item/{viz_id}/stage-scenes` | All stored stage scenes; empty list, never 404 |
+| `POST` | `/visualizer/item/{viz_id}/stage-scenes/{node_id}/runtime` | The browser's verdict after probing: `{status, error, overlaps, samples}` |
+| `POST` | `/visualizer/item/{viz_id}/stage-scenes/{node_id}/refine` | A user-described change; 409 until a fundamental one is acknowledged |
 
 In the UI, **Prepare all stages** generates each node's dynamic scene right
 after its expansion (the fresh mechanism text plus stage-targeted paper

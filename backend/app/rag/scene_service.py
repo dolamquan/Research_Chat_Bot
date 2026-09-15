@@ -12,6 +12,7 @@ of its inputs and can be tested without touching the database.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -27,8 +28,10 @@ from app.rag.scene_coder import (
     SCHEMA_VERSION,
     SceneCodingError,
     check_scene_code,
+    classify_refinement,
     generate_scene_code,
     generate_stage_code,
+    refine_scene_code,
     scene_code_from_diagram,
 )
 from app.storage.scene_store import get_scene, update_verification, upsert_scene
@@ -59,13 +62,77 @@ class NodeNotFound(LookupError):
     """The diagram has no node with the requested id."""
 
 
-def _verification_report(findings: List[str]) -> Dict[str, Any]:
+class RefinementNeedsAcknowledgement(RuntimeError):
+    """The requested change alters the method itself; the user must confirm first."""
+
+    def __init__(self, classification: Dict[str, Any]) -> None:
+        super().__init__(classification.get("reason") or "This change alters the method shown.")
+        self.classification = classification
+
+
+# A freshly written scene has passed the static checks and nothing else. Only
+# the browser can execute it, so it stays `unverified` until the player probes
+# it and reports back; "ready" in the UI means `passed`, never merely stored.
+RUNTIME_UNVERIFIED: Dict[str, Any] = {"status": "unverified"}
+MAX_REPORTED_OVERLAPS = 20
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _verification_report(
+    findings: List[str], runtime: Dict[str, Any] | None = None
+) -> Dict[str, Any]:
     """The static-check result in the shape `scene_store` persists.
 
     Far lighter than the old grounding report: with generated code there is
-    nothing to ground, only contract violations to name.
+    nothing to ground, only contract violations to name. `runtime` is the
+    browser's verdict when one exists; a new scene starts unverified.
     """
-    return {"valid": not findings, "findings": findings, "checks": "static"}
+    return {
+        "valid": not findings,
+        "findings": findings,
+        "checks": "static",
+        "runtime": dict(runtime or RUNTIME_UNVERIFIED),
+    }
+
+
+def _runtime_verdict(report: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalise what the browser sends after probing a scene.
+
+    Only the fields the repair prompt and the UI use are kept, and every text
+    field is bounded: this is untrusted client input that ends up both in the
+    database and in a model prompt.
+    """
+    status = str(report.get("status") or "")
+    if status not in {"passed", "failed"}:
+        raise ValueError(f"Unknown runtime status: {status!r}")
+    verdict: Dict[str, Any] = {"status": status, "checked_at": _now_iso()}
+    error = report.get("error")
+    if error:
+        verdict["error"] = str(error)[:2000]
+    overlaps = []
+    for pair in list(report.get("overlaps") or []):
+        if len(overlaps) >= MAX_REPORTED_OVERLAPS:
+            break
+        if not isinstance(pair, dict):
+            continue
+        seconds = [float(s) for s in list(pair.get("seconds") or [])[:12] if isinstance(s, (int, float))]
+        overlaps.append({
+            "a": str(pair.get("a") or "")[:80],
+            "b": str(pair.get("b") or "")[:80],
+            "seconds": seconds,
+        })
+    verdict["overlaps"] = overlaps
+    if report.get("samples") is not None:
+        verdict["samples"] = int(report["samples"])
+    return verdict
+
+
+def _previous_code(record: Dict[str, Any] | None) -> str | None:
+    code = str(((record or {}).get("scene") or {}).get("code") or "")
+    return code or None
 
 
 def _resolve_pdf_path(article: Dict[str, Any] | None) -> Path | None:
@@ -97,12 +164,18 @@ def build_scene(
     provider: str | None = None,
     model: str | None = None,
     llm: Any = None,
+    runtime_error: str | None = None,
+    layout_report: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Generate, check and persist scene code for one visualization.
 
     A cached scene is returned untouched unless `force` is set or its schema
     version is out of date, because code generation is the most expensive call
     in the pipeline and the diagram it animates rarely changes.
+
+    `runtime_error` / `layout_report` come from the browser after it probed
+    the stored scene. With `force`, the stored code is handed back to the
+    model with that evidence as a repair rather than a fresh generation.
     """
     # Validate the request before touching storage: a bad provider name is a
     # 422 about the request, and should not be reported as a missing
@@ -110,8 +183,8 @@ def build_scene(
     if provider is not None:
         resolve_provider(provider)
 
+    cached = get_scene(viz_id, SCHEMA_VERSION)
     if not force:
-        cached = get_scene(viz_id, SCHEMA_VERSION)
         if cached and not check_scene_code(str((cached.get("scene") or {}).get("code", ""))):
             return cached
 
@@ -143,6 +216,9 @@ def build_scene(
         llm=llm,
         provider=provider,
         model=model,
+        previous_code=_previous_code(cached) if force else None,
+        runtime_error=runtime_error,
+        layout_report=layout_report,
     )
 
     report = _verification_report(check_scene_code(scene.get("code", "")))
@@ -214,6 +290,8 @@ def build_stage_scene(
     provider: str | None = None,
     model: str | None = None,
     llm: Any = None,
+    runtime_error: str | None = None,
+    layout_report: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Generate, check and persist stage code for one diagram node.
 
@@ -221,12 +299,14 @@ def build_stage_scene(
     node nor its stored expansion changes often. The node's expansion (when one
     exists) supplies the mechanism text the code is written from; a node that
     was never expanded still gets a scene from the diagram context alone.
+    `runtime_error` / `layout_report` turn a forced rebuild into a repair of
+    the stored code, exactly as in `build_scene`.
     """
     if provider is not None:
         resolve_provider(provider)
 
+    cached = get_stage_scene(viz_id, node_id, SCHEMA_VERSION)
     if not force:
-        cached = get_stage_scene(viz_id, node_id, SCHEMA_VERSION)
         if cached and not check_scene_code(str((cached.get("scene") or {}).get("code", ""))):
             return cached
 
@@ -273,6 +353,9 @@ def build_stage_scene(
         llm=llm,
         provider=provider,
         model=model,
+        previous_code=_previous_code(cached) if force else None,
+        runtime_error=runtime_error,
+        layout_report=layout_report,
     )
 
     report = _verification_report(check_scene_code(scene.get("code", "")))
@@ -294,8 +377,169 @@ def fetch_stage_scenes(viz_id: str) -> List[Dict[str, Any]]:
             if not check_scene_code(str((record.get("scene") or {}).get("code", "")))]
 
 
+# --- runtime verdicts -------------------------------------------------------------
+
+
+def record_scene_runtime(viz_id: str, report: Dict[str, Any]) -> Dict[str, Any]:
+    """Store the browser's verdict on the whole-method scene.
+
+    Static validity is untouched: a scene can be contract-complete and still
+    crash at runtime, and the two facts are kept apart so the UI can say which.
+    """
+    record = fetch_scene(viz_id)
+    verification = {**(record.get("verification") or {}), "runtime": _runtime_verdict(report)}
+    updated = update_verification(viz_id, verification, SCHEMA_VERSION)
+    return updated or record
+
+
+def record_stage_runtime(viz_id: str, node_id: str, report: Dict[str, Any]) -> Dict[str, Any]:
+    """Store the browser's verdict on one stage scene."""
+    record = get_stage_scene(viz_id, node_id, SCHEMA_VERSION)
+    if record is None:
+        raise SceneNotFound(f"No stage scene has been generated for {viz_id}/{node_id}")
+    verification = {**(record.get("verification") or {}), "runtime": _runtime_verdict(report)}
+    # The store upserts on (viz, node, version); re-sending the scene as-is
+    # updates only the verification and timestamp.
+    return upsert_stage_scene(
+        viz_id=viz_id,
+        node_id=node_id,
+        scene=record["scene"],
+        verification=verification,
+        provider=record.get("provider", ""),
+        model=record.get("model", ""),
+        schema_version=SCHEMA_VERSION,
+    )
+
+
+# --- user-directed refinement ---------------------------------------------------
+
+
+def _classify_or_acknowledge(
+    instruction: str,
+    acknowledge_fundamental: bool,
+    *,
+    title: str,
+    llm: Any,
+    provider: str | None,
+    model: str | None,
+) -> Dict[str, Any]:
+    """Classify the request, or accept the user's acknowledgement of a fundamental one.
+
+    The acknowledgement only ever follows a refused attempt, so there is
+    nothing left to decide: the user has seen the warning and chosen to
+    proceed, and the record says so.
+    """
+    if acknowledge_fundamental:
+        return {
+            "kind": "fundamental",
+            "reason": "The user acknowledged that this changes the method shown.",
+            "basis": "acknowledged",
+        }
+    classification = classify_refinement(
+        instruction, title=title, llm=llm, provider=provider, model=model
+    )
+    if classification.get("kind") == "fundamental":
+        raise RefinementNeedsAcknowledgement(classification)
+    return classification
+
+
+def _refined_scene(
+    scene: Dict[str, Any], code: str, instruction: str, classification: Dict[str, Any]
+) -> Dict[str, Any]:
+    """The stored document with new code and one more entry in its edit trail.
+
+    The trail is what lets the UI say "edited by you" and, after a fundamental
+    change, "no longer follows the paper" — claims that must survive reloads.
+    """
+    edits = list(scene.get("edits") or [])
+    edits.append({
+        "instruction": " ".join(instruction.split())[:2000],
+        "kind": classification.get("kind", "cosmetic"),
+        "basis": classification.get("basis", ""),
+        "at": _now_iso(),
+    })
+    return {**scene, "code": code, "edits": edits}
+
+
+def refine_scene(
+    viz_id: str,
+    instruction: str,
+    acknowledge_fundamental: bool = False,
+    provider: str | None = None,
+    model: str | None = None,
+    llm: Any = None,
+) -> Dict[str, Any]:
+    """Apply one user-described change to the whole-method scene.
+
+    Returns `{"scene": record, "classification": {...}}`. Raises
+    `RefinementNeedsAcknowledgement` — before any code is generated — when the
+    change would alter the method and the user has not yet confirmed.
+    """
+    if provider is not None:
+        resolve_provider(provider)
+    record = fetch_scene(viz_id)
+    scene = record.get("scene") or {}
+    title = str(scene.get("title") or scene.get("algorithm_name") or "")
+    classification = _classify_or_acknowledge(
+        instruction, acknowledge_fundamental, title=title, llm=llm, provider=provider, model=model
+    )
+    code, origin = refine_scene_code(
+        str(scene.get("code") or ""), instruction,
+        title=title, kind=classification["kind"], llm=llm, provider=provider, model=model,
+    )
+    updated = upsert_scene(
+        viz_id=viz_id,
+        article_id=record["article_id"],
+        scene=_refined_scene(scene, code, instruction, classification),
+        verification=_verification_report(check_scene_code(code)),
+        provider=origin.get("provider", ""),
+        model=origin.get("model", ""),
+        extraction_strategy=record.get("extraction_strategy", ""),
+        schema_version=SCHEMA_VERSION,
+    )
+    return {"scene": updated, "classification": classification}
+
+
+def refine_stage_scene(
+    viz_id: str,
+    node_id: str,
+    instruction: str,
+    acknowledge_fundamental: bool = False,
+    provider: str | None = None,
+    model: str | None = None,
+    llm: Any = None,
+) -> Dict[str, Any]:
+    """Apply one user-described change to a stage scene; see `refine_scene`."""
+    if provider is not None:
+        resolve_provider(provider)
+    record = get_stage_scene(viz_id, node_id, SCHEMA_VERSION)
+    if record is None:
+        raise SceneNotFound(f"No stage scene has been generated for {viz_id}/{node_id}")
+    scene = record.get("scene") or {}
+    title = str(scene.get("title") or scene.get("algorithm_name") or "")
+    classification = _classify_or_acknowledge(
+        instruction, acknowledge_fundamental, title=title, llm=llm, provider=provider, model=model
+    )
+    code, origin = refine_scene_code(
+        str(scene.get("code") or ""), instruction,
+        title=title, kind=classification["kind"], llm=llm, provider=provider, model=model,
+    )
+    updated = upsert_stage_scene(
+        viz_id=viz_id,
+        node_id=node_id,
+        scene=_refined_scene(scene, code, instruction, classification),
+        verification=_verification_report(check_scene_code(code)),
+        provider=origin.get("provider", ""),
+        model=origin.get("model", ""),
+        schema_version=SCHEMA_VERSION,
+    )
+    return {"stage_scene": updated, "classification": classification}
+
+
 __all__ = [
     "NodeNotFound",
+    "RUNTIME_UNVERIFIED",
+    "RefinementNeedsAcknowledgement",
     "SceneCodingError",
     "SceneNotFound",
     "VisualizationNotFound",
@@ -305,5 +549,9 @@ __all__ = [
     "fetch_scene",
     "fetch_stage_scenes",
     "load_structured_paper",
+    "record_scene_runtime",
+    "record_stage_runtime",
+    "refine_scene",
+    "refine_stage_scene",
     "reverify_scene",
 ]

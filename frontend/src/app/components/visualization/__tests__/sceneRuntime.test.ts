@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   MAX_CODE_CHARS,
+  PERSISTENT_OVERLAP_SAMPLES,
+  PROBE_SECONDS,
   buildSceneSrcDoc,
   checkSceneCode,
+  layoutReportFor,
+  summarizeProbe,
 } from "../sceneRuntime";
 
 const GOOD_CODE = `
@@ -106,5 +110,61 @@ describe("buildSceneSrcDoc", () => {
   it("escapes every angle bracket in the embedded code", () => {
     const doc = buildSceneSrcDoc("function init(ctx) { const a = 1 < 2; }\nfunction update(ctx, t) {}");
     expect(doc).toContain("1 \\u003c 2");
+  });
+
+  it("animates, not probes, by default", () => {
+    const doc = buildSceneSrcDoc(GOOD_CODE);
+    expect(doc).toContain("const PROBE = false");
+    expect(doc).toContain("scene-verified");
+  });
+
+  it("in probe mode sweeps the whole cycle and skips the animation loop", () => {
+    const doc = buildSceneSrcDoc(GOOD_CODE, "Encoder", { probe: true });
+    expect(doc).toContain("const PROBE = true");
+    expect(doc).toContain(`const PROBE_SECONDS = ${PROBE_SECONDS}`);
+    expect(doc).toContain("module_.update(context, t)");
+    expect(doc).toContain("if (!PROBE) renderer.setAnimationLoop");
+    // The verdict leaves the frame the same way errors do: one postMessage.
+    expect(doc).toContain("postMessage(report");
+  });
+});
+
+describe("summarizeProbe", () => {
+  it("merges the same pair across samples and records when it collided", () => {
+    const verdict = summarizeProbe({
+      type: "scene-verified", ok: true, samples: [
+        { t: 0, overlaps: [] },
+        { t: 3, overlaps: [{ a: 'emb("I")', b: "0.20" }, { a: "Scale", b: "figure" }] },
+        { t: 6, overlaps: [{ a: "0.20", b: 'emb("I")' }] }, // reversed order, same pair
+        { t: 9, overlaps: [{ a: 'emb("I")', b: "0.20" }] },
+      ],
+    });
+    expect(verdict.status).toBe("passed");
+    expect(verdict.samples).toBe(4);
+    expect(verdict.overlaps).toEqual([
+      { a: 'emb("I")', b: "0.20", seconds: [3, 6, 9] },
+      { a: "Scale", b: "figure", seconds: [3] },
+    ]);
+  });
+
+  it("treats a thrown error as a failed verdict and keeps the stack for the repair", () => {
+    const verdict = summarizeProbe({
+      type: "scene-verified", ok: false,
+      error: "TypeError: row.forEach is not a function\n    at init", samples: [],
+    });
+    expect(verdict.status).toBe("failed");
+    expect(verdict.error).toContain("at init");
+  });
+
+  it("builds a layout report only from persistent pairs", () => {
+    const verdict = summarizeProbe({
+      type: "scene-verified", ok: true, samples: [
+        { t: 3, overlaps: [{ a: "a", b: "b" }, { a: "c", b: "d" }] },
+        { t: 6, overlaps: [{ a: "a", b: "b" }] },
+      ],
+    });
+    expect(PERSISTENT_OVERLAP_SAMPLES).toBe(2);
+    expect(layoutReportFor(verdict)).toEqual({ pairs: [{ a: "a", b: "b", seconds: [3, 6] }], samples: 2 });
+    expect(layoutReportFor({ status: "passed", overlaps: [], samples: 9 })).toBeNull();
   });
 });

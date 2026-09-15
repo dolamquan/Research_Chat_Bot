@@ -5,8 +5,12 @@ const api = vi.hoisted(() => Object.fromEntries([
   "getArticles", "getVisualizations", "getPreparedStages", "getStageScenes",
   "getVariantsForVisualization", "getDiscussion", "getMissingBackendRoutes",
   "expandVisualizationNode", "generateStageScene", "verifyTarget",
+  "reportStageSceneRuntime", "refineStageScene",
 ].map((name) => [name, vi.fn()])));
 vi.mock("../../../api", () => api);
+// The off-screen probe needs WebGL; here it is a verdict we choose per test.
+const probe = vi.hoisted(() => vi.fn());
+vi.mock("../sceneProbe", () => ({probeScene: probe}));
 vi.mock("../../Visualizer3D", () => ({Visualizer3D: ({diagram, onNodeClick}: any) => (
   <div>{diagram.nodes.map((node: any) => <button key={node.id} onClick={() => onNodeClick(node)}>Open {node.label}</button>)}</div>
 )}));
@@ -28,9 +32,19 @@ const viz = {
   worked_example: {input_text: "example", tokens: []},
   diagram: {title: "DRAGIN", nodes, edges: [], groups: []},
 };
+// A saved scene the browser has already run: ready without another probe.
 function scene(nodeId: string) {
   return {viz_id: viz.viz_id, node_id: nodeId, valid: true, updated_at: "today",
-    scene: {code: "function init(ctx) {} function update(ctx,t) {}"}};
+    scene: {code: "function init(ctx) {} function update(ctx,t) {}"},
+    verification: {valid: true, findings: [], runtime: {status: "passed"}}};
+}
+// A saved scene that passed the static checks but was never executed.
+function unverified(nodeId: string) {
+  return {...scene(nodeId), verification: {valid: true, findings: [], runtime: {status: "unverified"}}};
+}
+const passed = {status: "passed", overlaps: [], samples: 9};
+function crash(error: string) {
+  return {status: "failed", error, overlaps: [], samples: 0};
 }
 function notes() {
   return {prepared: nodes.map(n => n.id), expansions: nodes.map(n => ({node_id: n.id, content: {process_steps: []}}))};
@@ -56,11 +70,81 @@ beforeEach(() => {
   api.getVariantsForVisualization.mockResolvedValue({variants: [], tree: []});
   api.getDiscussion.mockResolvedValue({history: []});
   api.expandVisualizationNode.mockImplementation(async ({nodeId}: any) => ({expansion: {node_id: nodeId, content: {process_steps: []}}}));
-  api.generateStageScene.mockImplementation(async ({nodeId}: any) => ({stage_scene: scene(nodeId)}));
+  // Freshly generated code has not run yet; the probe decides.
+  api.generateStageScene.mockImplementation(async ({nodeId}: any) => ({stage_scene: unverified(nodeId)}));
+  probe.mockResolvedValue(passed);
+  api.reportStageSceneRuntime.mockImplementation(async ({nodeId, verdict}: any) => ({
+    stage_scene: {...scene(nodeId), verification: {valid: true, findings: [], runtime: {status: verdict.status, error: verdict.error}}},
+  }));
 });
 afterEach(cleanup);
 
 describe("Prepare all readiness", () => {
+  it("does not announce readiness for saved animations that were never run", async () => {
+    api.getStageScenes.mockResolvedValue({stage_scenes: nodes.map(n => unverified(n.id))});
+    await openPaper();
+    const button = await screen.findByRole("button", {name: /Prepare all/});
+    expect(button).toHaveTextContent("0/2");
+    expect(screen.queryByText("All stages ready")).not.toBeInTheDocument();
+    fireEvent.click(button);
+    await screen.findByText("All stages ready");
+    // Running saved code costs one probe each and no model call.
+    expect(probe).toHaveBeenCalledTimes(2);
+    expect(api.generateStageScene).not.toHaveBeenCalled();
+    expect(api.reportStageSceneRuntime).toHaveBeenCalledTimes(2);
+    expect(api.reportStageSceneRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({verdict: expect.objectContaining({status: "passed"})}),
+    );
+  });
+
+  it("repairs a crashing animation with the error it threw before calling it ready", async () => {
+    probe.mockResolvedValueOnce(crash("TypeError: row.forEach is not a function\n    at init (<anonymous>:12:5)"));
+    await openPaper();
+    fireEvent.click(await screen.findByRole("button", {name: /Prepare all/}));
+    await screen.findByText("All stages ready");
+    const repair = api.generateStageScene.mock.calls.find(([args]: any) => args.force);
+    expect(repair?.[0]).toEqual(expect.objectContaining({
+      force: true, runtimeError: expect.stringContaining("row.forEach is not a function"),
+    }));
+    expect(probe).toHaveBeenCalledTimes(3); // two stages, plus the re-run after the repair
+  });
+
+  it("keeps a stage unready when it still crashes after repair, and says why", async () => {
+    probe.mockImplementation(async (_code: string, title: string) =>
+      title === "Retrieval" ? crash("ReferenceError: rows is not defined") : passed);
+    await openPaper();
+    fireEvent.click(await screen.findByRole("button", {name: /Prepare all/}));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Could not prepare 1 stage");
+    expect(alert).toHaveTextContent("rows is not defined");
+    expect(screen.queryByText("All stages ready")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", {name: /Prepare all/})).toHaveTextContent("1/2");
+    expect(api.reportStageSceneRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({nodeId: "1", verdict: expect.objectContaining({status: "failed"})}),
+    );
+  });
+
+  it("sends persistent label overlaps back as a layout repair", async () => {
+    probe.mockResolvedValueOnce({status: "passed", samples: 9, overlaps: [{a: 'emb("I")', b: "0.20", seconds: [3, 6, 9]}]});
+    await openPaper();
+    fireEvent.click(await screen.findByRole("button", {name: /Prepare all/}));
+    await screen.findByText("All stages ready");
+    const repair = api.generateStageScene.mock.calls.find(([args]: any) => args.layoutReport);
+    expect(repair?.[0].layoutReport).toEqual({pairs: [{a: 'emb("I")', b: "0.20", seconds: [3, 6, 9]}], samples: 9});
+  });
+
+  it("verifies a stage before opening it and offers a repair when it crashes", async () => {
+    probe.mockResolvedValue(crash("TypeError: cells is undefined"));
+    await openPaper();
+    fireEvent.click(screen.getByRole("button", {name: "Open Feedback Loop"}));
+    await screen.findByRole("button", {name: "Repair animation"});
+    expect(screen.queryByTestId("cached-animation")).not.toBeInTheDocument();
+    // Generate, then the budget of repairs, each re-run; never opened.
+    expect(probe).toHaveBeenCalledTimes(3);
+    expect(api.generateStageScene).toHaveBeenCalledTimes(3);
+    expect(screen.getByText("Error details").parentElement).toHaveTextContent("cells is undefined");
+  });
+
   it("shows the backend cause for failed explanations and retries without regenerating saved animations", async () => {
     api.getPreparedStages.mockResolvedValue({prepared: [], expansions: []});
     api.getStageScenes.mockResolvedValue({stage_scenes: nodes.map(n => scene(n.id))});

@@ -18,7 +18,10 @@ VIEW_LABELS = {
     "crawler": "Crawler",
     "reddit": "Reddit",
     "notes": "Notes",
-    "agent": "Agent console",
+    "console": "Console (tool catalog, activity, jobs, diagnostics)",
+    "graph": "Graph RAG explorer",
+    # Sent by browsers that predate the Console; same page.
+    "agent": "Console (tool catalog, activity, jobs, diagnostics)",
     "graph": "Graph RAG",
     "evaluation": "Evaluation",
     "visualizer": "Visualizer",

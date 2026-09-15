@@ -160,7 +160,7 @@ class AssistantConnection:
 
         self.workspace = normalize_workspace(frame.workspace)
         self.client_info = dict(frame.client or {})
-        session = await run_in_threadpool(self._resolve_session, frame.session_id)
+        session = await run_in_threadpool(self._resolve_session, frame.session_id, frame.new_session)
         self.session_id = session["id"]
         messages = await run_in_threadpool(self.history.recent_messages, self.session_id, history_limit())
         tool_count = await run_in_threadpool(lambda: len(catalog.tool_catalog()))
@@ -182,8 +182,15 @@ class AssistantConnection:
             "catalog_tool_count": tool_count,
         })
 
-    def _resolve_session(self, requested: str | None) -> Dict[str, Any]:
-        """The caller's assistant session: the requested one if theirs, else the latest, else a new one."""
+    def _resolve_session(self, requested: str | None, new_session: bool = False) -> Dict[str, Any]:
+        """The caller's assistant session: the requested one if theirs, else the latest, else a new one.
+
+        `new_session` is the browser saying the user asked for a fresh start,
+        which is the one case where falling back to the latest session would
+        hand back the very conversation they were trying to leave.
+        """
+        if new_session:
+            return self.history.create_session(title="Assistant", kind=SESSION_KIND)
         if requested:
             try:
                 session = self.history.get_session_summary(requested)

@@ -1,7 +1,7 @@
-from typing import Any, Dict, Literal
+from typing import Any, Dict, List, Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.rag.llm_provider import (
     ProviderNotConfigured,
@@ -13,6 +13,7 @@ from app.rag.retriever import PaperStoreUnavailable
 from app.rag.scene_coder import SceneCodingError
 from app.rag.scene_service import (
     NodeNotFound,
+    RefinementNeedsAcknowledgement,
     SceneNotFound,
     VisualizationNotFound,
     build_scene,
@@ -20,6 +21,10 @@ from app.rag.scene_service import (
     build_stage_scene,
     fetch_scene,
     fetch_stage_scenes,
+    record_scene_runtime,
+    record_stage_runtime,
+    refine_scene,
+    refine_stage_scene,
     reverify_scene,
 )
 from app.auth.context import current_user
@@ -139,6 +144,10 @@ class GenerateSceneRequest(BaseModel):
     # rather than failing outright. Off by default so a misconfigured
     # deployment is visible instead of silently degraded.
     allow_offline_fallback: bool = False
+    # Evidence from the browser's probe of the stored scene. With `force`,
+    # the rebuild becomes a repair of that code instead of a fresh attempt.
+    runtime_error: str | None = Field(default=None, max_length=4000)
+    layout_report: Dict[str, Any] | None = None
 
 
 @router.post("/generate-scene")
@@ -152,6 +161,8 @@ def generate_scene_endpoint(request: GenerateSceneRequest) -> Dict[str, Any]:
             force=request.force,
             provider=request.provider,
             model=request.model,
+            runtime_error=request.runtime_error,
+            layout_report=request.layout_report,
         )
     except PaperStoreUnavailable as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
@@ -196,6 +207,8 @@ class GenerateStageSceneRequest(BaseModel):
     force: bool = False
     provider: str | None = None
     model: str | None = None
+    runtime_error: str | None = Field(default=None, max_length=4000)
+    layout_report: Dict[str, Any] | None = None
 
 
 @router.post("/generate-stage-scene")
@@ -208,6 +221,8 @@ def generate_stage_scene_endpoint(request: GenerateStageSceneRequest) -> Dict[st
             force=request.force,
             provider=request.provider,
             model=request.model,
+            runtime_error=request.runtime_error,
+            layout_report=request.layout_report,
         )
     except PaperStoreUnavailable as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
@@ -232,6 +247,101 @@ def list_stage_scenes_endpoint(viz_id: str) -> Dict[str, Any]:
     if not _owned_by_caller(viz_id):
         return {"stage_scenes": []}
     return {"stage_scenes": fetch_stage_scenes(viz_id)}
+
+
+# --- runtime verdicts ---------------------------------------------------------
+#
+# The backend cannot execute Three.js. After the browser probes a scene — runs
+# init, sweeps update() across the animation cycle, measures label overlaps —
+# it posts the verdict here so "ready" survives a reload and a failed scene is
+# never counted as prepared.
+
+
+class RuntimeReportRequest(BaseModel):
+    status: Literal["passed", "failed"]
+    error: str | None = Field(default=None, max_length=4000)
+    overlaps: List[Dict[str, Any]] = Field(default_factory=list, max_length=50)
+    samples: int | None = Field(default=None, ge=0, le=1000)
+
+
+@router.post("/item/{viz_id}/runtime")
+def report_scene_runtime_endpoint(viz_id: str, request: RuntimeReportRequest) -> Dict[str, Any]:
+    _require_owned(viz_id)
+    try:
+        return {"scene": record_scene_runtime(viz_id, request.model_dump())}
+    except SceneNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+@router.post("/item/{viz_id}/stage-scenes/{node_id}/runtime")
+def report_stage_runtime_endpoint(
+    viz_id: str, node_id: str, request: RuntimeReportRequest
+) -> Dict[str, Any]:
+    _require_owned(viz_id)
+    try:
+        return {"stage_scene": record_stage_runtime(viz_id, node_id, request.model_dump())}
+    except SceneNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+
+
+# --- user-directed refinement -------------------------------------------------
+
+
+class RefineRequest(BaseModel):
+    instruction: str = Field(min_length=3, max_length=2000)
+    # A change that alters the method itself is refused with 409 until the
+    # user has seen the warning and re-sent the request with this set.
+    acknowledge_fundamental: bool = False
+    provider: str | None = None
+    model: str | None = None
+
+
+def _refinement_errors(run):
+    """Shared error mapping for both refine endpoints."""
+    try:
+        return run()
+    except RefinementNeedsAcknowledgement as error:
+        # 409: the request is well-formed but conflicts with what the scene
+        # claims to be (an illustration of the paper). Nothing was generated.
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "needs_acknowledgement", **error.classification},
+        ) from error
+    except SceneNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except UnknownProvider as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    except (ProviderNotConfigured, SceneCodingError) as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+@router.post("/item/{viz_id}/refine")
+def refine_scene_endpoint(viz_id: str, request: RefineRequest) -> Dict[str, Any]:
+    """Apply one user-described change to the whole-method scene."""
+    _require_owned(viz_id)
+    return _refinement_errors(lambda: refine_scene(
+        viz_id,
+        request.instruction,
+        acknowledge_fundamental=request.acknowledge_fundamental,
+        provider=request.provider,
+        model=request.model,
+    ))
+
+
+@router.post("/item/{viz_id}/stage-scenes/{node_id}/refine")
+def refine_stage_scene_endpoint(
+    viz_id: str, node_id: str, request: RefineRequest
+) -> Dict[str, Any]:
+    """Apply one user-described change to a stage scene."""
+    _require_owned(viz_id)
+    return _refinement_errors(lambda: refine_stage_scene(
+        viz_id,
+        node_id,
+        request.instruction,
+        acknowledge_fundamental=request.acknowledge_fundamental,
+        provider=request.provider,
+        model=request.model,
+    ))
 
 
 @router.get("/providers")

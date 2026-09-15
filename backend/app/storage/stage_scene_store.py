@@ -1,7 +1,7 @@
 """Persistence for per-node generated stage scenes (Three.js code documents).
 
 Follows the conventions of `scene_store`: the same `DB_PATH`, a `_connect()`
-that runs an idempotent `init_db()`, `sqlite3.Row` access, ISO-8601 UTC
+that runs an idempotent `init_db()`, `db.Row` access, ISO-8601 UTC
 timestamps and `*_json` columns unpacked in the row mapper. Stage scenes live
 in their own table rather than inside `node_expansions.content` because they
 are regenerated on a different cadence than the expansion text, and carry
@@ -14,24 +14,23 @@ row rather than accumulating history.
 from __future__ import annotations
 
 import json
-import sqlite3
 import uuid
 from typing import Any, Dict, List
 
 from app.storage.visualization_store import DATA_DIR, DB_PATH, _now
+from app.storage import db
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    init_db(connection)
-    return connection
+def _connect():
+    return db.connect(DB_PATH, init_db)
 
 
-def init_db(connection: sqlite3.Connection | None = None) -> None:
-    owns_connection = connection is None
-    conn = connection or sqlite3.connect(DB_PATH)
+def init_db(connection: db.Connection | None = None) -> None:
+    if connection is None:
+        with db.connect(DB_PATH) as conn:
+            init_db(conn)
+        return
+    conn = connection
 
     conn.execute(
         """
@@ -59,11 +58,9 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     )
 
     conn.commit()
-    if owns_connection:
-        conn.close()
 
 
-def _row_to_record(row: sqlite3.Row) -> Dict[str, Any]:
+def _row_to_record(row: db.Row) -> Dict[str, Any]:
     return {
         "stage_scene_id": row["stage_scene_id"],
         "viz_id": row["viz_id"],

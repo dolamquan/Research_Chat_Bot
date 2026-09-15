@@ -1,5 +1,4 @@
 import json
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -7,6 +6,7 @@ from typing import Any, Dict, List
 
 from app.auth.context import UNSET, resolve_owner
 from app.storage.ownership import ensure_owner_column, owner_clause
+from app.storage import db
 
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
@@ -17,17 +17,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    init_db(connection)
-    return connection
+def _connect():
+    return db.connect(DB_PATH, init_db)
 
 
-def init_db(connection: sqlite3.Connection | None = None) -> None:
-    owns_connection = connection is None
-    conn = connection or sqlite3.connect(DB_PATH)
+def init_db(connection: db.Connection | None = None) -> None:
+    if connection is None:
+        with db.connect(DB_PATH) as conn:
+            init_db(conn)
+        return
+    conn = connection
 
     conn.execute(
         """
@@ -61,11 +60,9 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     ensure_owner_column(conn, "ingestion_jobs")
     conn.commit()
 
-    if owns_connection:
-        conn.close()
 
 
-def _row_to_job(row: sqlite3.Row) -> Dict[str, Any]:
+def _row_to_job(row: db.Row) -> Dict[str, Any]:
     job = dict(row)
     try:
         job["tags"] = json.loads(job.pop("tags_json") or "[]")

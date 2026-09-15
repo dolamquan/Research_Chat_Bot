@@ -1,7 +1,9 @@
 import type {
+  RefineOutcome,
   SceneRecord,
   StageSceneRecord,
 } from "./components/visualization/sceneTypes";
+import type { LayoutReport, RuntimeVerdict } from "./components/visualization/sceneRuntime";
 import { hasSketch, sketchFingerprint, renderSketch, CANVAS_ATTACHMENT_ID } from "./sketchExport";
 import type {
   AgentContext,
@@ -904,8 +906,11 @@ export function listNotionDatabases(): Promise<{ databases: NotionDatabase[] }> 
   return requestJson("/integrations/notion/databases");
 }
 
-export function getAgentSessions(): Promise<{ sessions: AgentSession[] }> {
-  return requestJson("/agent/sessions");
+/** `agent` is the retired Agent tab's sessions, `assistant` Zoe's, `all` both. */
+export function getAgentSessions(
+  kind: "agent" | "assistant" | "all" = "agent",
+): Promise<{ sessions: AgentSession[] }> {
+  return requestJson(`/agent/sessions?kind=${kind}`);
 }
 
 export function getAgentSession(sessionId: string): Promise<AgentSessionDetail> {
@@ -1000,12 +1005,18 @@ export function generateAlgorithmScene({
   provider,
   model,
   allowOfflineFallback = false,
+  runtimeError,
+  layoutReport,
 }: {
   vizId: string;
   force?: boolean;
   provider?: string;
   model?: string;
   allowOfflineFallback?: boolean;
+  /** With `force`, the stored code is repaired against this crash… */
+  runtimeError?: string;
+  /** …or against these measured label collisions, instead of rewritten blind. */
+  layoutReport?: LayoutReport;
 }): Promise<{ scene: SceneRecord; fallback?: string }> {
   return requestJson("/visualizer/generate-scene", {
     method: "POST",
@@ -1016,6 +1027,8 @@ export function generateAlgorithmScene({
       provider: provider ?? null,
       model: model ?? null,
       allow_offline_fallback: allowOfflineFallback,
+      runtime_error: runtimeError ?? null,
+      layout_report: layoutReport ?? null,
     }),
   });
 }
@@ -1052,14 +1065,20 @@ export function generateStageScene({
   force = false,
   provider,
   model,
+  runtimeError,
+  layoutReport,
 }: {
   vizId: string;
   nodeId: string;
   force?: boolean;
   provider?: string;
   model?: string;
+  runtimeError?: string;
+  layoutReport?: LayoutReport;
 }): Promise<{ stage_scene: StageSceneRecord }> {
-  const key = JSON.stringify([vizId, nodeId, force, provider ?? null, model ?? null]);
+  const key = JSON.stringify([
+    vizId, nodeId, force, provider ?? null, model ?? null, runtimeError ?? null, layoutReport ?? null,
+  ]);
   const pending = pendingStageScenes.get(key);
   if (pending) return pending;
   const request = requestJson<{ stage_scene: StageSceneRecord }>("/visualizer/generate-stage-scene", {
@@ -1071,6 +1090,8 @@ export function generateStageScene({
       force,
       provider: provider ?? null,
       model: model ?? null,
+      runtime_error: runtimeError ?? null,
+      layout_report: layoutReport ?? null,
     }),
   }).finally(() => pendingStageScenes.delete(key));
   pendingStageScenes.set(key, request);
@@ -1082,6 +1103,126 @@ export function getStageScenes(
 ): Promise<{ stage_scenes: StageSceneRecord[] }> {
   return requestJson(
     `/visualizer/item/${encodeURIComponent(vizId)}/stage-scenes`,
+  );
+}
+
+// Runtime verdicts. The server cannot run Three.js; after the browser has
+// probed a scene it posts what happened so "ready" survives a reload and a
+// crashing scene is never counted as prepared.
+
+function verdictBody(verdict: RuntimeVerdict): string {
+  return JSON.stringify({
+    status: verdict.status,
+    error: verdict.error ?? null,
+    overlaps: verdict.overlaps,
+    samples: verdict.samples,
+  });
+}
+
+export function reportAlgorithmSceneRuntime({
+  vizId,
+  verdict,
+}: {
+  vizId: string;
+  verdict: RuntimeVerdict;
+}): Promise<{ scene: SceneRecord }> {
+  return requestJson(`/visualizer/item/${encodeURIComponent(vizId)}/runtime`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: verdictBody(verdict),
+  });
+}
+
+export function reportStageSceneRuntime({
+  vizId,
+  nodeId,
+  verdict,
+}: {
+  vizId: string;
+  nodeId: string;
+  verdict: RuntimeVerdict;
+}): Promise<{ stage_scene: StageSceneRecord }> {
+  return requestJson(
+    `/visualizer/item/${encodeURIComponent(vizId)}/stage-scenes/${encodeURIComponent(nodeId)}/runtime`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: verdictBody(verdict) },
+  );
+}
+
+// User-directed refinement. A 409 is not an error here: it is the server
+// saying the change alters the method and asking the user to confirm, with
+// nothing generated yet. `requestJson` would flatten that into a thrown
+// "[object Object]", so this path reads the body itself.
+async function refineRequest<T>(
+  path: string,
+  body: { instruction: string; acknowledge_fundamental: boolean },
+  key: "scene" | "stage_scene",
+): Promise<RefineOutcome<T>> {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  const token = accessTokenProvider();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  if (response.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  if (response.status === 409) {
+    const payload = await response.json().catch(() => ({}));
+    const detail = (payload?.detail ?? {}) as { kind?: string; reason?: string; basis?: string };
+    return {
+      status: "needs_acknowledgement",
+      classification: {
+        kind: detail.kind === "cosmetic" ? "cosmetic" : "fundamental",
+        reason: String(detail.reason ?? ""),
+        basis: String(detail.basis ?? ""),
+      },
+    };
+  }
+  if (!response.ok) {
+    let detail = `${response.status} ${response.statusText}`;
+    try {
+      const payload = await response.json();
+      if (typeof payload?.detail === "string") detail = payload.detail;
+    } catch {
+      // Keep the HTTP status when the response is not JSON.
+    }
+    throw new Error(detail);
+  }
+  const payload = await response.json();
+  return { status: "refined", record: payload[key] as T, classification: payload.classification };
+}
+
+export function refineAlgorithmScene({
+  vizId,
+  instruction,
+  acknowledgeFundamental = false,
+}: {
+  vizId: string;
+  instruction: string;
+  acknowledgeFundamental?: boolean;
+}): Promise<RefineOutcome<SceneRecord>> {
+  return refineRequest<SceneRecord>(
+    `/visualizer/item/${encodeURIComponent(vizId)}/refine`,
+    { instruction, acknowledge_fundamental: acknowledgeFundamental },
+    "scene",
+  );
+}
+
+export function refineStageScene({
+  vizId,
+  nodeId,
+  instruction,
+  acknowledgeFundamental = false,
+}: {
+  vizId: string;
+  nodeId: string;
+  instruction: string;
+  acknowledgeFundamental?: boolean;
+}): Promise<RefineOutcome<StageSceneRecord>> {
+  return refineRequest<StageSceneRecord>(
+    `/visualizer/item/${encodeURIComponent(vizId)}/stage-scenes/${encodeURIComponent(nodeId)}/refine`,
+    { instruction, acknowledge_fundamental: acknowledgeFundamental },
+    "stage_scene",
   );
 }
 

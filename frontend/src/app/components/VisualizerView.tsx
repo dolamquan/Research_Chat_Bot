@@ -11,6 +11,7 @@ import {
   Play,
   RotateCcw,
   Sparkles,
+  Wand2,
   X,
 } from "lucide-react";
 
@@ -33,6 +34,10 @@ import {
   getVariantsForVisualization,
   getVisualizations,
   proposeModification,
+  refineAlgorithmScene,
+  refineStageScene,
+  reportAlgorithmSceneRuntime,
+  reportStageSceneRuntime,
   verifyTarget,
 } from "../api";
 import { useRegisterUiActions, useReportWorkspace } from "../assistant";
@@ -60,7 +65,15 @@ import {
 import { buildDiagramDiff, edgeKey } from "./diagramDiff";
 import SceneCodePlayer from "./visualization/SceneCodePlayer";
 import SceneFrame from "./visualization/SceneFrame";
+import SceneRefinePanel from "./visualization/SceneRefinePanel";
+import { probeScene } from "./visualization/sceneProbe";
 import { checkSceneCode } from "./visualization/sceneRuntime";
+import { sceneRuntimeStatus } from "./visualization/sceneTypes";
+import {
+  ensureVerified,
+  firstLine,
+  type RepairEvidence,
+} from "./visualization/sceneVerification";
 import type {
   SceneRecord,
   StageSceneRecord,
@@ -77,6 +90,14 @@ const MAX_SCALE = 2.5;
 
 function sceneIsPlayable(record: StageSceneRecord): boolean {
   return record.valid !== false && checkSceneCode(record.scene.code).length === 0;
+}
+
+// Playable means the code passes the contract; ready means the browser has
+// also run it through a full cycle without a crash. "All stages ready" and
+// the prepare counter use ready, so a scene that throws on its first frame
+// is never announced as prepared.
+function sceneIsReady(record: StageSceneRecord): boolean {
+  return sceneIsPlayable(record) && sceneRuntimeStatus(record) === "passed";
 }
 
 const EDGE_KIND_LIST = [
@@ -188,6 +209,13 @@ export function VisualizerView() {
   const stageSceneDismissedRef = useRef<Set<string>>(new Set());
   // Bumping this rebuilds the dynamic scene from t=0 (the bar's replay button).
   const [stageRestartToken, setStageRestartToken] = useState(0);
+  // Stages whose scene is being run off-screen right now (after generation,
+  // a repair, or an edit). Distinct from loading: the code exists; it is
+  // being executed to find out whether it works.
+  const [stageVerifyingIds, setStageVerifyingIds] = useState<Set<string>>(new Set());
+  // The last runtime error per stage, kept whole so a repair can quote it.
+  const stageRuntimeErrorsRef = useRef<Map<string, string>>(new Map());
+  const [refineOpen, setRefineOpen] = useState(false);
   const [viewport, setViewport] = useState({ x: 0, y: 0, scale: 1 });
   // --- variant lab -------------------------------------------------------
   const [variants, setVariants] = useState<AlgorithmVariant[]>([]);
@@ -226,18 +254,53 @@ export function VisualizerView() {
     };
   }, [dockTab, viz?.viz_id]);
 
+  const [sceneVerifying, setSceneVerifying] = useState(false);
+
+  // The same loop the stages use: run the code off-screen, hand a crash back
+  // to the model with its real error, record the verdict.
+  const verifyWholeScene = useCallback((vizId: string, record: SceneRecord) => {
+    setSceneVerifying(true);
+    return ensureVerified(record, {
+      probe: (candidate) => probeScene(candidate.scene.code, candidate.scene.title),
+      repair: async (evidence) =>
+        (
+          await generateAlgorithmScene({
+            vizId,
+            force: true,
+            runtimeError: evidence.runtimeError,
+            layoutReport: evidence.layoutReport,
+          })
+        ).scene,
+      report: async (verdict) => (await reportAlgorithmSceneRuntime({ vizId, verdict })).scene,
+    }).finally(() => setSceneVerifying(false));
+  }, []);
+
   const requestScene = useCallback(
-    async (force: boolean) => {
+    async (force: boolean, evidence?: RepairEvidence) => {
       if (!viz) return;
+      const vizId = viz.viz_id;
       setSceneLoading(true);
       setSceneError(null);
       try {
         const response = await generateAlgorithmScene({
-          vizId: viz.viz_id,
+          vizId,
           force,
           allowOfflineFallback: true,
+          runtimeError: evidence?.runtimeError,
+          layoutReport: evidence?.layoutReport,
         });
         setSceneRecord(response.scene);
+        // A scene the browser has already passed is not re-run; anything else
+        // is, before it is presented as finished.
+        if (sceneRuntimeStatus(response.scene) !== "passed") {
+          const outcome = await verifyWholeScene(vizId, response.scene);
+          setSceneRecord(outcome.record);
+          if (outcome.verdict.status !== "passed") {
+            setSceneError(
+              `The scene still crashes after repair: ${firstLine(outcome.verdict.error)}`,
+            );
+          }
+        }
       } catch (error) {
         setSceneError(
           error instanceof Error ? error.message : "Scene generation failed.",
@@ -246,7 +309,32 @@ export function VisualizerView() {
         setSceneLoading(false);
       }
     },
-    [viz?.viz_id],
+    [viz?.viz_id, verifyWholeScene],
+  );
+
+  const refineWholeScene = useCallback(
+    async (instruction: string, acknowledgeFundamental: boolean) => {
+      if (!viz) throw new Error("No diagram is open.");
+      const vizId = viz.viz_id;
+      const outcome = await refineAlgorithmScene({ vizId, instruction, acknowledgeFundamental });
+      if (outcome.status !== "refined") return outcome;
+      setSceneRecord(outcome.record);
+      setSceneError(null);
+      // The edit has not run yet. Verify in the background; the verdict
+      // lands on the record either way.
+      void verifyWholeScene(vizId, outcome.record)
+        .then((verified) => {
+          setSceneRecord(verified.record);
+          if (verified.verdict.status !== "passed") {
+            setSceneError(
+              `The edited scene crashes while running: ${firstLine(verified.verdict.error)}`,
+            );
+          }
+        })
+        .catch(() => undefined);
+      return outcome;
+    },
+    [viz?.viz_id, verifyWholeScene],
   );
 
   const [discussing, setDiscussing] = useState(false);
@@ -589,8 +677,10 @@ export function VisualizerView() {
   const preparationLoadFailed = preparationState.diagramId === activeDiagramId &&
     preparationState.status === "error";
   const preparationNodes = activeVariant?.diagram.nodes ?? viz?.diagram.nodes ?? [];
+  const stageNeedsWork = (nodeId: string) =>
+    !stageScenes[nodeId] || !sceneIsReady(stageScenes[nodeId]);
   const unpreparedCount = preparationNodes.filter(
-    (node) => !preparedIds.has(node.id) || !stageScenes[node.id],
+    (node) => !preparedIds.has(node.id) || stageNeedsWork(node.id),
   ).length;
 
   const prepareAbortRef = useRef(false);
@@ -812,7 +902,7 @@ export function VisualizerView() {
     // Both tasks use the paper independently. Start the animation immediately;
     // the deep dive must not add a second model call to time-to-first-scene.
     const pending = nodes.filter(
-      (node) => !preparedIds.has(node.id) || !stageScenes[node.id],
+      (node) => !preparedIds.has(node.id) || stageNeedsWork(node.id),
     );
     if (pending.length === 0) return;
 
@@ -830,16 +920,26 @@ export function VisualizerView() {
     // Prioritize playable scenes. A shared request queue preserves the original
     // five-call budget even when notes are cached or take much longer to write.
     const remaining = new Map(pending.map((node) => [node.id,
-      Number(!stageScenes[node.id]) + Number(!preparedIds.has(node.id)),
+      Number(stageNeedsWork(node.id)) + Number(!preparedIds.has(node.id)),
     ]));
     const tasks = [
-      ...pending.filter((node) => !stageScenes[node.id]).map((node) => ({node, run: async () => {
-        const response = await generateStageScene({
-          vizId: targetDiagramId ?? viz.viz_id, nodeId: node.id,
-        });
+      ...pending.filter((node) => stageNeedsWork(node.id)).map((node) => ({node, run: async () => {
+        const vizId = targetDiagramId ?? viz.viz_id;
+        let record = stageScenes[node.id];
+        if (!record) {
+          const response = await generateStageScene({ vizId, nodeId: node.id });
+          if (diagramRef.current !== targetDiagramId) return;
+          if (!sceneIsPlayable(response.stage_scene)) throw new Error("Invalid stage scene");
+          record = response.stage_scene;
+        }
+        // Stored is not ready: run it. A saved scene that was never probed
+        // costs only the probe; a crash costs one repair with the real error.
+        const outcome = await verifyStageScene(vizId, node, record);
         if (diagramRef.current !== targetDiagramId) return;
-        if (!sceneIsPlayable(response.stage_scene)) throw new Error("Invalid stage scene");
-        setStageScenes((current) => ({...current, [node.id]: response.stage_scene}));
+        keepStageOutcome(node.id, outcome);
+        if (outcome.verdict.status !== "passed") {
+          throw new Error(`“${node.label}” still crashes after repair: ${firstLine(outcome.verdict.error)}`);
+        }
       }})),
       ...pending.filter((node) => !preparedIds.has(node.id)).map((node) => ({node, run: async () => {
             const response = await expandVisualizationNode({
@@ -1011,15 +1111,25 @@ export function VisualizerView() {
   // whenever the focused stage has one — including the moment prepare
   // finishes writing it — unless the user closed it for that node. Stages
   // without a scene fall back to the classic theater quietly.
+  // Keyed on whether the stage HAS a scene, not on the record itself: a
+  // record is replaced whenever its runtime verdict lands, and that must not
+  // wipe the error the verdict just reported.
+  const selectedHasStageScene = selectedNode !== null && Boolean(stageScenes[selectedNode.id]);
+  // A new selection makes the previous stage's error irrelevant.
   useEffect(() => {
     setStageSceneError(null);
-    setStageSceneOpen(
+  }, [selectedNode?.id]);
+  useEffect(() => {
+    const open =
       selectedNode !== null &&
-        Boolean(stageScenes[selectedNode.id]) &&
-        !stageSceneDismissedRef.current.has(selectedNode.id),
-    );
+      selectedHasStageScene &&
+      !stageSceneDismissedRef.current.has(selectedNode.id);
+    setStageSceneOpen(open);
+    // A scene that opens supersedes any earlier failure notice; a scene that
+    // stays closed because it crashed keeps its notice on screen.
+    if (open) setStageSceneError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedNode?.id, stageScenes[selectedNode?.id ?? ""]]);
+  }, [selectedNode?.id, selectedHasStageScene]);
 
   function dismissStageScene(nodeId: string) {
     stageSceneDismissedRef.current.add(nodeId);
@@ -1037,7 +1147,75 @@ export function VisualizerView() {
   const stageSceneShowing =
     playing3d && viewMode === "3d" && stageSceneOpen && activeStageScene !== null;
 
-  async function requestStageScene(node: DiagramNode, force = false) {
+  // A stage whose code crashes is kept (the counter and the Repair button
+  // need it) but must not auto-open. The dynamic scene opens by itself for
+  // any node that has one unless that node is marked dismissed, which is how
+  // the live frame already handles a crash — so a failed probe marks it too.
+  function keepStageOutcome(nodeId: string, outcome: { record: StageSceneRecord; verdict: { status: string; error?: string } }) {
+    if (outcome.verdict.status !== "passed") {
+      stageRuntimeErrorsRef.current.set(nodeId, outcome.verdict.error ?? "");
+      stageSceneDismissedRef.current.add(nodeId);
+    }
+    setStageScenes((current) => ({ ...current, [nodeId]: outcome.record }));
+  }
+
+  // Run one stage's code off-screen; repair a crash with its real error; store
+  // the verdict. Nothing is shown or announced as ready before this resolves.
+  function verifyStageScene(vizId: string, node: DiagramNode, record: StageSceneRecord) {
+    setStageVerifyingIds((current) => new Set(current).add(node.id));
+    return ensureVerified(record, {
+      probe: (candidate) => probeScene(candidate.scene.code, node.label),
+      repair: async (evidence) => {
+        const response = await generateStageScene({
+          vizId,
+          nodeId: node.id,
+          force: true,
+          runtimeError: evidence.runtimeError,
+          layoutReport: evidence.layoutReport,
+        });
+        if (!sceneIsPlayable(response.stage_scene)) {
+          throw new Error("The repaired animation failed the code contract.");
+        }
+        return response.stage_scene;
+      },
+      report: async (verdict) =>
+        (await reportStageSceneRuntime({ vizId, nodeId: node.id, verdict })).stage_scene,
+    }).finally(() => {
+      setStageVerifyingIds((current) => {
+        const next = new Set(current);
+        next.delete(node.id);
+        return next;
+      });
+    });
+  }
+
+  async function refineStage(node: DiagramNode, instruction: string, acknowledgeFundamental: boolean) {
+    const vizId = activeDiagramId ?? viz?.viz_id;
+    if (!vizId) throw new Error("No diagram is open.");
+    const outcome = await refineStageScene({ vizId, nodeId: node.id, instruction, acknowledgeFundamental });
+    if (outcome.status !== "refined") return outcome;
+    if (!sceneIsPlayable(outcome.record)) {
+      throw new Error("The edited animation failed the code contract and was not applied.");
+    }
+    setStageScenes((current) => ({ ...current, [node.id]: outcome.record }));
+    setStageSceneError(null);
+    setStageRestartToken((value) => value + 1);
+    // The edit has not run yet. Verify in the background: a crash is repaired
+    // with its error, and the verdict lands on the record either way.
+    void verifyStageScene(vizId, node, outcome.record)
+      .then((verified) => {
+        if (diagramRef.current !== vizId) return;
+        keepStageOutcome(node.id, verified);
+        if (verified.verdict.status !== "passed" && stageSelectionRef.current === node.id) {
+          setStageSceneOpen(false);
+          setStageSceneError(firstLine(verified.verdict.error));
+        }
+      })
+      .catch(() => undefined);
+    return outcome;
+  }
+
+  async function requestStageScene(node: DiagramNode, force = false, evidence?: RepairEvidence) {
     const vizId = activeDiagramId ?? viz?.viz_id;
     if (!vizId || !preparationLoaded) return;
     setStageLoadingIds((current) => new Set(current).add(node.id));
@@ -1047,13 +1225,22 @@ export function VisualizerView() {
         vizId,
         nodeId: node.id,
         force,
+        runtimeError: evidence?.runtimeError,
+        layoutReport: evidence?.layoutReport,
       });
       if (diagramRef.current !== vizId) return;
       if (!sceneIsPlayable(response.stage_scene)) throw new Error("The generated animation is not playable. Try regenerating it.");
-      setStageScenes((current) => ({
-        ...current,
-        [node.id]: response.stage_scene,
-      }));
+      // A cached scene the browser already passed opens at once; anything
+      // else is run first, so what opens is known to work.
+      const outcome = sceneIsReady(response.stage_scene)
+        ? { record: response.stage_scene, verdict: { status: "passed" as const, overlaps: [], samples: 0 } }
+        : await verifyStageScene(vizId, node, response.stage_scene);
+      if (diagramRef.current !== vizId) return;
+      keepStageOutcome(node.id, outcome);
+      if (outcome.verdict.status !== "passed") {
+        throw new Error(`The animation crashed while running: ${firstLine(outcome.verdict.error)}`);
+      }
+      stageRuntimeErrorsRef.current.delete(node.id);
       if (stageSelectionRef.current === node.id) {
         stageSceneDismissedRef.current.delete(node.id);
         setStageSceneOpen(true);
@@ -1981,6 +2168,25 @@ export function VisualizerView() {
               onError={(message) => {
                 dismissStageScene(selectedNode.id);
                 setStageSceneError(message.split("\n")[0]);
+                // The live player is evidence too: record the crash so this
+                // stage stops counting as ready, and keep the stack for repair.
+                const nodeId = selectedNode.id;
+                stageRuntimeErrorsRef.current.set(nodeId, message);
+                const vizId = activeDiagramId ?? viz?.viz_id;
+                if (vizId) {
+                  void reportStageSceneRuntime({
+                    vizId,
+                    nodeId,
+                    verdict: { status: "failed", error: message, overlaps: [], samples: 0 },
+                  })
+                    .then((response) => {
+                      if (diagramRef.current !== vizId) return;
+                      setStageScenes((current) =>
+                        current[nodeId] ? { ...current, [nodeId]: response.stage_scene } : current,
+                      );
+                    })
+                    .catch(() => undefined);
+                }
               }}
             />
             </div>
@@ -2058,6 +2264,11 @@ export function VisualizerView() {
                       }
                       if (stageSceneOpen) {
                         dismissStageScene(selectedNode.id);
+                      } else if (stageRuntimeErrorsRef.current.has(selectedNode.id)) {
+                        // Reopening a scene known to crash would only replay the crash.
+                        void requestStageScene(selectedNode, true, {
+                          runtimeError: stageRuntimeErrorsRef.current.get(selectedNode.id),
+                        });
                       } else if (stageScenes[selectedNode.id]) {
                         stageSceneDismissedRef.current.delete(selectedNode.id);
                         setStageSceneOpen(true);
@@ -2080,6 +2291,18 @@ export function VisualizerView() {
                   >
                     <Sparkles className="h-3.5 w-3.5" />
                   </button>
+                  {stageScenes[selectedNode.id] ? (
+                    <button
+                      onClick={() => setRefineOpen((value) => !value)}
+                      title="Describe a change to this animation"
+                      aria-pressed={refineOpen}
+                      className={`rounded p-1 hover:bg-desk-800 ${
+                        refineOpen ? "text-accent-300" : "text-ivory-500 hover:text-accent-300"
+                      }`}
+                    >
+                      <Wand2 className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
                   <button
                     onClick={() => setPopupOpen(true)}
                     title="Read the full deep dive"
@@ -2099,7 +2322,13 @@ export function VisualizerView() {
 
               {stageSceneLoading ? (
                 <div className="animate-pulse py-1 text-xs text-ivory-300">
-                  Writing a dynamic scene for this stage…
+                  {stageVerifyingIds.has(selectedNode.id)
+                    ? "Verifying the animation runs through a full cycle…"
+                    : "Writing a dynamic scene for this stage…"}
+                </div>
+              ) : stageVerifyingIds.has(selectedNode.id) ? (
+                <div role="status" className="animate-pulse py-1 text-xs text-ivory-300">
+                  Verifying the edited animation…
                 </div>
               ) : null}
               {stageSceneError ? (
@@ -2108,11 +2337,30 @@ export function VisualizerView() {
                   <details className="mt-1 text-[11px] text-ivory-500">
                     <summary>Error details</summary>{stageSceneError}
                   </details>
-                  <button disabled={stageSceneLoading} onClick={() => void requestStageScene(selectedNode, true)}
-                    className="mt-2 rounded border border-desk-700 px-2 py-1 text-accent-300 disabled:opacity-50">
-                    Regenerate animation
-                  </button>
+                  {stageRuntimeErrorsRef.current.has(selectedNode.id) ? (
+                    <button disabled={stageSceneLoading}
+                      onClick={() => void requestStageScene(selectedNode, true, {
+                        runtimeError: stageRuntimeErrorsRef.current.get(selectedNode.id),
+                      })}
+                      title="Send the error back to the model and fix the existing animation"
+                      className="mt-2 rounded border border-desk-700 px-2 py-1 text-accent-300 disabled:opacity-50">
+                      Repair animation
+                    </button>
+                  ) : (
+                    <button disabled={stageSceneLoading} onClick={() => void requestStageScene(selectedNode, true)}
+                      className="mt-2 rounded border border-desk-700 px-2 py-1 text-accent-300 disabled:opacity-50">
+                      Regenerate animation
+                    </button>
+                  )}
                 </div>
+              ) : null}
+              {refineOpen && stageScenes[selectedNode.id] ? (
+                <SceneRefinePanel
+                  className="mt-2 border-t border-desk-800 pt-2"
+                  edits={stageScenes[selectedNode.id].scene.edits}
+                  busy={stageVerifyingIds.has(selectedNode.id) || stageSceneLoading}
+                  onRefine={(instruction, acknowledge) => refineStage(selectedNode, instruction, acknowledge)}
+                />
               ) : null}
               {expansionLoading ? (
                 <div className="animate-pulse py-1 text-xs text-ivory-300">
@@ -2126,9 +2374,11 @@ export function VisualizerView() {
               )}
               {preparationLoaded && !stageSceneShowing && !stageSceneLoading && !stageSceneError ? (
                 <p className="py-1 text-xs leading-relaxed text-ivory-500">
-                  {stageScenes[selectedNode.id]
-                    ? "Dynamic scene closed — press ✨ to reopen it."
-                    : "No dynamic scene yet — press ✨ to write one."}
+                  {stageRuntimeErrorsRef.current.has(selectedNode.id)
+                    ? "This animation crashed the last time it ran — press ✨ to repair it."
+                    : stageScenes[selectedNode.id]
+                      ? "Dynamic scene closed — press ✨ to reopen it."
+                      : "No dynamic scene yet — press ✨ to write one."}
                 </p>
               ) : null}
               {stageSceneShowing && viz.worked_example?.input_text && (
@@ -2355,6 +2605,9 @@ export function VisualizerView() {
               <SceneCodePlayer
                 record={sceneRecord}
                 className="min-h-[26rem] flex-1"
+                verifying={sceneVerifying}
+                onRepair={(runtimeError) => void requestScene(true, { runtimeError })}
+                onRefine={refineWholeScene}
               />
             ) : (
               <p className="text-[11px] leading-relaxed text-ivory-500">

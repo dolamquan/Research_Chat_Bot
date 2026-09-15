@@ -1,3 +1,4 @@
+import logging
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -12,7 +13,10 @@ from app.rag.vector_store import index_pdf
 from app.storage.article_store import find_articles_by_source, get_article, upsert_article
 
 
-UPLOAD_FOLDER = Path(__file__).resolve().parents[1] / "data" / "uploaded_docs"
+from app.storage import files
+from app.storage.files import UPLOAD_FOLDER
+
+logger = logging.getLogger(__name__)
 REQUEST_TIMEOUT_SECONDS = 60
 ARXIV_API_URL = "https://export.arxiv.org/api/query"
 ATOM_NAMESPACE = {"atom": "http://www.w3.org/2005/Atom"}
@@ -251,8 +255,15 @@ def ingest_article_url(
     )
 
     try:
-        if not pdf_path.exists():
+        try:
+            # Local cache first, then the copy in Storage; only then the publisher.
+            files.pdf_path(filename)
+        except FileNotFoundError:
             _download_pdf(pdf_url, pdf_path)
+            try:
+                files.store_pdf(pdf_path)
+            except Exception as exc:  # the paper still indexes; the durable copy can be re-uploaded later
+                logger.warning("Could not upload %s to Storage: %s", filename, exc)
 
         index_pdf(
             str(pdf_path),

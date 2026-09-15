@@ -4,29 +4,28 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from langchain_community.document_loaders import PyPDFLoader
 
+from app.storage import files
 from app.storage.article_store import can_access_source
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-UPLOAD_FOLDER = Path(__file__).resolve().parents[1] / "data" / "uploaded_docs"
-
 
 def _resolve_pdf(source: str) -> Path:
-    """The on-disk PDF for a filename the current user may read, or an HTTP error."""
-    safe_name = Path(source).name
-
-    if safe_name != source or not safe_name.lower().endswith(".pdf"):
+    """A local file for a PDF the current user may read (fetched from Storage if needed), or an HTTP error."""
+    try:
+        safe_name = files.safe_pdf_name(source)
+    except ValueError:
         raise HTTPException(status_code=400, detail="Invalid PDF filename.")
-
-    pdf_path = UPLOAD_FOLDER / safe_name
 
     # One PDF file can back a public paper and private copies; a user who owns
     # none of them gets the same answer as for a file that does not exist.
-    if not pdf_path.exists() or not can_access_source(safe_name):
+    if not can_access_source(safe_name):
         raise HTTPException(status_code=404, detail=f"PDF not found: {safe_name}")
-
-    return pdf_path
+    try:
+        return files.pdf_path(safe_name)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"PDF not found: {safe_name}")
 
 
 @router.get("/pdf")

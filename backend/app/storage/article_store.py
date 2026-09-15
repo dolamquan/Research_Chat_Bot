@@ -1,11 +1,11 @@
 import json
-import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
 from app.auth.context import UNSET, resolve_owner
 from app.storage.ownership import ensure_owner_column, owner_clause
+from app.storage import db
 
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
@@ -17,17 +17,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    init_db(connection)
-    return connection
+def _connect():
+    return db.connect(DB_PATH, init_db)
 
 
-def init_db(connection: sqlite3.Connection | None = None) -> None:
-    owns_connection = connection is None
-    conn = connection or sqlite3.connect(DB_PATH)
+def init_db(connection: db.Connection | None = None) -> None:
+    if connection is None:
+        with db.connect(DB_PATH) as conn:
+            init_db(conn)
+        return
+    conn = connection
 
     conn.execute(
         """
@@ -63,20 +62,15 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_articles_source ON articles(source)")
     conn.commit()
 
-    if owns_connection:
-        conn.close()
 
 
-def _ensure_column(conn: sqlite3.Connection, column_name: str, column_sql: str) -> None:
-    columns = {
-        row[1]
-        for row in conn.execute("PRAGMA table_info(articles)").fetchall()
-    }
+def _ensure_column(conn: db.Connection, column_name: str, column_sql: str) -> None:
+    columns = db.table_columns(conn, "articles")
     if column_name not in columns:
         conn.execute(f"ALTER TABLE articles ADD COLUMN {column_name} {column_sql}")
 
 
-def _row_to_article(row: sqlite3.Row) -> Dict[str, Any]:
+def _row_to_article(row: db.Row) -> Dict[str, Any]:
     article = dict(row)
 
     try:

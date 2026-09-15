@@ -23,10 +23,11 @@ import logging
 import os
 import re
 from functools import lru_cache
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Sequence, Tuple
 
 from dotenv import load_dotenv
 from langsmith import traceable
+from pydantic import BaseModel, Field
 
 from app.rag.document_structure import (
     StructuredPaper,
@@ -271,6 +272,29 @@ PRESENTATION FOR EVERY PAPER:
   - For narrow screens, define function resize(ctx), stack groups vertically,
     and use ctx.setContentHeight to keep the complete figure scrollable.
     Do not shrink a desktop layout into unreadable phone-sized text.
+
+LAYOUT — TEXT MUST NEVER OVERLAP TEXT OR GEOMETRY. The player measures this
+after generation and rejects scenes where labels collide, so plan positions:
+  - Lay structures out on an explicit grid you compute once in init(): pick a
+    column pitch (>= 5 world units) and a row pitch (>= 3.5 world units), and
+    derive every group.position from (column, row). Never eyeball positions.
+  - Exactly one label per anchor. A label sits 0.9 world units above the top
+    of the thing it names (or below, for value readouts); never at the same
+    y as a neighbouring label in the same column unless x differs by more
+    than the label's width. Default label size 0.45; headings 0.6.
+  - Value readouts under bars/cells go in a single row BELOW the baseline, at
+    least 0.6 units under the lowest bar; the structure's title goes ABOVE it.
+    Do not place a name label and a value label on the same object.
+  - Matrices: one title above; numbers only inside cells (makeMatrix does this).
+    Do not add a second layer of labels over a matrix. Keep >= 1.5 units of
+    clear space around every matrix, panel and network.
+  - Captions belong in ctx.setCaption, not in a floating label: anything
+    longer than ~6 words is a caption.
+  - Different phases may reuse the same screen region only if the earlier
+    phase's labels are hidden first (material.opacity = 0 or visible = false).
+    Fading text to 0.3 opacity is not hiding it.
+  - Keep every label inside the camera view: |x| <= 9, -5 <= y <= 6 at z ~ 0
+    for a desktop layout. Text beyond that is clipped.
 """
 
 CODE_RULES = (
@@ -442,6 +466,117 @@ def _scene_document(
     }
 
 
+# --- repair prompts -------------------------------------------------------------
+
+_REPAIR_CLOSING = (
+    "\n\nReturn the corrected JavaScript only. Remember: define "
+    "`function init(ctx)` and `function update(ctx, t)`, keep shared state in "
+    "a top-level `const state = {}`, use only what ctx provides, and never "
+    "touch the network, storage, or the surrounding page."
+)
+
+
+def _static_repair_prompt(prompt: str, code: str, findings: List[str]) -> str:
+    """The follow-up sent when the static checks reject an answer."""
+    return (
+        prompt
+        + "\n\nYour previous answer was rejected for these reasons:\n"
+        + "\n".join(f"  - {finding}" for finding in findings)
+        + "\n\nPrevious JavaScript:\n" + code
+        + _REPAIR_CLOSING
+    )
+
+
+def format_layout_report(layout_report: Dict[str, Any] | None) -> str:
+    """The browser's overlap measurements as instructions the model can act on.
+
+    The player probes a scene after generation: it sweeps `update` across the
+    animation cycle, lays labels out exactly as the viewer would see them, and
+    records every pair that still collide after its own nudging pass. Each
+    pair arrives with the seconds at which it collided, so the repair can
+    target one phase instead of rearranging everything.
+    """
+    pairs = list((layout_report or {}).get("pairs") or [])
+    if not pairs:
+        return ""
+    lines = ["MEASURED OVERLAPS (label ↔ label or label ↔ figure, with the seconds they collide):"]
+    for pair in pairs[:12]:
+        a = str(pair.get("a") or "").strip()[:60]
+        b = str(pair.get("b") or "").strip()[:60]
+        seconds = pair.get("seconds") or []
+        when = ", ".join(f"{float(s):g}s" for s in list(seconds)[:6])
+        lines.append(f"  - {a!r} overlaps {b!r}" + (f" at {when}" if when else ""))
+    lines.append(
+        "Fix EVERY pair above by moving one of the two to a clear position "
+        "(different row, or a column at least one label-width away), by hiding "
+        "the earlier phase's label before the later one appears, or by moving "
+        "the text into ctx.setCaption. Do not shrink text to fit. Keep everything "
+        "else about the animation the same."
+    )
+    return "\n".join(lines)
+
+
+def _runtime_repair_prompt(
+    prompt: str,
+    previous_code: str,
+    runtime_error: str | None,
+    layout_report: Dict[str, Any] | None,
+) -> str:
+    """Repair a program the browser already ran and found wanting.
+
+    Unlike the static repair this is the first request of the call, not a
+    retry: the previous code passed every static check and still failed in
+    the sandbox (a thrown error, or labels that collide on screen). The real
+    error text is the most useful thing the model can be given.
+    """
+    sections = [prompt, "\n\nTHE PREVIOUS PROGRAM BELOW passed the static checks but must be fixed:"]
+    if runtime_error:
+        sections.append(
+            "\nRUNTIME ERROR thrown while the browser ran it (fix the cause, not the symptom):\n"
+            + str(runtime_error).strip()[:2000]
+        )
+    layout = format_layout_report(layout_report)
+    if layout:
+        sections.append("\n" + layout)
+    sections.append("\nPrevious JavaScript:\n" + previous_code)
+    sections.append(
+        "\n\nReturn the complete corrected JavaScript only. Keep the same "
+        "mechanism, phases and worked example; change only what the error or "
+        "the overlaps require." + _REPAIR_CLOSING
+    )
+    return "".join(sections)
+
+
+def _generate_with_repair(
+    client: Any,
+    prompt: str,
+    *,
+    previous_code: str | None,
+    runtime_error: str | None,
+    layout_report: Dict[str, Any] | None,
+    failure_label: str,
+) -> str:
+    """One generation (or runtime repair) plus at most one static repair."""
+    if previous_code and (runtime_error or (layout_report or {}).get("pairs")):
+        first_prompt = _runtime_repair_prompt(prompt, previous_code, runtime_error, layout_report)
+    else:
+        first_prompt = prompt
+
+    code = _strip_fence(_response_text(client.invoke(first_prompt)))
+    findings = check_scene_code(code)
+    if findings:
+        code = _strip_fence(
+            _response_text(client.invoke(_static_repair_prompt(prompt, code, findings)))
+        )
+        findings = check_scene_code(code)
+        if findings:
+            raise SceneCodingError(
+                f"The model could not produce acceptable {failure_label}: "
+                + "; ".join(findings)
+            )
+    return code
+
+
 @traceable(name="generate_scene_code", run_type="chain")
 def generate_scene_code(
     visualization: Dict[str, Any],
@@ -451,11 +586,16 @@ def generate_scene_code(
     llm: Any = None,
     provider: str | None = None,
     model: str | None = None,
+    previous_code: str | None = None,
+    runtime_error: str | None = None,
+    layout_report: Dict[str, Any] | None = None,
 ) -> tuple[Dict[str, Any], Dict[str, str]]:
     """Write Three.js code for one paper, with one repair attempt.
 
-    Returns the scene document together with the provider/model that produced
-    it, so the stored record can say how it was made.
+    With `previous_code` and a `runtime_error` or `layout_report`, the call is
+    a repair of a program the browser already executed rather than a fresh
+    generation. Returns the scene document together with the provider/model
+    that produced it, so the stored record can say how it was made.
     """
     prompt = _build_prompt(visualization, article, structured_paper, list(chunks or []))
     resolved_model = _resolve_scene_model(model)
@@ -466,26 +606,14 @@ def generate_scene_code(
         **_scene_model_kwargs(resolved_model),
     )
 
-    code = _strip_fence(_response_text(client.invoke(prompt)))
-    findings = check_scene_code(code)
-    if findings:
-        repair_prompt = (
-            prompt
-            + "\n\nYour previous answer was rejected for these reasons:\n"
-            + "\n".join(f"  - {finding}" for finding in findings)
-            + "\n\nPrevious JavaScript:\n" + code
-            + "\n\nReturn the corrected JavaScript only. Remember: define "
-            "`function init(ctx)` and `function update(ctx, t)`, use only "
-            "what ctx provides, and never touch the network, storage, or "
-            "the surrounding page."
-        )
-        code = _strip_fence(_response_text(client.invoke(repair_prompt)))
-        findings = check_scene_code(code)
-        if findings:
-            raise SceneCodingError(
-                "The model could not produce acceptable scene code: "
-                + "; ".join(findings)
-            )
+    code = _generate_with_repair(
+        client,
+        prompt,
+        previous_code=previous_code,
+        runtime_error=runtime_error,
+        layout_report=layout_report,
+        failure_label="scene code",
+    )
 
     return _scene_document(code, visualization, article), describe_model(client, provider)
 
@@ -579,8 +707,15 @@ def generate_stage_code(
     llm: Any = None,
     provider: str | None = None,
     model: str | None = None,
+    previous_code: str | None = None,
+    runtime_error: str | None = None,
+    layout_report: Dict[str, Any] | None = None,
 ) -> tuple[Dict[str, Any], Dict[str, str]]:
-    """Write Three.js code for ONE diagram node, with one repair attempt."""
+    """Write Three.js code for ONE diagram node, with one repair attempt.
+
+    See `generate_scene_code` for the `previous_code` / `runtime_error` /
+    `layout_report` repair mode; it works identically here.
+    """
     prompt = _build_stage_prompt(visualization, node, expansion, article, stage_context)
     resolved_model = _resolve_stage_model(model)
     client = llm or build_chat_model(
@@ -590,32 +725,225 @@ def generate_stage_code(
         **_scene_model_kwargs(resolved_model),
     )
 
-    code = _strip_fence(_response_text(client.invoke(prompt)))
-    findings = check_scene_code(code)
-    if findings:
-        repair_prompt = (
-            prompt
-            + "\n\nYour previous answer was rejected for these reasons:\n"
-            + "\n".join(f"  - {finding}" for finding in findings)
-            + "\n\nPrevious JavaScript:\n" + code
-            + "\n\nReturn the corrected JavaScript only. Remember: define "
-            "`function init(ctx)` and `function update(ctx, t)`, keep shared "
-            "state in a top-level `const state = {}`, and never touch the "
-            "network, storage, or the surrounding page."
-        )
-        code = _strip_fence(_response_text(client.invoke(repair_prompt)))
-        findings = check_scene_code(code)
-        if findings:
-            raise SceneCodingError(
-                "The model could not produce acceptable stage code: "
-                + "; ".join(findings)
-            )
+    code = _generate_with_repair(
+        client,
+        prompt,
+        previous_code=previous_code,
+        runtime_error=runtime_error,
+        layout_report=layout_report,
+        failure_label="stage code",
+    )
 
     document = _scene_document(code, visualization, article)
     document["node_id"] = str(node.get("id", ""))
     document["title"] = str(node.get("label") or node.get("id") or document["title"])
     document["algorithm_name"] = document["title"]
     return document, describe_model(client, provider)
+
+
+# --- user-directed refinement ---------------------------------------------------
+
+# A refinement either changes how the animation LOOKS or what it SHOWS. The
+# second kind quietly turns an illustration of the paper into an illustration
+# of something else, so the user is warned before it is applied. The model
+# decides when a provider is available; these word lists are the offline
+# fallback and the tie-breaker, and are deliberately conservative: a request
+# that only names positions, sizes, colours or timing is cosmetic.
+COSMETIC_MARKERS = (
+    "overlap", "overlapping", "collide", "on top of", "move", "shift", "nudge",
+    "spacing", "space out", "spread", "gap", "apart", "closer", "further",
+    "left", "right", "above", "below", "higher", "lower", "up", "down",
+    "font", "size", "bigger", "smaller", "larger", "tiny", "readable", "legible",
+    "color", "colour", "brighter", "darker", "opacity", "fade",
+    "slower", "faster", "speed", "pause", "longer", "shorter", "duration",
+    "camera", "zoom", "angle", "rotate", "align", "center", "centre",
+    "label", "caption", "title", "rename", "wording", "typo",
+    "hide", "show", "highlight", "arrow", "line",
+)
+FUNDAMENTAL_MARKERS = (
+    "add a step", "add step", "add another", "extra step", "new step",
+    "remove the step", "remove step", "delete the step", "skip the",
+    "instead of", "rather than", "replace the", "swap the", "swap out",
+    "reorder", "change the order", "before the", "after the",
+    "change the formula", "different formula", "equation", "compute",
+    "calculate", "multiply", "divide", "sum", "average", "softmax", "normalize",
+    "should use", "make it use", "use a different", "different algorithm",
+    "different mechanism", "how it works", "the logic", "the math",
+    "more layers", "fewer layers", "more heads", "fewer heads", "number of",
+    "input should", "output should", "feed", "connect", "disconnect",
+    "loop back", "feedback", "attention to", "attend to",
+)
+
+
+class RefinementClassification(BaseModel):
+    """What kind of change a refinement request asks for."""
+
+    kind: Literal["cosmetic", "fundamental"] = Field(
+        description=(
+            "'cosmetic' when the request only changes presentation: positions, "
+            "spacing, overlaps, sizes, colours, timing, camera, label wording. "
+            "'fundamental' when it changes what the animation shows about the "
+            "method: steps, their order, what is computed, how data flows, the "
+            "number or kind of components, the formula."
+        )
+    )
+    reason: str = Field(default="", description="One sentence saying why, in plain language.")
+
+
+def _marker_hits(text: str, markers: Sequence[str]) -> List[str]:
+    # Whole words only: "up" must not match "update", nor "sum" "summary".
+    return [m for m in markers if re.search(rf"\b{re.escape(m)}\b", text)]
+
+
+def _heuristic_classification(instruction: str) -> Dict[str, Any]:
+    text = " ".join(instruction.lower().split())
+    fundamental_hits = _marker_hits(text, FUNDAMENTAL_MARKERS)
+    cosmetic_hits = _marker_hits(text, COSMETIC_MARKERS)
+    if fundamental_hits and len(fundamental_hits) >= len(cosmetic_hits):
+        return {
+            "kind": "fundamental",
+            "reason": "The request changes what the animation shows about the method "
+            f"(it mentions: {', '.join(fundamental_hits[:3])}).",
+            "basis": "heuristic",
+        }
+    return {
+        "kind": "cosmetic",
+        "reason": "The request only changes how the animation is presented."
+        if cosmetic_hits
+        else "No sign that the request changes the mechanism; treated as a presentation change.",
+        "basis": "heuristic",
+    }
+
+
+_CLASSIFY_PROMPT = """\
+You decide whether a user's requested change to an educational animation of a
+research paper's method is COSMETIC or FUNDAMENTAL.
+
+COSMETIC: presentation only — positions, spacing, overlapping labels, sizes,
+colours, opacity, timing/speed, camera, caption or label wording, hiding or
+showing decoration. The animation still shows the same method, the same steps
+in the same order, computing the same things.
+
+FUNDAMENTAL: the animation would show a different method — a step added,
+removed, reordered or skipped; a different operation, formula or data flow;
+a different number or kind of components; different inputs or outputs.
+
+The animation is titled: {title}
+
+The user's request:
+{instruction}
+"""
+
+
+def classify_refinement(
+    instruction: str,
+    *,
+    title: str = "",
+    llm: Any = None,
+    provider: str | None = None,
+    model: str | None = None,
+) -> Dict[str, Any]:
+    """Cosmetic or fundamental, with a reason and how the answer was reached.
+
+    Uses the model when one is reachable, the marker heuristic otherwise, and
+    the heuristic again if the model's answer cannot be parsed. `basis` says
+    which, because the UI's warning should not claim more certainty than it has.
+    """
+    instruction = " ".join(str(instruction or "").split())
+    if not instruction:
+        return {"kind": "cosmetic", "reason": "Empty request.", "basis": "heuristic"}
+
+    client = llm
+    if client is None:
+        try:
+            client = build_chat_model(provider=provider, model=model, temperature=0)
+        except Exception:
+            return _heuristic_classification(instruction)
+
+    prompt = _CLASSIFY_PROMPT.format(title=title or "the method", instruction=instruction)
+    try:
+        result = client.with_structured_output(RefinementClassification).invoke(prompt)
+        if isinstance(result, RefinementClassification):
+            return {"kind": result.kind, "reason": result.reason.strip(), "basis": "model"}
+        if isinstance(result, dict) and result.get("kind") in {"cosmetic", "fundamental"}:
+            return {"kind": result["kind"], "reason": str(result.get("reason") or "").strip(), "basis": "model"}
+    except Exception:
+        pass
+    try:
+        raw = _strip_fence(_response_text(client.invoke(
+            prompt + '\nAnswer with JSON only: {"kind": "cosmetic" | "fundamental", "reason": "..."}'
+        )))
+        parsed = RefinementClassification.model_validate_json(raw)
+        return {"kind": parsed.kind, "reason": parsed.reason.strip(), "basis": "model"}
+    except Exception:
+        return _heuristic_classification(instruction)
+
+
+_REFINE_RULES = (
+    """\
+You are editing an existing self-contained Three.js animation that TEACHES a
+research paper's method. The user has asked for ONE change. Apply exactly that
+change and nothing else: keep the mechanism, phases, worked example, label
+text, colours and timing identical wherever the request does not mention them.
+Your code runs inside a sandboxed harness that owns the page; you only build
+and animate the scene graph.
+
+"""
+    + _CONTRACT_RULES
+    + _PRESENTATION_RULES
+)
+
+
+def refine_scene_code(
+    previous_code: str,
+    instruction: str,
+    *,
+    title: str = "",
+    kind: str = "cosmetic",
+    llm: Any = None,
+    provider: str | None = None,
+    model: str | None = None,
+) -> tuple[str, Dict[str, str]]:
+    """Rewrite a stored program to apply one user-described change.
+
+    Returns the new code and the provider/model that produced it. Static
+    checks and one static repair apply exactly as for a fresh generation.
+    """
+    instruction = " ".join(str(instruction or "").split())
+    if not instruction:
+        raise SceneCodingError("The refinement request is empty.")
+    consequence = (
+        "\nThe user has acknowledged that this changes what the animation shows "
+        "about the method, so the result will no longer match the paper. Make the "
+        "requested change faithfully and update ctx.setCaption text so a viewer "
+        "can tell what is now being shown.\n"
+        if kind == "fundamental"
+        else "\nThis is a presentation change: the method shown must stay exactly the same.\n"
+    )
+    prompt = (
+        f"{_REFINE_RULES}\n"
+        f"ANIMATION: {title or 'Proposed method'}\n"
+        f"{consequence}"
+        f"\nREQUESTED CHANGE:\n{instruction}\n"
+        f"\nCURRENT PROGRAM:\n{previous_code}\n"
+        "\nReturn the complete updated JavaScript only."
+    )
+    resolved_model = _resolve_stage_model(model)
+    client = llm or build_chat_model(
+        provider=provider,
+        model=resolved_model,
+        temperature=0,
+        **_scene_model_kwargs(resolved_model),
+    )
+    code = _generate_with_repair(
+        client,
+        prompt,
+        previous_code=None,
+        runtime_error=None,
+        layout_report=None,
+        failure_label="refined code",
+    )
+    return code, describe_model(client, provider)
 
 
 # --- offline fallback ---------------------------------------------------------

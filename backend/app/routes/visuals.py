@@ -13,6 +13,7 @@ from app.rag.visual_analyzer import (
     save_captured_pdf_visual,
 )
 from app.auth.context import current_owner_id
+from app.storage import files
 from app.storage.article_store import can_access_source, find_articles_by_source
 from app.storage.visual_assets import (
     can_access_visual_file,
@@ -23,9 +24,6 @@ from app.storage.visual_assets import (
 
 router = APIRouter(prefix="/visuals", tags=["visuals"])
 
-UPLOAD_FOLDER = Path(__file__).resolve().parents[1] / "data" / "uploaded_docs"
-
-
 def _figure_owner(source: str) -> str | None:
     """Extracted figures inherit the paper's visibility: public paper, public figures."""
     copies = find_articles_by_source(source)
@@ -35,10 +33,12 @@ def _figure_owner(source: str) -> str | None:
 
 
 def _require_readable_pdf(safe_source: str) -> Path:
-    pdf_path = UPLOAD_FOLDER / safe_source
-    if not pdf_path.exists() or not can_access_source(safe_source):
+    if not can_access_source(safe_source):
         raise HTTPException(status_code=404, detail=f"PDF not found: {safe_source}")
-    return pdf_path
+    try:
+        return files.pdf_path(safe_source)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"PDF not found: {safe_source}")
 
 
 class CaptureVisualRequest(BaseModel):

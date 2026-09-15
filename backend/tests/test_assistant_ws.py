@@ -107,6 +107,36 @@ def test_hello_creates_a_persistent_assistant_session(client, monkeypatch):
     assert [s["id"] for s in agent_history.list_sessions(kind="assistant")] == [session["session_id"]]
 
 
+def test_new_session_starts_an_empty_one_instead_of_resuming(client, monkeypatch):
+    """A reconnect and a "New session" click both arrive without a session_id."""
+    _model(monkeypatch, ["Noted.\nSPEAK: Noted."])
+    with client.websocket_connect("/agent/ws") as ws:
+        ws.send_json(HELLO)
+        first = ws.receive_json()["session_id"]
+        ws.send_json({"type": "user_message", "id": "m-1", "text": "remember this", "source": "text", "workspace": {}})
+        _drain_until(ws, "done")
+
+    # A dropped socket must come back to the same conversation.
+    with client.websocket_connect("/agent/ws") as ws:
+        ws.send_json({**HELLO, "session_id": None})
+        resumed = ws.receive_json()
+    assert resumed["session_id"] == first
+    assert [h["role"] for h in resumed["history"]] == ["user", "assistant"]
+
+    # Asking for a new session must not.
+    with client.websocket_connect("/agent/ws") as ws:
+        ws.send_json({**HELLO, "session_id": None, "new_session": True})
+        fresh = ws.receive_json()
+    assert fresh["session_id"] != first
+    assert fresh["history"] == []
+
+    # The old session is kept, and the new one is what a later reconnect resumes.
+    assert {s["id"] for s in agent_history.list_sessions(kind="assistant")} == {first, fresh["session_id"]}
+    with client.websocket_connect("/agent/ws") as ws:
+        ws.send_json({**HELLO, "session_id": None})
+        assert ws.receive_json()["session_id"] == fresh["session_id"]
+
+
 def test_a_turn_streams_events_and_is_persisted(client, monkeypatch):
     model = _model(monkeypatch, [[("app_papers", {"query": "graph"})], "Found **Graph RAG**.\nSPEAK: I found Graph RAG."])
     with client.websocket_connect("/agent/ws") as ws:

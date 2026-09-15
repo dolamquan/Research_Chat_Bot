@@ -1,11 +1,11 @@
 import json
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
 from app.auth.context import UNSET, resolve_owner
+from app.storage import db
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
 DB_PATH = DATA_DIR / "researchmind.sqlite3"
@@ -81,19 +81,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    init_db(connection)
-    return connection
+def _connect():
+    return db.connect(DB_PATH, init_db)
 
 
-def _table_columns(conn: sqlite3.Connection, table: str) -> Set[str]:
-    return {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+def _table_columns(conn: db.Connection, table: str) -> Set[str]:
+    return db.table_columns(conn, table)
 
 
-def _migrate_to_owned_visualizations(conn: sqlite3.Connection) -> None:
+def _migrate_to_owned_visualizations(conn: db.Connection) -> None:
     """Rebuild the table so uniqueness includes the owner. SQLite cannot alter constraints."""
     for column, column_sql in (("worked_example_json", "TEXT"), ("mechanism_domain", "TEXT")):
         if column not in _table_columns(conn, "paper_visualizations"):
@@ -107,9 +103,12 @@ def _migrate_to_owned_visualizations(conn: sqlite3.Connection) -> None:
     conn.execute("DROP TABLE paper_visualizations_legacy")
 
 
-def init_db(connection: sqlite3.Connection | None = None) -> None:
-    owns_connection = connection is None
-    conn = connection or sqlite3.connect(DB_PATH)
+def init_db(connection: db.Connection | None = None) -> None:
+    if connection is None:
+        with db.connect(DB_PATH) as conn:
+            init_db(conn)
+        return
+    conn = connection
 
     conn.execute(f"CREATE TABLE IF NOT EXISTS paper_visualizations ({_VISUALIZATION_COLUMNS})")
     if "owner_id" not in _table_columns(conn, "paper_visualizations"):
@@ -143,8 +142,6 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     )
     conn.commit()
 
-    if owns_connection:
-        conn.close()
 
 
 def _owner_key(owner_id: Any) -> str | None:
@@ -157,7 +154,7 @@ def _scope(owner: str | None) -> tuple[str, List[Any]]:
     return ("", []) if owner is None else (" AND owner_id = ?", [owner])
 
 
-def _row_to_record(row: sqlite3.Row) -> Dict[str, Any]:
+def _row_to_record(row: db.Row) -> Dict[str, Any]:
     record = dict(row)
     try:
         record["diagram"] = json.loads(record.pop("diagram_json"))
@@ -326,7 +323,7 @@ def claim_unowned(owner: str) -> Dict[str, int]:
     return {"visualizations": count}
 
 
-def _row_to_expansion(row: sqlite3.Row) -> Dict[str, Any]:
+def _row_to_expansion(row: db.Row) -> Dict[str, Any]:
     record = dict(row)
     try:
         record["content"] = json.loads(record.pop("content_json"))

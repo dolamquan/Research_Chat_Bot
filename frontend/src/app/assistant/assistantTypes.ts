@@ -31,6 +31,12 @@ export type ClientMessage =
       type: "hello";
       token: string;
       session_id: string | null;
+      /**
+       * The user asked for a fresh session. Without this the server cannot
+       * tell this apart from a reconnect — both arrive with a null
+       * `session_id` — and resumes the latest session instead.
+       */
+      new_session: boolean;
       client_tools: ClientToolSpec[];
       workspace: AssistantWorkspace;
       client: { tts: boolean; locale: string; app_version?: string };

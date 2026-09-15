@@ -136,27 +136,43 @@ the administrator's defaults). Figures extracted from a public paper stay public
 
 Still shared: the browser extension has no token path yet and gets 401s.
 
-### Agent tab
+### The agent, and the Console
 
-The Agent tab runs a tool-calling loop (`backend/app/agents/runtime.py`) over a
-catalog built from the running application (`backend/app/agents/catalog.py`):
-every FastAPI route becomes an `api.<area>.<function>` tool, every MCP bridge
-tool is included by name, and `app.context` / `app.papers` give the model a live
-overview of the app and the whole paper library. The system prompt carries the
-feature guide, paper counts, the user's current selection and the full tool
-index, so plain-language requests can reach notes, visualizations, variants,
-clusters, Graph RAG, evaluation runs, ingestion and integrations without any
-per-feature wiring.
+Zoe — the always-present assistant — runs a tool-calling loop
+(`backend/app/agents/runtime.py`) over a catalog built from the running
+application (`backend/app/agents/catalog.py`): every FastAPI route becomes an
+`api.<area>.<function>` tool, every MCP bridge tool is included by name, and
+`app.context` / `app.papers` give the model a live overview of the app and the
+whole paper library. The system prompt carries the feature guide, paper
+counts, the user's current selection and the full tool index, so
+plain-language requests can reach notes, visualizations, variants, clusters,
+Graph RAG, evaluation runs, ingestion and integrations without any
+per-feature wiring. Destructive and external-write tools (deletes, Notion,
+GitHub) wait for the user's confirmation.
 
-- `GET /agent/tools?query=&category=` lists tools; `GET /agent/tools/{name}`
-  returns one with its `input_schema`; `POST /agent/tools/call` runs one;
-  `GET /agent/context` returns the overview.
-- In the console: `/tools notes`, `/tool api.notes.create_note`,
-  `/call app.papers {"query":"graph rag"}`, `/context`.
-- Destructive and external-write tools (deletes, Notion, GitHub) only run when
-  the user's message explicitly asks for that action.
-- `AGENT_MODEL`, `AGENT_MAX_STEPS` and `AGENT_MODE=legacy` (the previous fixed
-  intent router) are documented in `backend/.env.example`.
+The **Console** view is not a second chat. It is where you see and operate the
+machine Zoe drives:
+
+- **Tools** — the whole catalog, searchable and grouped by area, each with its
+  effect (read / write / destructive / writes outside the app), its
+  `input_schema`, and a form generated from that schema to run it. Destructive
+  and external-write tools require an explicit acknowledgement.
+- **Activity** — every session, Zoe's and the retired Agent tab's, with each
+  turn's tool timeline and a summary of what the session changed.
+- **Jobs** — ingestion jobs and evaluation runs, polled while anything runs.
+- **Diagnostics** — reachable model providers, integration status, paper
+  counts by domain, unavailable tools and why, and routes this frontend
+  expects that the backend does not serve.
+- A command line at the bottom runs a tool exactly as typed, with no model in
+  the loop: `/call app.papers {"query":"graph rag"}`,
+  `/mcp-call research.search_library {"query":"retrieval"}`,
+  `/tool api.notes.create_note`.
+
+The endpoints behind it: `GET /agent/tools?query=&category=`,
+`GET /agent/tools/{name}`, `POST /agent/tools/call`, `GET /agent/context`,
+`GET /agent/sessions?kind=agent|assistant|all`. `AGENT_MODEL`,
+`AGENT_MAX_STEPS` and `AGENT_MODE=legacy` (the previous fixed intent router)
+are documented in `backend/.env.example`.
 
 ## Notes
 
@@ -182,9 +198,21 @@ trade-off and the full architecture.
 
 ```text
 POST /visualizer/generate-scene           generate, check and persist scene code
+                                          (+ runtime_error / layout_report with force = repair the stored code)
 GET  /visualizer/item/{viz_id}/scene      the stored code + check report
 POST /visualizer/item/{viz_id}/verify-scene   re-run static checks, no LLM call
+POST /visualizer/item/{viz_id}/runtime    the browser's verdict after running the scene off-screen
+POST /visualizer/item/{viz_id}/refine     apply a user-described change; 409 until a
+                                          change to the method itself is acknowledged
 GET  /visualizer/providers                which providers are configured
+```
+
+The same `runtime` and `refine` endpoints exist per stage under
+`/visualizer/item/{viz_id}/stage-scenes/{node_id}/…`. A scene counts as ready
+only once the browser has probed it through a full cycle without a crash;
+see [docs/PAPER_TO_SCENE.md](docs/PAPER_TO_SCENE.md#verification-a-scene-is-ready-only-after-the-browser-has-run-it).
+
+```text
 ```
 
 Open a paper in the Visualizer, then the **Scene** tab.
@@ -206,6 +234,56 @@ pip install docling              # structured PDF parsing; falls back cleanly
 pip install langchain-anthropic  # the anthropic provider
 pip install onnx                 # ONNX model-graph verification evidence
 ```
+
+## Cloud data (Supabase + Qdrant Cloud)
+
+By default every store is a file on this machine: three SQLite databases under
+`backend/app/data`, the PDFs in `backend/app/data/uploaded_docs`, and vectors in
+the local Qdrant container. Three environment variables move each of them to a
+managed service without changing any route or feature:
+
+| Data | Local default | Cloud | Switch |
+|---|---|---|---|
+| Papers, notes, chats, sessions, visualizations (13 tables) | SQLite files | Supabase Postgres | `DATABASE_URL` (pooled connection string, port 6543) |
+| PDFs | `uploaded_docs/` | Supabase Storage, private bucket `papers` | `SUPABASE_SERVICE_ROLE_KEY` (+ optional `SUPABASE_STORAGE_BUCKET`) |
+| Vectors (`mini_chatbot_docs`, `research_notes`) | Docker Qdrant | Qdrant Cloud | `QDRANT_URL` + `QDRANT_API_KEY` |
+
+The stores keep writing SQLite-flavoured SQL; `app/storage/db.py` rewrites the
+handful of dialect differences for Postgres at execution time and pools
+connections. `uploaded_docs/` becomes a read-through cache: a PDF missing on
+disk is fetched from Storage once, and newly ingested PDFs are uploaded after
+they are downloaded. Sign-in already uses Supabase Auth and is unaffected.
+
+### Moving existing data
+
+1. In Supabase: create the project's pooled connection string (Project Settings
+   > Database > Connection pooling, transaction mode) and copy the service role
+   key (Project Settings > API). In Qdrant Cloud: create a cluster and an API key.
+2. Put the targets in `backend/.env`:
+   ```
+   DATABASE_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
+   SUPABASE_SERVICE_ROLE_KEY=<service role key>
+   TARGET_QDRANT_URL=https://<cluster>.cloud.qdrant.io:6333
+   TARGET_QDRANT_API_KEY=<qdrant api key>
+   ```
+   Leave `QDRANT_URL` pointing at the local container for now; it is the source.
+3. Copy everything (re-runnable; sources are only read):
+   ```powershell
+   cd backend
+   python -m scripts.migrate_to_cloud --all --dry-run   # counts only
+   python -m scripts.migrate_to_cloud --all
+   ```
+   Tables copy in dependency order with `ON CONFLICT DO NOTHING`, PDFs already
+   present with the same size are skipped, and a collection whose point count
+   already matches is left alone (`--force` re-copies).
+4. Switch `QDRANT_URL` / `QDRANT_API_KEY` to the cloud cluster, restart the
+   backend, and check the Paper Library, a chat answer, and a PDF open. The
+   local files and container are now a cold backup; the Qdrant container no
+   longer needs to be running.
+
+Postgres-specific behaviour is covered by `tests/test_postgres_storage.py`,
+which runs only when `TEST_DATABASE_URL` points at a disposable database (it
+drops the schema).
 
 ## Tests
 

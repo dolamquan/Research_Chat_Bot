@@ -11,8 +11,9 @@ from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 from langsmith import traceable
 
+from app.storage import files
 
-UPLOAD_FOLDER = Path(__file__).resolve().parents[1] / "data" / "uploaded_docs"
+
 VISION_MODEL = "gpt-4o-mini"
 DEFAULT_FORMULA_PAGE_LIMIT = 40
 
@@ -27,22 +28,11 @@ JSON_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*([\s\S]*?)\s*```", re.IGNORECAS
 
 
 def _resolve_pdf_path(document_source: str) -> Path | None:
-    source_name = Path(document_source).name
-    if not source_name:
-        return None
-
-    candidate = (UPLOAD_FOLDER / source_name).resolve()
-    upload_root = UPLOAD_FOLDER.resolve()
-
+    """The local (cached) PDF behind a document source, or None when it is not ours."""
     try:
-        candidate.relative_to(upload_root)
-    except ValueError:
+        return files.pdf_path(files.safe_pdf_name(Path(document_source).name))
+    except (ValueError, FileNotFoundError, OSError):
         return None
-
-    if candidate.exists() and candidate.suffix.lower() == ".pdf":
-        return candidate
-
-    return None
 
 
 def _get_llm_text(response: Any) -> str:

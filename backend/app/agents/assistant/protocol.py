@@ -23,6 +23,11 @@ class HelloFrame(_Frame):
     type: Literal["hello"]
     token: str = ""
     session_id: str | None = None
+    # A reconnect and an explicit "new session" both arrive without a
+    # session_id, and they want opposite things: a dropped socket must resume
+    # the conversation, a new session must not. Only the browser knows which
+    # this is, so it says so.
+    new_session: bool = False
     client_tools: List[Dict[str, Any]] = Field(default_factory=list)
     workspace: Dict[str, Any] = Field(default_factory=dict)
     client: Dict[str, Any] = Field(default_factory=dict)

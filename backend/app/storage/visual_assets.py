@@ -1,6 +1,5 @@
 import hashlib
 import mimetypes
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -8,6 +7,7 @@ from typing import Any, Dict, List
 
 from app.auth.context import UNSET, resolve_owner
 from app.storage.ownership import ensure_owner_column, owner_clause
+from app.storage import db
 
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
@@ -19,17 +19,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    init_db(connection)
-    return connection
+def _connect():
+    return db.connect(DB_PATH, init_db)
 
 
-def init_db(connection: sqlite3.Connection | None = None) -> None:
-    owns_connection = connection is None
-    conn = connection or sqlite3.connect(DB_PATH)
+def init_db(connection: db.Connection | None = None) -> None:
+    if connection is None:
+        with db.connect(DB_PATH) as conn:
+            init_db(conn)
+        return
+    conn = connection
 
     conn.execute(
         """
@@ -71,8 +70,6 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     ensure_owner_column(conn, "visual_assets")
     conn.commit()
 
-    if owns_connection:
-        conn.close()
 
 
 def create_visual_asset(
@@ -220,15 +217,20 @@ def upsert_visual_asset_blob(
     filename: str,
     content: bytes,
     mime_type: str,
-    conn: sqlite3.Connection | None = None,
+    conn: db.Connection | None = None,
 ) -> None:
     if not content:
         raise ValueError("Visual asset image content is empty.")
 
+    if conn is None:
+        with _connect() as connection:
+            upsert_visual_asset_blob(filename=filename, content=content, mime_type=mime_type, conn=connection)
+            connection.commit()
+        return
+
     timestamp = _now()
     sha256 = hashlib.sha256(content).hexdigest()
-    owns_connection = conn is None
-    connection = conn or _connect()
+    connection = conn
 
     connection.execute(
         """
@@ -246,17 +248,13 @@ def upsert_visual_asset_blob(
         (
             filename,
             mime_type,
-            sqlite3.Binary(content),
+            bytes(content),
             len(content),
             sha256,
             timestamp,
             timestamp,
         ),
     )
-
-    if owns_connection:
-        connection.commit()
-        connection.close()
 
 
 def get_visual_asset_blob(filename: str) -> Dict[str, Any] | None:

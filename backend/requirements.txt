@@ -15,6 +15,11 @@ scikit-learn
 requests
 httpx
 jsonschema>=4
+# Postgres (Supabase) backend for the stores; unused while DATABASE_URL is empty.
+psycopg[binary]>=3.1
+psycopg-pool>=3.1
+# Lets scripts trust the OS certificate store (antivirus TLS inspection on Windows).
+truststore>=0.9
 datasets
 ragas
 PyMuPDF

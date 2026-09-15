@@ -1,5 +1,4 @@
 import json
-import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -8,6 +7,7 @@ from uuid import uuid4
 from app.auth.context import UNSET, resolve_owner
 from app.storage import ownership
 from app.storage.ownership import ensure_column, ensure_owner_column, owner_clause
+from app.storage import db
 
 # `kind` separates the Agent tab's sessions ("agent") from the always-present
 # assistant's single long-lived session per user ("assistant").
@@ -22,18 +22,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA foreign_keys = ON")
-    init_db(connection)
-    return connection
+def _connect():
+    return db.connect(DB_PATH, init_db)
 
 
-def init_db(connection: sqlite3.Connection | None = None) -> None:
-    owns_connection = connection is None
-    conn = connection or sqlite3.connect(DB_PATH)
+def init_db(connection: db.Connection | None = None) -> None:
+    if connection is None:
+        with db.connect(DB_PATH) as conn:
+            init_db(conn)
+        return
+    conn = connection
 
     conn.execute(
         """
@@ -70,8 +68,6 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_agent_sessions_owner_kind ON agent_sessions(owner_id, kind, updated_at)")
     conn.commit()
 
-    if owns_connection:
-        conn.close()
 
 
 def _session_title(question: str) -> str:
@@ -240,7 +236,7 @@ def _loads(raw: Any, fallback: Any) -> Any:
         return fallback
 
 
-def _message(row: sqlite3.Row) -> Dict[str, Any]:
+def _message(row: db.Row) -> Dict[str, Any]:
     return {
         "role": row["role"],
         "content": row["content"],

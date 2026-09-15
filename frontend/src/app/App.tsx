@@ -7,7 +7,6 @@ import type {
 } from "react";
 import {
   Bot,
-  BrainCircuit,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -43,11 +42,11 @@ import {
   getVisualImageUrl,
   ingestUrlPaper,
   searchPapers,
-  sendAgentChat,
   sendChat,
   setArticleVisibility,
 } from "./api";
-import { AgentConsoleView } from "./components/AgentConsoleView";
+import { ConsoleView } from "./components/console/ConsoleView";
+import { toChatHistory } from "./chatHistory";
 import { AssistantDock, AssistantProvider, useRegisterUiActions, useReportWorkspace } from "./assistant";
 import { FormattedText } from "./components/MarkdownBody";
 import { useAuth } from "./auth/AuthProvider";
@@ -166,6 +165,7 @@ function initialMessage(cluster?: Cluster): Message {
   return {
     id: `welcome-${cluster?.cluster_id ?? "all"}`,
     role: "assistant",
+    synthetic: true,
     content: cluster
       ? `You are now exploring **${cluster.cluster_label}**. I will retrieve answers only from this cluster. Select an article on the right to read it, or ask a question across the cluster.`
       : "Welcome to **Zoetrope**. Explore the paper topology to focus on a research cluster, or ask a question across all indexed papers. Every response is grounded in retrieved passages from your collection.",
@@ -178,6 +178,7 @@ function articleInitialMessage(article: Article): Message {
   return {
     id: `welcome-article-${article.article_id}-${Date.now()}`,
     role: "assistant",
+    synthetic: true,
     content: `You are now chatting with **${title}**. The PDF is open on the side, and questions will retrieve from this paper first.`,
     timestamp: new Date(),
   };
@@ -548,11 +549,11 @@ function AppContent() {
   const [contextMode, setContextMode] = useState<ContextMode>("retrieval");
   const [retrievalStrategy, setRetrievalStrategy] = useState<RetrievalStrategy>("hybrid");
   const [input, setInput] = useState("");
-  const [activeView, setActiveView] = useState<"chat" | "library" | "crawler" | "reddit" | "notes" | "agent" | "graph" | "evaluation" | "visualizer">(
+  const [activeView, setActiveView] = useState<"chat" | "library" | "crawler" | "reddit" | "notes" | "console" | "graph" | "evaluation" | "visualizer">(
     // Coming back from Notion's consent screen lands on the Notes view.
     () => (new URLSearchParams(window.location.search).has("notion") ? "notes" : "chat"),
   );
-  const visibleActiveView = activeView === "graph" ? "chat" : activeView;
+  const visibleActiveView = activeView;
   const [librarySearch, setLibrarySearch] = useState("");
   const [crawlerDescription, setCrawlerDescription] = useState("");
   const [crawlerCategory, setCrawlerCategory] = useState("");
@@ -601,12 +602,6 @@ function AppContent() {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [isBuildingTopology, setIsBuildingTopology] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (activeView === "graph") {
-      setActiveView("chat");
-    }
-  }, [activeView]);
 
   const activeScope = useMemo(
     () => ({
@@ -1076,7 +1071,7 @@ function AppContent() {
     const question = input.trim();
     if (!question || isTyping) return;
 
-    const history = messages.map(({ role, content }) => ({ role, content }));
+    const history = toChatHistory(messages);
     const pinnedSourcesForMessage = [...pinnedSources];
     const userMessage: Message = {
       id: `user-${Date.now()}`,
@@ -1148,6 +1143,7 @@ function AppContent() {
         {
           id: `error-${Date.now()}`,
           role: "assistant",
+          synthetic: true,
           content: networkFailure
             ? `I could not reach the research backend. ${detail}`
             : `The research backend could not generate an answer. ${detail}`,
@@ -1157,52 +1153,6 @@ function AppContent() {
     } finally {
       setIsTyping(false);
     }
-  }
-
-  async function runAgentCommand(
-    command: string,
-    options?: { sessionId?: string; chatHistory?: ChatHistoryItem[] },
-  ) {
-    const result = await sendAgentChat({
-      sessionId: options?.sessionId,
-      question: command,
-      chatHistory: options?.chatHistory || [],
-      pinnedSources,
-      clusterId: selectedCluster?.cluster_id,
-      documentSource: selectedDocument?.source,
-      domain: selectedDomain || undefined,
-      category: selectedCategory || undefined,
-      contextMode: selectedDocument ? contextMode : "retrieval",
-      workspace: {
-        selected_paper: selectedDocument
-          ? {
-              title: selectedDocument.title,
-              source: selectedDocument.source,
-              article_id: selectedDocument.article_id,
-              cluster_label: selectedDocument.cluster_label,
-            }
-          : null,
-        selected_cluster: selectedCluster
-          ? {
-              cluster_id: selectedCluster.cluster_id,
-              cluster_label: selectedCluster.cluster_label,
-            }
-          : null,
-        library_search: librarySearch || null,
-        library_filter: {
-          domain: selectedDomain || null,
-          category: selectedCategory || null,
-        },
-      },
-    });
-
-    setSources(result.sources || []);
-    if (result.topology) {
-      setGraph(result.topology);
-      setTopologyExplorerOpen(true);
-    }
-    setBackendOnline(true);
-    return result;
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -1361,8 +1311,10 @@ function AppContent() {
       ? "Crawler"
       : visibleActiveView === "reddit"
         ? "Reddit"
-      : visibleActiveView === "agent"
-        ? "Agent Console"
+      : visibleActiveView === "console"
+        ? "Console"
+      : visibleActiveView === "graph"
+        ? "Graph RAG"
       : visibleActiveView === "evaluation"
         ? "Evaluation"
       : visibleActiveView === "library"
@@ -1375,8 +1327,10 @@ function AppContent() {
       ? "arXiv paper discovery"
       : visibleActiveView === "reddit"
         ? "Community research signals"
-      : visibleActiveView === "agent"
-        ? "Internal research tool calling"
+      : visibleActiveView === "console"
+        ? "Tool catalog, activity, jobs and diagnostics"
+      : visibleActiveView === "graph"
+        ? "Concept graph over the indexed papers"
       : visibleActiveView === "evaluation"
         ? "RAG quality and latency tracking"
       : visibleActiveView === "library"
@@ -1630,18 +1584,6 @@ function AppContent() {
             >
               <MessageSquare size={14} />
               <span className="text-xs font-medium">Chat</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveView("agent")}
-              className={`rm-nav-button w-full flex items-center gap-2.5 px-2.5 py-2 border text-left ${
-                activeView === "agent"
-                  ? "rm-active-surface text-foreground"
-                  : "border-transparent text-muted-foreground hover:border-border hover:bg-secondary hover:text-foreground"
-              }`}
-            >
-              <BrainCircuit size={14} />
-              <span className="text-xs font-medium">Agent</span>
             </button>
             <button
               type="button"
@@ -2229,7 +2171,7 @@ function AppContent() {
             activeView === "crawler" ||
             activeView === "reddit" ||
             activeView === "notes" ||
-            activeView === "agent" ||
+            activeView === "console" ||
             activeView === "graph" ||
             activeView === "visualizer" ||
             activeView === "evaluation"
@@ -2277,8 +2219,8 @@ function AppContent() {
                   });
               }}
             />
-          ) : activeView === "agent" ? (
-            <AgentConsoleView onRun={runAgentCommand} />
+          ) : activeView === "console" ? (
+            <ConsoleView onOpenView={(view) => setActiveView(view)} />
           ) : activeView === "graph" ? (
             <GraphRagView
               domain={selectedDomain || undefined}

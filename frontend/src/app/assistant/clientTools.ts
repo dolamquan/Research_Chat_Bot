@@ -6,7 +6,7 @@ import type { Article, Cluster } from "../types";
 import type { AssistantWorkspace, ClientToolSpec, UiAction } from "./assistantTypes";
 import type { UiActionRegistry, WorkspaceStore } from "./uiActionRegistry";
 
-export const VIEWS = ["chat", "library", "crawler", "reddit", "notes", "agent", "evaluation", "visualizer"] as const;
+export const VIEWS = ["chat", "library", "crawler", "reddit", "notes", "console", "graph", "evaluation", "visualizer"] as const;
 
 const str = { type: "string" } as const;
 

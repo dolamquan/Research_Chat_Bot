@@ -1,5 +1,4 @@
 import json
-import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
@@ -8,6 +7,7 @@ from uuid import uuid4
 from app.auth.context import UNSET, resolve_owner
 from app.storage import ownership
 from app.storage.ownership import ensure_owner_column, owner_clause
+from app.storage import db
 
 
 DATA_DIR = Path(__file__).resolve().parents[1] / "data"
@@ -18,17 +18,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _connect() -> sqlite3.Connection:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    init_db(connection)
-    return connection
+def _connect():
+    return db.connect(DB_PATH, init_db)
 
 
-def init_db(connection: sqlite3.Connection | None = None) -> None:
-    owns_connection = connection is None
-    conn = connection or sqlite3.connect(DB_PATH)
+def init_db(connection: db.Connection | None = None) -> None:
+    if connection is None:
+        with db.connect(DB_PATH) as conn:
+            init_db(conn)
+        return
+    conn = connection
 
     conn.execute(
         """
@@ -57,10 +56,7 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
         )
         """
     )
-    columns = {
-        row[1]
-        for row in conn.execute("PRAGMA table_info(chat_messages)").fetchall()
-    }
+    columns = db.table_columns(conn, "chat_messages")
     if "pinned_sources_json" not in columns:
         conn.execute(
             """
@@ -71,8 +67,6 @@ def init_db(connection: sqlite3.Connection | None = None) -> None:
     ensure_owner_column(conn, "chat_sessions")
     conn.commit()
 
-    if owns_connection:
-        conn.close()
 
 
 def _session_title(question: str) -> str:

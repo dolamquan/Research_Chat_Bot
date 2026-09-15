@@ -142,6 +142,10 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
   ttsEnabledRef.current = ttsEnabled;
 
   const socketRef = useRef<AssistantSocket | null>(null);
+  // Consumed by the next hello. A reconnect must resume the conversation; only
+  // an explicit "New session" may discard it, and the socket reconnects for
+  // both reasons, so the difference has to be carried here.
+  const newSessionRef = useRef(false);
   const localCounter = useRef(0);
   const timers = useRef<{ silence?: number; capture?: number; confirm?: number; error?: number; restart?: number; workspace?: number }>({});
   const dispatchRef = useRef<(event: VoiceEvent) => void>(() => undefined);
@@ -303,6 +307,8 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
     (message: ServerMessage) => {
       switch (message.type) {
         case "session": {
+          // Honoured; a later reconnect must resume this session, not replace it.
+          newSessionRef.current = false;
           setSessionId(message.session_id);
           assistantStorage.setSessionId(message.session_id);
           setCatalogToolCount(message.catalog_tool_count);
@@ -396,6 +402,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       hello: () => ({
         token: getAccessToken() ?? "",
         session_id: assistantStorage.getSessionId(),
+        new_session: newSessionRef.current,
         client_tools: CLIENT_TOOL_SPECS,
         workspace: workspace.snapshot(),
         client: { tts: ttsEnabledRef.current, locale: navigator.language || "en-US" },
@@ -486,6 +493,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
         assistantStorage.setSessionId(null);
         setTurns([]);
         dispatch({ type: "CANCEL" });
+        newSessionRef.current = true;
         socketRef.current?.refresh();
       },
       stopSpeaking: () => synthesisRef.current.cancel(),
