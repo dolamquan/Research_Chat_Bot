@@ -219,3 +219,58 @@ def test_astream_agent_yields_the_same_events(monkeypatch):
     events = asyncio.run(go())
     assert [e["type"] for e in events] == ["thinking", "token", "speak", "answer"]
     assert events[-1]["answer"] == "Hi." and events[-1]["spoken"] == "Hi."
+
+
+# --- parallelism and delegation, as the dock sees them --------------------------------
+
+def test_parallel_calls_overlap_and_tool_messages_keep_call_order(monkeypatch):
+    active = {"now": 0, "max": 0}
+
+    async def fake_aexecute(name, arguments, workspace=None):
+        active["now"] += 1
+        active["max"] = max(active["max"], active["now"])
+        await asyncio.sleep(0.05)
+        active["now"] -= 1
+        return {"ran": name}
+
+    monkeypatch.setattr(catalog, "aexecute_tool", fake_aexecute)
+    script = [
+        [("execute_tool", {"name": "api.health.health_check", "arguments": {}}),
+         ("execute_tool", {"name": "app.papers", "arguments": {"query": "graph"}})],
+        "Both ran.\nSPEAK: Both ran.",
+    ]
+    result, events, model = _collect(monkeypatch, script)
+    assert active["max"] == 2
+    assert result["answer"] == "Both ran."
+    starts = [e for e in events if e["type"] == "tool_start"]
+    assert {e["tool"] for e in starts} == {"api.health.health_check", "app.papers"}
+    tool_messages = [m for m in model.calls[1] if m.type == "tool"]
+    assert [m.tool_call_id for m in tool_messages] == ["call_0", "call_1"]
+    assert "health_check" in tool_messages[0].content and "app.papers" in tool_messages[1].content
+
+
+def test_worker_tool_events_are_nested_and_workers_do_not_stream_tokens(monkeypatch):
+    script = [
+        [("delegate", {"tasks": [{"task": "Find the graph paper", "label": "lookup", "format": "json"}]})],
+        [("app_papers", {"query": "graph"})],          # worker tool call (non-streaming path)
+        'Found it.\n```json\n{"article_id": "a1"}\n```',  # worker report
+        "My worker found **Graph RAG for Science**.\nSPEAK: I found Graph RAG for Science.",
+    ]
+    result, events, model = _collect(monkeypatch, script, question="find my graph paper")
+    assert result["answer"] == "My worker found **Graph RAG for Science**."
+    types = [e["type"] for e in events]
+    assert types[:2] == ["thinking", "tool_start"] and types[-2:] == ["speak", "answer"]
+    # The worker's report never leaked into the streamed text.
+    assert "".join(e["text"] for e in events if e["type"] == "token") == "My worker found **Graph RAG for Science**."
+    outer = next(e for e in events if e["type"] == "tool_start" and e["tool"] == "delegate")
+    assert outer["execution"] == "orchestration" and outer["say"] == "Handing a task to a worker" and "parent_call_id" not in outer
+    inner = next(e for e in events if e["type"] == "tool_start" and e["tool"] == "app_papers")
+    assert inner["parent_call_id"] == outer["call_id"] and inner["worker"] == "lookup" and inner["turn_id"] == "t-1"
+    inner_done = next(e for e in events if e["type"] == "tool_result" and e["call_id"] == inner["call_id"])
+    assert inner_done["status"] == "success" and inner_done["worker"] == "lookup"
+    # Order: the nested call finishes before the delegation reports.
+    order = [(e["type"], e["tool"]) for e in events if e["type"] in ("tool_start", "tool_result")]
+    assert order == [("tool_start", "delegate"), ("tool_start", "app_papers"), ("tool_result", "app_papers"), ("tool_result", "delegate")]
+    report = json.loads([m for m in model.calls[-1] if m.type == "tool"][0].content)["reports"][0]
+    assert report["data"] == {"article_id": "a1"} and report["status"] == "ok"
+    assert [(t["tool"], t.get("parent")) for t in result["tool_trace"]] == [("app_papers", "lookup"), ("delegate", None)]

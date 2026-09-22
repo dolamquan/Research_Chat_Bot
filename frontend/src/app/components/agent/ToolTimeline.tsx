@@ -42,10 +42,14 @@ export function ToolTimeline({ trace, compact = false }: { trace?: AgentToolTrac
         {trace.map((step, index) => (
           <div
             key={`${step.tool}-${step.timestamp}-${index}`}
-            className="grid grid-cols-[0.9rem_minmax(8rem,12rem)_1fr] items-start gap-2 text-[11px]"
+            className={
+              step.parent
+                ? "ml-3 grid grid-cols-[0.9rem_minmax(8rem,12rem)_1fr] items-start gap-2 border-l border-primary/10 pl-2 text-[11px]"
+                : "grid grid-cols-[0.9rem_minmax(8rem,12rem)_1fr] items-start gap-2 text-[11px]"
+            }
           >
             <ToolStatusIcon status={step.status} />
-            <span className="break-words text-primary" title={step.arguments || undefined}>
+            <span className="break-words text-primary" title={step.parent ? `${step.parent}${step.arguments ? ` · ${step.arguments}` : ""}` : step.arguments || undefined}>
               {step.tool}
               {step.effect && step.effect !== "read" && (
                 <span className="ml-1 text-muted-foreground">[{step.effect}]</span>

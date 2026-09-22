@@ -90,6 +90,9 @@ export type ServerMessage =
       effect: string;
       arguments: string;
       say: string;
+      /** Set when a worker or playbook issued this call on behalf of the main loop. */
+      parent_call_id?: string;
+      worker?: string;
     }
   | {
       type: "tool_result";
@@ -101,6 +104,8 @@ export type ServerMessage =
       effect: string;
       execution: string;
       duration_ms: number;
+      parent_call_id?: string;
+      worker?: string;
     }
   | { type: "client_tool_call"; turn_id: string; call_id: string; tool: string; arguments: Record<string, unknown> }
   | {

@@ -438,6 +438,8 @@ export type AgentToolTrace = {
   timestamp: string;
   arguments?: string;
   effect?: string;
+  /** The worker or playbook this call ran inside, when it was not the main loop's own call. */
+  parent?: string;
 };
 
 export type AgentTool = {

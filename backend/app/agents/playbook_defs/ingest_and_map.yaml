@@ -1,0 +1,49 @@
+# Index several URLs in parallel, then rebuild the topology once.
+name: ingest_and_map
+title: Ingest and map
+description: >-
+  Index several arXiv or PDF URLs into the library in parallel, then rebuild the
+  topology so the new papers appear on the map. Use for "add these papers",
+  "ingest these URLs and update the map".
+tags: [library, ingest, topology]
+parameters:
+  type: object
+  additionalProperties: false
+  properties:
+    urls:
+      type: array
+      minItems: 1
+      maxItems: 12
+      items: { type: string }
+      description: arXiv abstract/PDF URLs or direct PDF URLs.
+    domain:
+      type: string
+      description: Optional library domain to file the papers under.
+    category:
+      type: string
+      description: Optional library category.
+    tags:
+      type: array
+      items: { type: string }
+      description: Optional tags applied to every paper.
+  required: [urls]
+steps:
+  - id: ingest
+    title: Index each URL
+    each: "{{params.urls}}"
+    max_items: 12
+    tool: research.add_paper
+    arguments:
+      url: "{{item}}"
+      domain: "{{params.domain}}"
+      category: "{{params.category}}"
+      tags: "{{params.tags}}"
+  - id: topology
+    title: Rebuild the topology
+    tool: research.rebuild_topology
+    arguments:
+      domain: "{{params.domain}}"
+      category: "{{params.category}}"
+report: |
+  Report which URLs were indexed (with the resulting titles), which failed and why ({{steps.ingest.summary}}),
+  and confirm the topology was rebuilt ({{steps.topology.summary}}). Suggest opening the Topology view if new clusters appeared.

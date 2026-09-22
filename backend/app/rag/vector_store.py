@@ -6,7 +6,15 @@ from typing import Any, Dict, List
 from dotenv import load_dotenv
 from langsmith import traceable
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, FieldCondition, Filter, MatchValue, PointStruct, VectorParams
+from qdrant_client.models import (
+    Distance,
+    FieldCondition,
+    Filter,
+    MatchValue,
+    PayloadSchemaType,
+    PointStruct,
+    VectorParams,
+)
 
 from app.rag.chunker import load_and_chunk_pdf
 from app.rag.embedder import embed_texts, get_embedding_dimension
@@ -24,7 +32,66 @@ QDRANT_DATA_DIR = DATA_DIR / "qdrant_data"
 
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
+# Every payload field a filter touches, per collection. Qdrant Cloud refuses to
+# filter on an unindexed field ("Index required but not found for \"source\""),
+# while embedded and Docker Qdrant quietly scan, which is why the cloud
+# migration surfaced it. Indexes are idempotent, so they are ensured whenever
+# a client is opened and whenever a collection is created.
+NOTES_COLLECTION_NAME = "research_notes"
+PAYLOAD_INDEXES: Dict[str, Dict[str, PayloadSchemaType]] = {
+    COLLECTION_NAME: {
+        "source": PayloadSchemaType.KEYWORD,
+        "article_id": PayloadSchemaType.KEYWORD,
+        "domain": PayloadSchemaType.KEYWORD,
+        "category": PayloadSchemaType.KEYWORD,
+        "tags": PayloadSchemaType.KEYWORD,
+        "owner_id": PayloadSchemaType.KEYWORD,
+        "cluster_id": PayloadSchemaType.INTEGER,
+    },
+    NOTES_COLLECTION_NAME: {
+        "owner_id": PayloadSchemaType.KEYWORD,
+        "note_id": PayloadSchemaType.KEYWORD,
+    },
+}
+
 _client = None
+_indexes_checked: set = set()
+
+
+def ensure_payload_indexes(client: QdrantClient, collection_name: str | None = None) -> List[str]:
+    """Create any missing payload index for the known collections; returns what was created.
+
+    Only collections that exist are touched (a fresh deployment creates them
+    later through `create_collection`, which calls this again). Safe to call
+    repeatedly: existing indexes are read from the collection's payload schema.
+    """
+    created: List[str] = []
+    existing_collections = {c.name for c in client.get_collections().collections}
+    targets = [collection_name] if collection_name else list(PAYLOAD_INDEXES)
+    for name in targets:
+        fields = PAYLOAD_INDEXES.get(name)
+        if not fields or name not in existing_collections:
+            continue
+        info = client.get_collection(collection_name=name)
+        indexed = set((getattr(info, "payload_schema", None) or {}).keys())
+        for field, schema in fields.items():
+            if field in indexed:
+                continue
+            client.create_payload_index(collection_name=name, field_name=field, field_schema=schema)
+            created.append(f"{name}.{field}")
+    return created
+
+
+def _ensure_indexes_once(client: QdrantClient) -> None:
+    """Best effort on first use; a cold or unreachable cluster must not break client construction."""
+    key = id(client)
+    if key in _indexes_checked:
+        return
+    _indexes_checked.add(key)
+    try:
+        ensure_payload_indexes(client)
+    except Exception:  # the next filtered query reports the real error if indexes are truly missing
+        _indexes_checked.discard(key)
 
 
 def get_client() -> QdrantClient:
@@ -50,6 +117,7 @@ def get_client() -> QdrantClient:
             )
         else:
             _client = QdrantClient(path=str(QDRANT_DATA_DIR))
+        _ensure_indexes_once(_client)
 
     return _client
 
@@ -68,6 +136,7 @@ def create_collection(recreate: bool = False) -> None:
                 distance=Distance.COSINE,
             ),
         )
+        ensure_payload_indexes(client, COLLECTION_NAME)
         return
 
     collections = client.get_collections().collections
@@ -81,6 +150,7 @@ def create_collection(recreate: bool = False) -> None:
                 distance=Distance.COSINE,
             ),
         )
+    ensure_payload_indexes(client, COLLECTION_NAME)
 
 
 def build_points(

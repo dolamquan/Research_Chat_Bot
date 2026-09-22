@@ -62,6 +62,17 @@ class NodeNotFound(LookupError):
     """The diagram has no node with the requested id."""
 
 
+def describe_node_not_found(node_id: str, nodes: list) -> str:
+    """A 404 message that names the real node ids, so a caller (or the agent)
+    that guessed an id from a label can correct itself instead of retrying blindly."""
+    listing = ", ".join(
+        f"{n.get('id')} ({n.get('label')})" if n.get("label") else str(n.get("id"))
+        for n in nodes if isinstance(n, dict) and n.get("id") is not None
+    )
+    hint = f" Diagram node ids are: {listing}." if listing else " The diagram has no nodes."
+    return f"Node not found in diagram: {node_id}.{hint} Use a node's id, not its label."
+
+
 class RefinementNeedsAcknowledgement(RuntimeError):
     """The requested change alters the method itself; the user must confirm first."""
 
@@ -317,7 +328,7 @@ def build_stage_scene(
     nodes = (record.get("diagram") or {}).get("nodes") or []
     node = next((n for n in nodes if str(n.get("id")) == node_id), None)
     if node is None:
-        raise NodeNotFound(f"Node not found in diagram: {node_id}")
+        raise NodeNotFound(describe_node_not_found(node_id, nodes))
 
     from app.rag.paper_visualizer import _stage_context
     from app.rag.retriever import retrieve_document_chunks

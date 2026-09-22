@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from app.agents import catalog
+from app.agents import catalog, playbooks
 from app.agents.graph import agent_graph
 from app.agents.runtime import run_agent
 from app.rag.llm_provider import ProviderNotConfigured
@@ -170,6 +170,26 @@ def call_agent_tool(request: AgentToolCallRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return {"status": "success", "name": request.name, "result": result}
+
+
+@router.get("/playbooks")
+def get_agent_playbooks() -> Dict[str, Any]:
+    """List the agent's playbooks: named multi-step procedures it can run with run_playbook, with their parameters."""
+    loaded = playbooks.load_playbooks()
+    return {
+        "playbooks": [pb.to_dict() for pb in sorted(loaded.values(), key=lambda p: p.name)],
+        "directories": [str(d) for d in playbooks.playbook_dirs()],
+        "errors": playbooks.load_errors(),
+    }
+
+
+@router.get("/playbooks/{name}")
+def get_agent_playbook(name: str) -> Dict[str, Any]:
+    """One playbook's definition: parameters schema, steps and report instructions."""
+    try:
+        return playbooks.get_playbook(name).to_dict()
+    except playbooks.PlaybookError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/context")

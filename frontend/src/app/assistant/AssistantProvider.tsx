@@ -342,7 +342,8 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
             tools: [
               ...turn.tools,
               { tool: message.tool, status: "running", message: message.say, timestamp: new Date().toISOString(), arguments: message.arguments, effect: message.effect,
-                call_id: message.call_id, origin: message.execution === "client" ? "client" : "server", say: message.say, startedAt: Date.now(), execution: message.execution },
+                call_id: message.call_id, origin: message.execution === "client" ? "client" : "server", say: message.say, startedAt: Date.now(), execution: message.execution,
+                parent: message.worker || undefined },
             ],
           }));
           break;

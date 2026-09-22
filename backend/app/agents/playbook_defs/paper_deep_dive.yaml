@@ -1,0 +1,104 @@
+# One indexed paper, read from four angles at once, placed among its neighbours
+# in the library, and optionally saved as a note.
+name: paper_deep_dive
+title: Paper deep dive
+description: >-
+  Explain one indexed paper thoroughly: resolve it, extract problem, method,
+  results and limitations in parallel from its full text, find related papers in
+  the library, and optionally save the brief as a note. Use for "explain this
+  paper in depth", "give me a full breakdown of X", "deep dive on the selected paper".
+tags: [research, reading, summarize]
+parameters:
+  type: object
+  additionalProperties: false
+  properties:
+    paper:
+      type: string
+      description: Title, article_id or source filename of an indexed paper (use the selected paper if the user says "this paper").
+    save_note:
+      type: boolean
+      default: false
+      description: Save the structured brief as a note attached to the paper.
+  required: [paper]
+steps:
+  - id: candidates
+    title: Look the paper up in the library
+    tool: app_papers
+    arguments:
+      query: "{{params.paper}}"
+      limit: 5
+  - id: pick
+    title: Identify the paper
+    format: json
+    agent: |
+      The user asked about the paper "{{params.paper}}". Library search returned:
+      {{steps.candidates.result}}
+
+      If exactly one entry clearly matches, end your report with a JSON object
+      {"article_id": ..., "title": ..., "source": ...} copied verbatim from that entry.
+      If nothing matches, try app_papers once more with a shorter query; if there is still
+      no match, end with {"error": "no matching paper", "closest": [titles]}.
+  - id: problem
+    title: Problem and motivation
+    group: facets
+    tool: research.summarize_paper
+    arguments:
+      article_id: "{{steps.pick.data.article_id}}"
+      title: "{{steps.pick.data.title}}"
+      document_source: "{{steps.pick.data.source}}"
+      query: What problem does this paper address, why does it matter, and what was lacking in prior work?
+  - id: method
+    title: Method
+    group: facets
+    tool: research.summarize_paper
+    arguments:
+      article_id: "{{steps.pick.data.article_id}}"
+      title: "{{steps.pick.data.title}}"
+      document_source: "{{steps.pick.data.source}}"
+      query: Describe the proposed method or system step by step, including its key components, inputs and outputs, and what is novel.
+  - id: results
+    title: Results
+    group: facets
+    tool: research.summarize_paper
+    arguments:
+      article_id: "{{steps.pick.data.article_id}}"
+      title: "{{steps.pick.data.title}}"
+      document_source: "{{steps.pick.data.source}}"
+      query: Summarize the experimental setup, datasets, baselines and the main quantitative results.
+  - id: limitations
+    title: Limitations and future work
+    group: facets
+    tool: research.summarize_paper
+    arguments:
+      article_id: "{{steps.pick.data.article_id}}"
+      title: "{{steps.pick.data.title}}"
+      document_source: "{{steps.pick.data.source}}"
+      query: What limitations, assumptions or failure cases does the paper acknowledge, and what future work does it propose?
+  - id: related
+    title: Related papers in the library
+    group: facets
+    tool: research.search_library
+    arguments:
+      query: "{{steps.pick.data.title}}"
+      limit: 6
+  - id: note
+    title: Save the brief as a note
+    when: "{{params.save_note}}"
+    agent: |
+      Write a structured brief of the paper "{{steps.pick.data.title}}" (article_id
+      {{steps.pick.data.article_id}}, source {{steps.pick.data.source}}) with the sections
+      Problem, Method, Results, Limitations, using this material:
+
+      Problem: {{steps.problem.result}}
+      Method: {{steps.method.result}}
+      Results: {{steps.results.result}}
+      Limitations: {{steps.limitations.result}}
+
+      Then save it with research.save_note (source = the paper's source, article_id and title
+      as above, note_type "summary", note = the brief in Markdown). Report the saved note's
+      identifier and title, or the error.
+report: |
+  Produce a structured brief of "{{steps.pick.data.title}}" with the sections Problem, Method, Results, Limitations, then
+  "Related work in your library" naming the related papers by title (exclude the paper itself). Keep each section to a
+  short paragraph or a few bullets and quote specific numbers where the results step gives them. If a note was saved,
+  say where. If the paper could not be identified, say which titles were close and ask the user to pick one.

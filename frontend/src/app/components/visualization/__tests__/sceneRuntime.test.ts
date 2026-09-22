@@ -112,6 +112,20 @@ describe("buildSceneSrcDoc", () => {
     expect(doc).toContain("1 \\u003c 2");
   });
 
+  it("probes only after the render state it depends on is declared", () => {
+    // The probe calls renderScene(), which reads let/const bindings declared
+    // after the scene is built. Running it earlier threw "Cannot access
+    // outlineCount before initialization" for every stage scene.
+    const doc = buildSceneSrcDoc(GOOD_CODE);
+    const probeCall = doc.indexOf("runProbe();");
+    expect(probeCall).toBeGreaterThan(-1);
+    for (const declaration of ["let outlineCount", "function renderScene", "const clock =", "let playing"]) {
+      expect(doc.indexOf(declaration)).toBeGreaterThan(-1);
+      expect(doc.indexOf(declaration)).toBeLessThan(probeCall);
+    }
+    expect(probeCall).toBeLessThan(doc.indexOf("renderer.setAnimationLoop"));
+  });
+
   it("animates, not probes, by default", () => {
     const doc = buildSceneSrcDoc(GOOD_CODE);
     expect(doc).toContain("const PROBE = false");

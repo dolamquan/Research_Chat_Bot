@@ -198,6 +198,7 @@ def get_llm(
     model: str = DEFAULT_MODEL,
     temperature: float = 0,
     provider: str | None = None,
+    **kwargs: Any,
 ) -> Any:
     """Construct a chat model.
 
@@ -220,8 +221,10 @@ def get_llm(
     explicit = model != DEFAULT_MODEL
     requested_model = model if explicit else None
 
+    # Extra keyword arguments (e.g. reasoning_effort for gpt-5) pass straight
+    # through to the provider's chat class.
     return build_chat_model(
-        provider=resolved, model=requested_model, temperature=temperature
+        provider=resolved, model=requested_model, temperature=temperature, **kwargs
     )
 
 

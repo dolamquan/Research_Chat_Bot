@@ -295,7 +295,12 @@ def list_articles(
         params.extend(scope_params)
 
     where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    params.append(limit)
+    # A negative limit means "everything": SQLite reads LIMIT -1 as unbounded but
+    # Postgres rejects it, so drop the clause rather than bind a sentinel.
+    limit_clause = ""
+    if limit >= 0:
+        limit_clause = "LIMIT ?"
+        params.append(limit)
 
     with _connect() as conn:
         rows = conn.execute(
@@ -303,7 +308,7 @@ def list_articles(
             SELECT * FROM articles
             {where_clause}
             ORDER BY updated_at DESC
-            LIMIT ?
+            {limit_clause}
             """,
             params,
         ).fetchall()

@@ -52,7 +52,7 @@ APP_GUIDE = {
     "Crawler": "Discover academic papers across arXiv, PubMed, bioRxiv, medRxiv, Semantic Scholar, Crossref and OpenAlex; ingest URLs and inspect ingestion jobs.",
     "Topology": "Paper clusters, cluster documents and topology rebuilding.",
     "Graph RAG": "Concept graph retrieval, neighbors, paths and graph rebuilding.",
-    "Visualizer": "Saved 2D/3D paper diagrams, node explanations, dynamic scenes, stage scenes, scene verification and providers. Prepare all means preparing every node explanation and stage scene; inspect readiness first and reuse saved scenes.",
+    "Visualizer": "Saved 2D/3D paper diagrams, node explanations, dynamic scenes, stage scenes, scene verification and providers. Node-level tools (expand-node, generate-stage-scene, stage runtime/refine) are keyed by viz_id and the node's `id` as stored in the visualization's diagram.nodes; fetch the paper's visualizations first and copy ids from there, since a node's label is not its id. Prepare all means preparing every node explanation and stage scene; inspect readiness first and reuse saved scenes.",
     "Variants": "Propose/apply modifications to a paper's method diagram, saved variants, verification findings and discussion history.",
     "Evaluation": "Single, batch and RAGAS evaluation plus saved runs and metrics.",
     "Integrations": "MCP bridge tools, Notion publishing, GitHub issues/search and Reddit search. Configuration status is not a connectivity guarantee.",
@@ -253,8 +253,8 @@ def describe_tool(name: str) -> dict:
 
 def library_papers(query: str = "", offset: int = 0, limit: int = 30, domain: str = "", category: str = "") -> dict:
     from app.storage.article_store import list_articles
-    # SQLite LIMIT -1 is unbounded. The store explicitly supports it so the
-    # combined database/manifest list is not silently truncated.
+    # A negative limit asks the store for every row, so the combined
+    # database/manifest list is not silently truncated before filtering.
     papers = list_articles(domain=domain or None, category=category or None, limit=-1)
     terms = query.lower().split()
     matches = [p for p in papers if all(term in " ".join(str(p.get(k) or "") for k in ("title", "source", "article_id", "abstract", "tags")).lower() for term in terms)]

@@ -48,6 +48,10 @@ def ensure_collection() -> None:
                 distance=Distance.COSINE,
             ),
         )
+    # Qdrant Cloud requires an index on any filtered field (owner_id here).
+    from app.rag.vector_store import ensure_payload_indexes
+
+    ensure_payload_indexes(client, NOTES_COLLECTION)
 
 
 def _note_text(note: Dict[str, Any]) -> str:

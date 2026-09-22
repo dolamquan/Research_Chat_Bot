@@ -1,0 +1,47 @@
+# One worker per paper extracts the same facets; the main agent writes the comparison.
+name: compare_papers
+title: Compare papers
+description: >-
+  Compare two or more indexed papers side by side: a parallel worker per paper
+  extracts problem, method, setup, results and limitations, then the main agent
+  writes a comparison table and verdict. Use for "compare X and Y", "how does X
+  differ from Y", "which of these papers ...".
+tags: [research, reading, compare]
+parameters:
+  type: object
+  additionalProperties: false
+  properties:
+    papers:
+      type: array
+      minItems: 2
+      maxItems: 6
+      items: { type: string }
+      description: Titles, article_ids or source filenames of indexed papers.
+    focus:
+      type: string
+      default: ""
+      description: Optional angle for the comparison (e.g. "training cost", "evaluation methodology").
+  required: [papers]
+steps:
+  - id: extract
+    title: Extract each paper's facets
+    each: "{{params.papers}}"
+    max_items: 6
+    agent: |
+      Paper to analyse: "{{item}}"
+      Comparison focus (may be empty): {{params.focus}}
+
+      1. Resolve the paper with app_papers (query by title or id) and take its article_id,
+         title and source from the result; if nothing matches, report that and stop.
+      2. Use research.summarize_paper (with article_id, title and document_source) to extract,
+         as separate bullet groups: Problem, Method, Setup (datasets, baselines, metrics),
+         Key results (with numbers), Limitations. Independent calls may be issued together.
+      3. If a focus is given, add a "Focus" group addressing it specifically.
+
+      Start the report with the resolved title and article_id.
+report: |
+  Compare the papers {{params.papers}} from the extracted facets (focus, if any: {{params.focus}}):
+  1. A Markdown table with one column per paper and rows Problem, Method, Setup, Key results, Limitations (and Focus if one was given).
+  2. Three to five sentences on the most important differences and where each paper is stronger.
+  3. A short verdict on which paper suits which purpose.
+  Name papers by title. If a paper could not be resolved, say so and compare the rest.

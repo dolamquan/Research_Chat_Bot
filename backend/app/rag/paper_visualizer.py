@@ -1088,12 +1088,12 @@ def expand_node(
         if cached and _expansion_is_current(cached, stored_domain):
             return cached
 
-    node = next(
-        (n for n in record.get("diagram", {}).get("nodes", []) if n.get("id") == node_id),
-        None,
-    )
+    nodes = record.get("diagram", {}).get("nodes", [])
+    node = next((n for n in nodes if n.get("id") == node_id), None)
     if node is None:
-        raise ValueError(f"Node not found in diagram: {node_id}")
+        from app.rag.scene_service import describe_node_not_found
+
+        raise ValueError(describe_node_not_found(node_id, nodes))
 
     try:
         article = get_article(record["article_id"])

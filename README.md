@@ -150,6 +150,26 @@ Graph RAG, evaluation runs, ingestion and integrations without any
 per-feature wiring. Destructive and external-write tools (deletes, Notion,
 GitHub) wait for the user's confirmation.
 
+The loop runs on gpt-5 by default (`AGENT_MODEL`, `AGENT_REASONING_EFFORT`)
+and works in three ways beyond one-call-at-a-time:
+
+- **Parallel tool calls.** Every tool call the model issues in one turn runs
+  concurrently (`AGENT_PARALLEL_TOOLS`); browser actions run in order.
+- **Delegation.** The `delegate` meta tool fans independent sub-tasks out to
+  workers: bounded copies of the loop on the faster `AGENT_WORKER_MODEL`
+  (gpt-5-mini by default) with the whole catalog but no browser tools and no
+  destructive or external-write actions. Only their reports return to the
+  main context, and the dock shows each worker's tool calls nested under the
+  delegation while it runs.
+- **Playbooks.** `run_playbook` executes a named procedure from
+  `backend/app/agents/playbook_defs/*.yaml` (`literature_review`,
+  `paper_deep_dive`, `compare_papers`, `ingest_and_map`): tool steps and
+  worker steps, grouped for concurrency, with `each` fan-out over a list and
+  `when` conditions, all templated over the call's params and earlier step
+  results. The main agent writes the answer from the step results and the
+  playbook's `report` instructions. Drop your own YAML files in a directory
+  named by `AGENT_PLAYBOOKS_DIR`; `GET /agent/playbooks` shows what loaded.
+
 The **Console** view is not a second chat. It is where you see and operate the
 machine Zoe drives:
 
@@ -170,9 +190,10 @@ machine Zoe drives:
 
 The endpoints behind it: `GET /agent/tools?query=&category=`,
 `GET /agent/tools/{name}`, `POST /agent/tools/call`, `GET /agent/context`,
-`GET /agent/sessions?kind=agent|assistant|all`. `AGENT_MODEL`,
-`AGENT_MAX_STEPS` and `AGENT_MODE=legacy` (the previous fixed intent router)
-are documented in `backend/.env.example`.
+`GET /agent/sessions?kind=agent|assistant|all`, `GET /agent/playbooks`.
+`AGENT_MODEL`, `AGENT_WORKER_MODEL`, `AGENT_MAX_STEPS`, `AGENT_PARALLEL_TOOLS`,
+`AGENT_PLAYBOOKS_DIR` and `AGENT_MODE=legacy` (the previous fixed intent
+router) are documented in `backend/.env.example`.
 
 ## Notes
 

@@ -1,0 +1,110 @@
+# Search everywhere at once, rank, brief each candidate in parallel, optionally
+# index the winners. The main agent writes the review from the step results.
+name: literature_review
+title: Literature review
+description: >-
+  Survey a topic: search the indexed library, external academic sources and the
+  user's notes in parallel, rank the most relevant papers, write a short brief of
+  each with parallel workers, and optionally index the new ones and refresh the
+  topology. Use for "review the literature on X", "what's out there on X",
+  "find and summarize the key papers about X".
+tags: [research, search, summarize]
+parameters:
+  type: object
+  additionalProperties: false
+  properties:
+    topic:
+      type: string
+      description: The research topic or question to survey.
+    top_n:
+      type: integer
+      minimum: 1
+      maximum: 10
+      default: 5
+      description: How many papers to rank and brief.
+    ingest:
+      type: boolean
+      default: false
+      description: Index the top external papers into the library and rebuild the topology afterwards.
+    sources:
+      type: array
+      items: { type: string }
+      description: Optional external sources to search (e.g. arxiv, semantic_scholar, pubmed). Default is every configured source.
+  required: [topic]
+steps:
+  - id: library
+    title: Search the indexed library
+    group: search
+    tool: research.search_library
+    arguments:
+      query: "{{params.topic}}"
+      limit: 10
+  - id: external
+    title: Search external academic sources
+    group: search
+    tool: research.search_papers
+    arguments:
+      description: "{{params.topic}}"
+      max_results: 15
+      sort_by: relevance
+      sources: "{{params.sources}}"
+  - id: notes
+    title: Search the user's notes
+    group: search
+    tool: research.search_notes
+    arguments:
+      query: "{{params.topic}}"
+      limit: 5
+  - id: rank
+    title: Rank the candidates
+    format: json
+    agent: |
+      Topic: {{params.topic}}
+
+      Candidate papers already in the library (may be empty):
+      {{steps.library.result}}
+
+      Candidate papers from external sources (may be empty):
+      {{steps.external.result}}
+
+      Pick the {{params.top_n}} papers most relevant to the topic. Prefer a mix of
+      foundational and recent work and avoid near-duplicates. Do not call tools unless a
+      candidate's abstract is missing and app_papers can supply it. End your report with a
+      JSON array of exactly the chosen papers, each an object with keys:
+      title, url, identifier (arXiv id, DOI or article_id), already_indexed (true if it came
+      from the library), abstract (the abstract or summary text you were given, trimmed to
+      600 characters), why (one sentence on relevance).
+  - id: briefs
+    title: Brief each paper
+    each: "{{steps.rank.data}}"
+    max_items: 10
+    agent: |
+      Write a brief of this paper for a literature review on "{{params.topic}}":
+      {{item}}
+
+      Cover in at most five sentences: the problem, the method, the key result, and how it
+      relates to the topic. If already_indexed is true, use research.summarize_paper with
+      the paper's title (or answer_from_papers) to ground the brief in the full text;
+      otherwise rely on the abstract above and say so. Start the report with the title.
+  - id: ingest
+    title: Index the new papers
+    when: "{{params.ingest}}"
+    agent: |
+      Index each of these papers that is NOT already in the library using research.add_paper
+      (one call per paper; independent calls may be issued together):
+      {{steps.rank.data}}
+
+      Skip entries with already_indexed = true or without a usable http(s) URL. Report, per
+      paper, whether it was indexed, skipped or failed and why.
+  - id: topology
+    title: Rebuild the topology
+    when: "{{params.ingest}}"
+    tool: research.rebuild_topology
+    arguments: {}
+report: |
+  Write a literature review on "{{params.topic}}" from the step results:
+  1. One paragraph on the landscape and the main lines of work.
+  2. The ranked papers ({{params.top_n}}): title with link or identifier, whether it is already in the library, and its brief.
+  3. What the user's own notes already cover ({{steps.notes.summary}}), if anything.
+  4. Gaps and suggested next steps.
+  If papers were indexed, list them and mention that the topology was rebuilt. Report any step that failed or was skipped.

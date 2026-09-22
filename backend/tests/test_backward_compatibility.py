@@ -23,11 +23,13 @@ def test_get_llm_signature_is_unchanged():
     from app.rag.generator import get_llm
 
     signature = inspect.signature(get_llm)
-    assert list(signature.parameters) == ["model", "temperature", "provider"]
+    assert list(signature.parameters) == ["model", "temperature", "provider", "kwargs"]
     assert signature.parameters["model"].default == "gpt-4o-mini"
     assert signature.parameters["temperature"].default == 0
-    # New parameter must be optional, or every existing call site breaks.
+    # New parameters must be optional, or every existing call site breaks.
     assert signature.parameters["provider"].default is None
+    # Extra provider options (e.g. reasoning_effort for gpt-5) pass through; they never become required.
+    assert signature.parameters["kwargs"].kind is inspect.Parameter.VAR_KEYWORD
 
 
 @pytest.mark.parametrize(

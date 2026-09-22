@@ -21,8 +21,11 @@ MAX_SCHEMA_CHARS = 6000
 EFFECTS = ("read", "write", "destructive")
 DEFAULT_TIMEOUT_SECONDS = 20.0
 
-# The six meta tools bound by the runtime; a client tool cannot shadow them.
-RESERVED = {"discover_tools", "describe_tool", "execute_tool", "app_context", "app_papers", "answer_from_papers"}
+# The meta tools bound by the runtime; a client tool cannot shadow them.
+RESERVED = {
+    "discover_tools", "describe_tool", "execute_tool", "app_context", "app_papers", "answer_from_papers",
+    "delegate", "run_playbook",
+}
 
 
 class ClientToolTimeout(Exception):

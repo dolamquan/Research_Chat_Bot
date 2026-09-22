@@ -72,6 +72,7 @@ def test_plain_answer_uses_no_tools(monkeypatch):
     assert result["intent"] == "chat"
     assert {t["function"]["name"] for t in model.bound_tools} == {
         "discover_tools", "describe_tool", "execute_tool", "app_context", "app_papers", "answer_from_papers",
+        "delegate", "run_playbook",
     }
 
 
