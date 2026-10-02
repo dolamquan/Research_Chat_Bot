@@ -23,6 +23,7 @@ from fastapi.routing import APIRoute
 from jsonschema import Draft202012Validator
 
 from app.auth.context import request_token
+from app.ops.telemetry import traced_tool
 
 _application: FastAPI | None = None
 _api_tools_cache: list[dict] | None = None
@@ -57,6 +58,15 @@ APP_GUIDE = {
     "Evaluation": "Single, batch and RAGAS evaluation plus saved runs and metrics.",
     "Integrations": "MCP bridge tools, Notion publishing, GitHub issues/search and Reddit search. Configuration status is not a connectivity guarantee.",
 }
+
+# Administrator monitoring belongs to Research Ops, outside the assistant's
+# application tools. Keep each endpoint explicit for the route-coverage gate.
+EXCLUDED.update({key: "Administrator monitoring is managed in the standalone Research Ops app." for key in (
+    ("GET", "/ops/identity"), ("GET", "/ops/overview"), ("GET", "/ops/events"),
+    ("GET", "/ops/events/{event_id}"), ("GET", "/ops/users"), ("GET", "/ops/issues"),
+    ("PATCH", "/ops/issues/{fingerprint}"), ("GET", "/ops/settings"), ("PUT", "/ops/settings"),
+    ("GET", "/ops/connection"), ("POST", "/ops/import-langsmith"), ("GET", "/ops/export"),
+)})
 
 # Words in an MCP tool name that mark it as changing application state.
 _MCP_WRITE_WORDS = ("save", "ingest", "build", "add", "create", "rebuild", "update", "delete")
@@ -150,7 +160,7 @@ def _api_tools() -> list[dict]:
     definitions = spec.get("components", {}).get("schemas", {})
     tools, names = [], set()
     for route in application.routes:
-        if not isinstance(route, APIRoute):
+        if not isinstance(route, APIRoute) or route.path.startswith("/ops"):
             continue
         for method in sorted(route.methods or []):
             if method not in {"GET", "POST", "PATCH", "PUT", "DELETE"} or (method, route.path) in EXCLUDED:
@@ -214,6 +224,39 @@ def tool_catalog() -> list[dict]:
     return tools
 
 
+HINT_FIELDS = 8
+
+
+def _resolve(schema: dict, root: dict) -> dict:
+    ref = schema.get("$ref") if isinstance(schema, dict) else None
+    if isinstance(ref, str) and ref.startswith("#/"):
+        node: Any = root
+        for part in ref[2:].split("/"):
+            node = node.get(part, {}) if isinstance(node, dict) else {}
+        return node if isinstance(node, dict) else {}
+    return schema if isinstance(schema, dict) else {}
+
+
+def _field_list(schema: dict, root: dict) -> str:
+    schema = _resolve(schema, root)
+    props = schema.get("properties") or {}
+    required = set(schema.get("required") or [])
+    names = [f"{key}*" if key in required else key for key in props]
+    more = len(names) - HINT_FIELDS
+    return ", ".join(names[:HINT_FIELDS]) + (f", +{more} more" if more > 0 else "")
+
+
+def argument_hint(input_schema: dict | None) -> str:
+    """One-line argument shape, e.g. `path{note_id*} body{title, body_md}` (* = required)."""
+    schema = input_schema or {}
+    props = schema.get("properties") or {}
+    if not props:
+        return ""
+    if set(props) <= {"path", "query", "body"}:
+        return " ".join(f"{group}{{{_field_list(props[group], schema)}}}" for group in ("path", "query", "body") if group in props)
+    return "{" + _field_list(schema, schema) + "}"
+
+
 def catalog_index(tools: list[dict] | None = None) -> str:
     """A compact, category-grouped listing for a model's system prompt."""
     tools = tools if tools is not None else tool_catalog()
@@ -228,7 +271,8 @@ def catalog_index(tools: list[dict] | None = None) -> str:
             if not tool["available"]:
                 flags.append("unavailable")
             suffix = f" ({', '.join(flags)})" if flags else ""
-            lines.append(f"- {tool['name']}{suffix}: {tool['description']}")
+            hint = argument_hint(tool.get("input_schema"))
+            lines.append(f"- {tool['name']}{' ' + hint if hint else ''}{suffix}: {tool['description']}")
     return "\n".join(lines)
 
 
@@ -263,11 +307,11 @@ def library_papers(query: str = "", offset: int = 0, limit: int = 30, domain: st
             "next_offset": offset + limit if offset + limit < len(matches) else None}
 
 
-def application_context(workspace: dict | None = None) -> dict:
+def application_context(workspace: dict | None = None, tools: list[dict] | None = None) -> dict:
     from app.storage.article_store import list_domains
     from app.storage.notes import list_notion_targets
     domains = list_domains()
-    tools = tool_catalog()
+    tools = tools if tools is not None else tool_catalog()
     return {"application": "Zoetrope", "guide": APP_GUIDE,
             "paper_count": sum(d["article_count"] for d in domains), "domains": domains,
             "tool_count": len(tools), "tool_categories": dict(Counter(t["category"] for t in tools)),
@@ -330,6 +374,7 @@ def _prepare_execution(name: str, arguments: dict) -> dict:
     return tool
 
 
+@traced_tool
 def execute_tool(name: str, arguments: dict, workspace: dict | None = None) -> Any:
     tool = _prepare_execution(name, arguments)
     if name == "app.context":
@@ -342,6 +387,7 @@ def execute_tool(name: str, arguments: dict, workspace: dict | None = None) -> A
     return asyncio.run(_call_api(tool, arguments))
 
 
+@traced_tool
 async def aexecute_tool(name: str, arguments: dict, workspace: dict | None = None) -> Any:
     """`execute_tool` for callers already inside the event loop (the assistant websocket).
 

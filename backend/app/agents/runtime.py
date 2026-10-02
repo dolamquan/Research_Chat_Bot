@@ -42,7 +42,7 @@ from typing import Any, Awaitable, Callable, Dict, List
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langsmith import traceable
 
-from app.agents import catalog, playbooks
+from app.agents import catalog, playbooks, run_log
 from app.agents.activity import render_activity
 from app.agents.assistant.client_tools import (
     ClientToolExecutor,
@@ -53,8 +53,9 @@ from app.agents.assistant.client_tools import (
 )
 from app.agents.assistant.speech import SpeakGate, speakable, split_spoken
 from app.agents.context_schema import render_workspace
-from app.agents.models import agent_model_name, model_kwargs, worker_model_name
+from app.agents.models import agent_model_name, followup_kwargs, model_kwargs, verbosity_kwargs, worker_model_name
 from app.agents.state import AgentState
+from app.auth.context import current_owner_id
 from app.rag.generator import generate_answer, get_llm
 
 DEFAULT_MAX_STEPS = 8
@@ -344,6 +345,26 @@ _ORCHESTRATION_RULES = """- Independent tool calls can be issued together in one
 - When a playbook below matches the request, call run_playbook instead of improvising the same steps; it runs the procedure (in parallel where possible) and returns each step's result plus instructions for your final answer. Confirmation rules still apply inside playbooks, and workers never delete or publish."""
 
 
+_CONTEXT_CACHE: Dict[Any, tuple[float, List[Dict[str, Any]], Dict[str, Any]]] = {}
+
+
+def _prompt_context() -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """The tool catalog and application facts, cached briefly per user.
+
+    Both take several database round trips and barely change between messages;
+    AGENT_CONTEXT_CACHE_SECONDS=0 turns the cache off.
+    """
+    ttl = _int_env("AGENT_CONTEXT_CACHE_SECONDS", 30)
+    owner = current_owner_id()
+    hit = _CONTEXT_CACHE.get(owner)
+    if ttl > 0 and hit and time.monotonic() - hit[0] < ttl:
+        return hit[1], hit[2]
+    tools = catalog.tool_catalog()
+    context = catalog.application_context(None, tools=tools)
+    _CONTEXT_CACHE[owner] = (time.monotonic(), tools, context)
+    return tools, context
+
+
 def build_system_prompt(
     state: AgentState,
     max_steps: int,
@@ -352,8 +373,8 @@ def build_system_prompt(
     client_tools: List[Dict[str, Any]] | None = None,
     activity: Dict[str, Any] | None = None,
 ) -> str:
-    tools = catalog.tool_catalog()
-    context = catalog.application_context(_workspace(state))
+    tools, shared = _prompt_context()
+    context = {**shared, "workspace": _workspace(state) or {}}
     domains = ", ".join(
         f"{d.get('domain')}/{d.get('category')} ({d.get('article_count')})" for d in context["domains"]
     ) or "none indexed yet"
@@ -391,7 +412,7 @@ def build_system_prompt(
 # How to work
 1. Questions about research content go through answer_from_papers, which retrieves from the indexed papers with the user's current scope.
 2. Resolve paper titles to real article_id/source values with app_papers before calling paper-specific tools. Never invent article_id, viz_id, note_id or any other identifier; read them from tool results.
-3. Before the first execute_tool of an api.* tool, call describe_tool for its input_schema. api.* arguments are grouped as {{"path": {{...}}, "query": {{...}}, "body": {{...}}}}. research.*, notion.*, github.*, reddit.* and app.* tools take flat arguments.
+3. Each tool in the index shows its arguments (* marks required). api.* arguments are grouped as {{"path": {{...}}, "query": {{...}}, "body": {{...}}}}, shown as path{{...}} query{{...}} body{{...}}; research.*, notion.*, github.*, reddit.* and app.* tools take flat arguments. Call execute_tool directly with them. Use describe_tool only when you need a field's type or allowed values; if execute_tool rejects the arguments, its error contains the full input_schema, so correct the call and retry once.
 4. Tools marked destructive or external_write only run when the user's current message explicitly asks for that action. If a call is refused for that reason, say what you would do and ask the user to confirm in their own words.
 5. Chain tools when a task needs several steps (find a paper, read its visualizations, generate a scene, save a note). Stop as soon as you can answer. You have at most {max_steps} model turns per request.
 6. When a tool fails, report it plainly and suggest the next step. Never present a failed action as done.
@@ -405,7 +426,46 @@ Markdown, concise and specific. Name papers by title and include URLs or resourc
 
 def _assistant_prompt(context, domains, features, unavailable, targets, workspace, tools, max_steps,
                       client_tools, activity) -> str:
+    # Everything that stays the same between messages comes first and the
+    # per-message context last, so the provider's prompt cache can reuse the
+    # long fixed prefix (tool index, rules) on every model call.
     return f"""You are Zoe, Zoetrope's assistant: a spoken, always-present helper that lives in a small dock on every screen of the Zoetrope research workspace (finding, indexing, reading, questioning and visualizing scientific papers). The user talks to you by voice or types to you while working. You see what they are looking at, you can operate every part of the application through tools, and you can change what is on their screen through the browser controls below. Behave like a capable, calm research assistant: act on requests, narrate what you are doing in plain words, and keep replies short unless the user asks for depth.
+
+# Screen controls (run in the user's browser)
+These are ordinary tools you call directly by name. They change the user's screen immediately and return what happened. Prefer them whenever the user asks to open, show, go to, navigate, jump, pin, filter or start something visible. Use ui_read_screen when you need to know what is on screen beyond the summary at the end of these instructions. When the user asks you to write, take, add or create a note, use ui_create_note so it appears live in their notes side panel; use api.notes.* only to edit, organize or delete existing notes, or when they explicitly want a separate note in the Notes library.
+{_client_tools_text(client_tools)}
+
+# Tool index (application tools, called through execute_tool)
+{catalog.catalog_index(tools)}
+
+# Playbooks (run with run_playbook)
+{playbooks.playbook_index()}
+
+# How to work
+1. Questions about research content go through answer_from_papers, which retrieves from the indexed papers with the user's current scope.
+2. Resolve paper titles to real article_id/source values with app_papers before calling paper-specific tools or ui_open_paper. Never invent article_id, viz_id, note_id or any other identifier; read them from tool results. When a title is ambiguous, ask which one.
+3. Each tool in the index shows its arguments (* marks required). api.* arguments are grouped as {{"path": {{...}}, "query": {{...}}, "body": {{...}}}}, shown as path{{...}} query{{...}} body{{...}}; research.*, notion.*, github.*, reddit.* and app.* tools take flat arguments. Call execute_tool directly with them. Use describe_tool only when you need a field's type or allowed values; if execute_tool rejects the arguments, its error contains the full input_schema, so correct the call and retry once.
+4. Chain tools when a task needs several steps (find a paper, open it, jump to a page, save a note). Complete every requested task before answering, or state clearly what remains blocked. You have at most {max_steps} model turns per request.
+5. When a tool fails, say so plainly and suggest the next step. Never present a failed action as done.
+6. When the user asks what you can do or which tools you have, answer from this overview in everyday words grouped by what they accomplish (search papers, read and answer, notes, visualize, navigate the app, integrations, playbooks); mention internal tool names only if asked for them.
+7. Spoken requests are transcribed and may contain recognition errors; interpret them charitably and confirm only when the intent is genuinely unclear.
+8. Working in parallel and delegating (the dock shows workers and playbook steps to the user as they run, so a bigger task is fine):
+{_ORCHESTRATION_RULES}
+
+# Confirmations
+Destructive and external-write tools (deleting anything, publishing to Notion or GitHub) do not run immediately. When you call one, it is parked and you receive a note saying so. Then tell the user in one short sentence exactly what would happen and ask them to answer yes or no. Do not call it again in the same turn. The user's yes or no arrives as their next message. A playbook that reaches such a step stops there and tells you what is left.
+
+# Ongoing conversation and multiple instructions
+The microphone stays open while the user works; they do not need to say your name for each message. Treat follow-ups as part of the ongoing conversation and resolve references such as "that paper" from the conversation and current screen. A message may contain several utterances collected together, including instructions added while you were busy. Consider all of them before acting: organize dependencies, respect explicit ordering, combine duplicate tasks, and let later corrections revise earlier instructions. Complete each independent task using tools; do not stop after the first command. Use parallel calls or delegation for independent work and sequential calls for dependent work. Ask a short clarification when instructions conflict without a clear correction. After a confirmation reply, continue any unfinished steps from the original request using the conversation history. Keep the final reply natural and concise, without requiring a wake word or asking the user to start over.
+
+# Answer style
+Markdown, brief and specific: usually one to four sentences, or a short list. Name papers by title. Put Mermaid diagrams in ```mermaid fences only when asked for a diagram. After a playbook or delegation, follow the returned report instructions but keep the spoken line short.
+
+# Speaking
+Your answer is also read aloud. End EVERY reply with a final line that starts with `SPEAK:` followed by one or two plain, natural sentences summarising the reply for speech: no Markdown, no lists, no URLs, no identifiers, and never the words "Zoetrope" or "Zoe" (they are the wake word). Example:
+
+I opened **Graph RAG for Science** in the reader at page 4.
+SPEAK: I opened Graph RAG for Science at page four.
 
 # Application overview
 - Papers indexed: {context['paper_count']} across domain/category: {domains}
@@ -420,46 +480,13 @@ def _assistant_prompt(context, domains, features, unavailable, targets, workspac
 {render_workspace(workspace)}
 
 # Recent activity
-{render_activity(activity)}
-
-# Screen controls (run in the user's browser)
-These are ordinary tools you call directly by name. They change the user's screen immediately and return what happened. Prefer them whenever the user asks to open, show, go to, navigate, jump, pin, filter or start something visible. Use ui_read_screen when you need to know what is on screen beyond the summary above.
-{_client_tools_text(client_tools)}
-
-# Tool index (application tools, called through execute_tool)
-{catalog.catalog_index(tools)}
-
-# Playbooks (run with run_playbook)
-{playbooks.playbook_index()}
-
-# How to work
-1. Questions about research content go through answer_from_papers, which retrieves from the indexed papers with the user's current scope.
-2. Resolve paper titles to real article_id/source values with app_papers before calling paper-specific tools or ui_open_paper. Never invent article_id, viz_id, note_id or any other identifier; read them from tool results. When a title is ambiguous, ask which one.
-3. Before the first execute_tool of an api.* tool, call describe_tool for its input_schema. api.* arguments are grouped as {{"path": {{...}}, "query": {{...}}, "body": {{...}}}}. research.*, notion.*, github.*, reddit.* and app.* tools take flat arguments.
-4. Chain tools when a task needs several steps (find a paper, open it, jump to a page, save a note). Stop as soon as you can answer. You have at most {max_steps} model turns per request.
-5. When a tool fails, say so plainly and suggest the next step. Never present a failed action as done.
-6. When the user asks what you can do or which tools you have, answer from this overview in everyday words grouped by what they accomplish (search papers, read and answer, notes, visualize, navigate the app, integrations, playbooks); mention internal tool names only if asked for them.
-7. Spoken requests are transcribed and may contain recognition errors; interpret them charitably and confirm only when the intent is genuinely unclear.
-8. Working in parallel and delegating (the dock shows workers and playbook steps to the user as they run, so a bigger task is fine):
-{_ORCHESTRATION_RULES}
-
-# Confirmations
-Destructive and external-write tools (deleting anything, publishing to Notion or GitHub) do not run immediately. When you call one, it is parked and you receive a note saying so. Then tell the user in one short sentence exactly what would happen and ask them to answer yes or no. Do not call it again in the same turn. The user's yes or no arrives as their next message. A playbook that reaches such a step stops there and tells you what is left.
-
-# Answer style
-Markdown, brief and specific: usually one to four sentences, or a short list. Name papers by title. Put Mermaid diagrams in ```mermaid fences only when asked for a diagram. After a playbook or delegation, follow the returned report instructions but keep the spoken line short.
-
-# Speaking
-Your answer is also read aloud. End EVERY reply with a final line that starts with `SPEAK:` followed by one or two plain, natural sentences summarising the reply for speech: no Markdown, no lists, no URLs, no identifiers, and never the words "Zoetrope" or "Zoe" (they are the wake word). Example:
-
-I opened **Graph RAG for Science** in the reader at page 4.
-SPEAK: I opened Graph RAG for Science at page four."""
+{render_activity(activity)}"""
 
 
 def build_worker_prompt(state: AgentState, max_steps: int, fmt: str = "text") -> str:
     """A worker's instructions: the same app and tools, one task, a report instead of an answer."""
-    tools = catalog.tool_catalog()
-    context = catalog.application_context(_workspace(state))
+    tools, shared = _prompt_context()
+    context = {**shared, "workspace": _workspace(state) or {}}
     domains = ", ".join(
         f"{d.get('domain')}/{d.get('category')} ({d.get('article_count')})" for d in context["domains"]
     ) or "none indexed yet"
@@ -487,7 +514,7 @@ def build_worker_prompt(state: AgentState, max_steps: int, fmt: str = "text") ->
 # How to work
 1. Questions about research content go through answer_from_papers (scoped to the user's current selection) or research.summarize_paper for a specific paper.
 2. Resolve paper titles to real article_id/source values with app_papers before calling paper-specific tools. Never invent identifiers; read them from tool results.
-3. Before the first execute_tool of an api.* tool, call describe_tool for its input_schema. api.* arguments are grouped as {{"path": {{...}}, "query": {{...}}, "body": {{...}}}}. research.*, notion.*, github.*, reddit.* and app.* tools take flat arguments.
+3. Each tool in the index shows its arguments (* marks required). api.* arguments are grouped as {{"path": {{...}}, "query": {{...}}, "body": {{...}}}}, shown as path{{...}} query{{...}} body{{...}}; research.*, notion.*, github.*, reddit.* and app.* tools take flat arguments. Call execute_tool directly with them. Use describe_tool only when you need a field's type or allowed values; if execute_tool rejects the arguments, its error contains the full input_schema, so correct the call and retry once.
 4. Independent tool calls can be issued together in one turn; they run concurrently.
 5. Destructive and external-write tools are refused for workers. If the task needs one, say exactly what should be done instead.
 6. You have at most {max_steps} tool turns. Stop as soon as you can report. Never present a failed action as done.
@@ -743,15 +770,13 @@ class _Run:
         started = time.monotonic()
         try:
             bound = _worker_model().bind_tools(WORKER_TOOLS)
-            system = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: build_worker_prompt(self.state, max_steps, fmt)
-            )
+            system = await asyncio.to_thread(build_worker_prompt, self.state, max_steps, fmt)
             messages: List[Any] = [SystemMessage(content=system), HumanMessage(content=task)]
             answer = ""
             steps_used = 0
             for step in range(max_steps):
                 steps_used = step + 1
-                response = await _ainvoke_model(bound, messages)
+                response = await _ainvoke_model(bound, messages, worker=label)
                 messages.append(response)
                 calls = list(getattr(response, "tool_calls", None) or [])
                 invalid = list(getattr(response, "invalid_tool_calls", None) or [])
@@ -769,7 +794,7 @@ class _Run:
             else:
                 hint = " End with the ```json block the task asked for." if fmt == "json" else ""
                 messages.append(HumanMessage(content=f"You have used every tool step. Report what you found now from what you already gathered; do not call tools.{hint}"))
-                answer = _text(await _ainvoke_model(bound, messages))
+                answer = _text(await _ainvoke_model(bound, messages, worker=label))
             status = "ok" if answer else "incomplete"
             report = answer or _fallback_answer(child)
         except Exception as exc:  # the main agent reads the failure instead of the turn dying
@@ -885,7 +910,7 @@ class _AsyncRun(_Run):
             execution, effect = "client", spec.get("effect", "read")
         elif name == "execute_tool":
             try:
-                tool = await asyncio.get_running_loop().run_in_executor(None, catalog.describe_tool, str(args.get("name") or ""))
+                tool = await asyncio.to_thread(catalog.describe_tool, str(args.get("name") or ""))
                 execution, effect = tool.get("execution", "api"), tool.get("effect", "read")
             except Exception:
                 tool = None
@@ -903,6 +928,7 @@ class _AsyncRun(_Run):
             result, entry = self._record_error(label, args, exc, execution=execution)
         else:
             result, entry = self._record(label, args, result, effect=effect if spec else None, execution=execution)
+        run_log.note_tool_output(call_id, label, result, worker=self.label or None)
         await self._send({
             "type": "tool_result", "call_id": call_id, "tool": label, "status": entry["status"],
             "message": entry["message"], "effect": entry.get("effect", effect), "execution": execution,
@@ -945,12 +971,13 @@ class _AsyncRun(_Run):
         if name == "run_playbook":
             return await self._arun_playbook(args, call_id)
         # The remaining meta tools touch sqlite or the RAG stack: keep them off the loop.
-        return await asyncio.get_running_loop().run_in_executor(None, lambda: self._invoke(name, args, call_id))
+        # to_thread, unlike run_in_executor, carries the signed-in user into the
+        # thread, so storage queries stay scoped to them.
+        return await asyncio.to_thread(self._invoke, name, args, call_id)
 
     async def _aexecute(self, target: str, arguments: Any) -> Any:
         arguments = self._check_arguments(arguments)
-        loop = asyncio.get_running_loop()
-        tool = await loop.run_in_executor(None, catalog.describe_tool, target)
+        tool = await asyncio.to_thread(catalog.describe_tool, target)
         refused = self.guard(tool, arguments)
         if refused:
             await self._announce_confirmation(refused)
@@ -1009,11 +1036,15 @@ def _plain_message(merged: Any) -> AIMessage:
     )
 
 
-async def _ainvoke_model(bound: Any, messages: List[Any]) -> Any:
+async def _ainvoke_model(bound: Any, messages: List[Any], worker: str | None = None) -> Any:
     """One model call without token streaming (workers report, they do not talk)."""
+    started = time.monotonic()
     if hasattr(bound, "ainvoke"):
-        return await bound.ainvoke(messages)
-    return await asyncio.get_running_loop().run_in_executor(None, bound.invoke, messages)
+        response = await bound.ainvoke(messages)
+    else:
+        response = await asyncio.get_running_loop().run_in_executor(None, bound.invoke, messages)
+    run_log.note_model_step(started=started, first_token=None, response=response, worker=worker)
+    return response
 
 
 async def _astep(bound: Any, messages: List[Any], emit: Emit, gate: SpeakGate, turn_id: str) -> Any:
@@ -1023,22 +1054,28 @@ async def _astep(bound: Any, messages: List[Any], emit: Emit, gate: SpeakGate, t
         if text:
             await emit({"type": "token", "text": text, "turn_id": turn_id})
 
+    started = time.monotonic()
+    first_token: float | None = None
     if hasattr(bound, "astream"):
         merged = None
         try:
             async for chunk in bound.astream(messages):
+                if first_token is None and (_raw_text(chunk) or getattr(chunk, "tool_call_chunks", None)):
+                    first_token = time.monotonic()
                 merged = chunk if merged is None else merged + chunk
                 await token(gate.feed(_raw_text(chunk)))
         except NotImplementedError:
             merged = None
         if merged is not None:
             await token(gate.flush())
+            run_log.note_model_step(started=started, first_token=first_token, response=merged)
             return _plain_message(merged)
 
     if hasattr(bound, "ainvoke"):
         response = await bound.ainvoke(messages)
     else:
         response = await asyncio.get_running_loop().run_in_executor(None, bound.invoke, messages)
+    run_log.note_model_step(started=started, first_token=None, response=response)
     if not getattr(response, "tool_calls", None):
         await token(gate.feed(_raw_text(response)) + gate.flush())
     return response
@@ -1049,10 +1086,15 @@ def _max_steps(mode: str) -> int:
     return _int_env("ASSISTANT_MAX_STEPS", default) if mode == "assistant" else default
 
 
-def _model() -> Any:
-    """The main loop's model: gpt-5 by default, with a bounded reasoning effort."""
+def _followup_kwargs(name: str | None) -> Dict[str, Any]:
+    return followup_kwargs(name)
+
+
+def _model(followup: bool = False) -> Any:
+    """The main loop's model: gpt-5 by default; later steps of a turn think less (see followup_kwargs)."""
     name = agent_model_name()
-    kwargs = model_kwargs(name, "AGENT_REASONING_EFFORT")
+    kwargs = followup_kwargs(name) if followup else model_kwargs(name, "AGENT_REASONING_EFFORT")
+    kwargs = {**kwargs, **verbosity_kwargs(name)}
     return get_llm(model=name, temperature=0, **kwargs) if name else get_llm(temperature=0)
 
 
@@ -1126,11 +1168,19 @@ async def arun_agent(
     question = str(state["question"])
     max_steps = _max_steps(mode)
     specs = client_tools or {}
-    loop = asyncio.get_running_loop()
-    bound = _model().bind_tools(TOOLS + bind_client_tools(specs))
-    system = await loop.run_in_executor(
-        None, lambda: build_system_prompt(state, max_steps, mode=mode, client_tools=list(specs.values()), activity=activity)
+    tools = TOOLS + bind_client_tools(specs)
+    bound = _model().bind_tools(tools)
+    # After the first step the model mostly reads tool results and either makes
+    # the obvious next call or writes the reply, which needs far less thinking.
+    followup = _model(followup=True).bind_tools(tools)
+    model_name = agent_model_name() or ""
+    run_log.note("run_config", model=model_name, effort=model_kwargs(model_name).get("reasoning_effort"),
+                 followup_effort=_followup_kwargs(model_name).get("reasoning_effort"), max_steps=max_steps)
+    prompt_started = time.monotonic()
+    system = await asyncio.to_thread(
+        build_system_prompt, state, max_steps, mode=mode, client_tools=list(specs.values()), activity=activity
     )
+    run_log.note("prompt_built", ms=int((time.monotonic() - prompt_started) * 1000), chars=len(system))
     run = _AsyncRun(state, emit=emit, guard=guard, client_tools=specs, client_executor=client_executor, turn_id=turn_id)
 
     user_turn = question
@@ -1149,7 +1199,7 @@ async def arun_agent(
 
     for step in range(max_steps):
         await emit({"type": "thinking", "step": step + 1, "turn_id": turn_id})
-        response = await _astep(bound, messages, emit, SpeakGate(), turn_id)
+        response = await _astep(bound if step == 0 else followup, messages, emit, SpeakGate(), turn_id)
         messages.append(response)
         calls = list(getattr(response, "tool_calls", None) or [])
         invalid = list(getattr(response, "invalid_tool_calls", None) or [])
@@ -1168,7 +1218,7 @@ async def arun_agent(
         run.trace.append(_trace("agent", f"Reached the {max_steps}-step limit; answering with what was gathered.", "skipped"))
         messages.append(HumanMessage(content="You have used every tool step for this request. Give the user your final answer now from what you already gathered; do not call tools. End with the SPEAK: line."))
         await emit({"type": "thinking", "step": max_steps + 1, "turn_id": turn_id})
-        answer = _text(await _astep(bound, messages, emit, SpeakGate(), turn_id))
+        answer = _text(await _astep(followup, messages, emit, SpeakGate(), turn_id))
 
     markdown, spoken = split_spoken(answer)
     if not markdown.strip():

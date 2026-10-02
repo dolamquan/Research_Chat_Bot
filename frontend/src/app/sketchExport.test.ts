@@ -3,7 +3,9 @@ import { exportNoteToNotion } from "./api";
 import { hasSketch, renderSketch, sketchFingerprint, type SketchScene } from "./sketchExport";
 
 vi.mock("@excalidraw/excalidraw", () => ({ exportToBlob: vi.fn(async () => new Blob(["png-data"], { type: "image/png" })) }));
-const scene = { elements: [{ id: "box", type: "rectangle" }], files: {}, appState: {} } as SketchScene;
+// A stub element, not a whole ExcalidrawElement: these tests only exercise the
+// id/type/isDeleted fields the fingerprint reads.
+const scene = { elements: [{ id: "box", type: "rectangle" }], files: {}, appState: {} } as unknown as SketchScene;
 afterEach(() => vi.unstubAllGlobals());
 
 it("ignores deleted elements and navigation when comparing a saved snapshot", () => {

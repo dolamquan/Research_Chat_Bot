@@ -12,12 +12,13 @@ import asyncio
 import json
 import logging
 import os
+import time
 from typing import Any, Dict
 
 from fastapi import WebSocket, WebSocketDisconnect
 from fastapi.concurrency import run_in_threadpool
 
-from app.agents import catalog
+from app.agents import catalog, run_log
 from app.agents.activity import activity_digest
 from app.agents.assistant.client_tools import ClientToolExecutor, validate_client_tools
 from app.agents.assistant.confirmations import PendingActions, classify_reply, explicit_guard
@@ -40,15 +41,17 @@ from app.agents.assistant.protocol import (
 )
 from app.agents.context_schema import normalize_workspace
 from app.agents.runtime import arun_agent
-from app.auth.context import CurrentUser, set_current_user
+from app.auth.context import UNSET, CurrentUser, resolve_owner, set_current_user
 from app.auth.deps import AuthError, authenticate_token
 from app.rag.llm_provider import ProviderNotConfigured
-from app.storage import agent_history
+from app.storage import agent_history, agent_runs
 
 logger = logging.getLogger(__name__)
 
 SESSION_KIND = "assistant"
 DEFAULT_HISTORY_LIMIT = 12
+MAX_QUEUED_MESSAGES = 32
+MAX_BATCH_CHARACTERS = 8000
 
 # One store for the whole process: a parked action belongs to a session, not a socket.
 PENDING = PendingActions()
@@ -83,7 +86,10 @@ class AssistantConnection:
         self.turn_id: str = ""
         self._turns = 0
         self._send_lock = asyncio.Lock()
+        self._queue_lock = asyncio.Lock()
         self._closed = False
+        self.queue: list[UserMessageFrame | ConfirmFrame] = []
+        self._confirmation_actions: dict[int, str] = {}
 
     # -- lifecycle --------------------------------------------------------------
 
@@ -218,13 +224,15 @@ class AssistantConnection:
         elif isinstance(frame, ClientToolResultFrame):
             resolved = self.executor.resolve(frame.call_id, ok=frame.ok, result=frame.result, error=frame.error)
             if not resolved:
-                await self.send(error_frame("bad_message", f"No browser tool call is waiting for id {frame.call_id}", self.turn_id or None))
+                # A browser promise may settle after Stop and a new turn.
+                # Report the stale result without failing the new turn.
+                await self.send(error_frame("bad_message", f"No browser tool call is waiting for id {frame.call_id}"))
         elif isinstance(frame, CancelFrame):
             await self.cancel_turn(frame.reason)
         elif isinstance(frame, ConfirmFrame):
-            await self._start_turn("Yes." if frame.approved else "No.", frame.workspace, "text", confirm=frame)
+            await self._enqueue(frame)
         elif isinstance(frame, UserMessageFrame):
-            await self._start_turn(frame.text, frame.workspace, frame.source, message_id=frame.id)
+            await self._enqueue(frame)
 
     async def _refresh_auth(self, frame: AuthFrame) -> None:
         try:
@@ -241,11 +249,81 @@ class AssistantConnection:
 
     # -- turns ------------------------------------------------------------------
 
+    async def _queue_state(self) -> None:
+        await self.send({"type": "queue_state", "message_ids": [frame.id for frame in self.queue if frame.id],
+                         "count": len(self.queue)})
+
+    async def _enqueue(self, frame: UserMessageFrame | ConfirmFrame) -> None:
+        pending = self.pending.get(self.session_id)
+        if isinstance(frame, ConfirmFrame) and (pending is None or frame.action_id not in (None, pending.id)):
+            message = "No action is waiting for confirmation" if pending is None else "That confirmation is no longer current"
+            await self.send(error_frame("bad_message", message))
+            if frame.id:
+                await self.send({"type": "request_rejected", "message_id": frame.id,
+                                 "message": message})
+            return
+        is_reply = pending is not None and (isinstance(frame, ConfirmFrame) or classify_reply(frame.text) is not None)
+        # New instructions accumulate; only an explicit cancel interrupts work.
+        if len(self.queue) >= MAX_QUEUED_MESSAGES and not is_reply:
+            await self.send({"type": "request_rejected", "message_id": frame.id,
+                             "message": "The instruction queue is full. Please wait for the current tasks to finish."})
+            return
+        if is_reply:
+            # A "yes" queued BEFORE the question is asked is not an approval.
+            self._confirmation_actions[id(frame)] = pending.id
+        self.queue.append(frame)
+        await self._queue_state()
+        await self._advance_queue()
+
+    async def _advance_queue(self) -> None:
+        # A finishing turn and a newly received message can both wake the
+        # scheduler. Hold the lock through task creation so only one starts.
+        async with self._queue_lock:
+            while not self._closed and (self.turn is None or self.turn.done()) and self.queue:
+                await self._start_queued_batch()
+                if self.turn is not None or self.pending.get(self.session_id):
+                    break
+
+    async def _start_queued_batch(self) -> None:
+        if self._closed or (self.turn is not None and not self.turn.done()) or not self.queue:
+            return
+        pending = self.pending.get(self.session_id)
+        if pending:
+            # Follow-up tasks stay parked until the outstanding question is answered.
+            # A confirmation jumps ahead of tasks, without discarding them.
+            index = next((i for i, frame in enumerate(self.queue)
+                          if self._confirmation_actions.get(id(frame)) == pending.id), None)
+            if index is None:
+                return
+            batch = [self.queue.pop(index)]
+        else:
+            batch = [self.queue.pop(0)]
+            size = len(batch[0].text) if isinstance(batch[0], UserMessageFrame) else 0
+            while self.queue and isinstance(batch[0], UserMessageFrame) and isinstance(self.queue[0], UserMessageFrame):
+                # Leave room for separators; never truncate an instruction.
+                next_size = len(self.queue[0].text) + 2
+                if size + next_size > MAX_BATCH_CHARACTERS:
+                    break
+                batch.append(self.queue.pop(0))
+                size += next_size
+        for frame in batch:
+            self._confirmation_actions.pop(id(frame), None)
+        await self._queue_state()
+        first = batch[0]
+        if isinstance(first, ConfirmFrame):
+            await self._start_turn("Yes." if first.approved else "No.", first.workspace, "text",
+                                   confirm=first, message_id=first.id)
+        else:
+            # Preserve the user's words and their arrival order in a single model request.
+            # The model, rather than a keyword splitter, resolves dependencies/corrections.
+            await self._start_turn("\n\n".join(frame.text for frame in batch), batch[-1].workspace,
+                                   first.source, message_id=first.id,
+                                   message_ids=[frame.id for frame in batch if frame.id])
+
     async def _start_turn(
         self, text: str, workspace: Dict[str, Any], source: str, *, confirm: ConfirmFrame | None = None, message_id: str | None = None,
+        message_ids: list[str] | None = None,
     ) -> None:
-        if self.turn is not None and not self.turn.done():
-            await self.cancel_turn("superseded")
         if workspace:
             self.workspace = normalize_workspace(workspace)
 
@@ -264,7 +342,11 @@ class AssistantConnection:
             elif decision == "no":
                 declined = action.to_dict()
         elif confirm is not None:
-            await self.send(error_frame("bad_message", "No action is waiting for confirmation", turn_id))
+            await self.send(error_frame("bad_message", "No action is waiting for confirmation"))
+            if message_id:
+                await self.send({"type": "request_rejected", "message_id": message_id,
+                                 "message": "No action is waiting for confirmation"})
+            self.turn = None
             return
 
         state: Dict[str, Any] = {
@@ -285,22 +367,35 @@ class AssistantConnection:
             "declined_action": declined,
         }
         self.turn_id = turn_id
-        self.turn = asyncio.create_task(self._run_turn(state, turn_id, message_id))
+        self.turn = asyncio.create_task(self._run_turn(state, turn_id, message_id, message_ids))
 
-    async def _run_turn(self, state: Dict[str, Any], turn_id: str, message_id: str | None) -> None:
+    async def _run_turn(self, state: Dict[str, Any], turn_id: str, message_id: str | None,
+                        message_ids: list[str] | None = None) -> None:
         set_current_user(self.user)
         status = "ok"
+        recorder = run_log.RunRecorder(session_id=self.session_id, turn_id=turn_id,
+                                       question=str(state["question"]), source=str(state.get("source") or ""))
+        log_token = run_log.start(recorder)
+        owner = resolve_owner(UNSET)
+        emit = recorder.wrap(self.send)
         try:
-            await self.send({"type": "turn_start", "turn_id": turn_id, "message_id": message_id})
-            recent = await run_in_threadpool(self.history.recent_messages, self.session_id, history_limit())
+            await self.send({"type": "turn_start", "turn_id": turn_id, "message_id": message_id,
+                             "message_ids": message_ids or ([message_id] if message_id else [])})
+            started = time.monotonic()
+            async def load_history() -> list:
+                recent = await run_in_threadpool(self.history.recent_messages, self.session_id, history_limit())
+                await run_in_threadpool(lambda: self.history.append_message(
+                    session_id=self.session_id, role="user", content=state["question"],
+                    meta={"source": state["source"], "turn_id": turn_id},
+                ))
+                return recent
+
+            # The activity digest is independent of the history, so both load at once.
+            recent, activity = await asyncio.gather(load_history(), run_in_threadpool(activity_digest))
             state["chat_history"] = [{"role": m["role"], "content": m["content"]} for m in recent]
-            await run_in_threadpool(lambda: self.history.append_message(
-                session_id=self.session_id, role="user", content=state["question"],
-                meta={"source": state["source"], "turn_id": turn_id},
-            ))
-            activity = await run_in_threadpool(activity_digest)
+            run_log.note("context_loaded", ms=int((time.monotonic() - started) * 1000), history_messages=len(recent))
             result = await arun_agent(
-                state, emit=self.send, mode="assistant", client_tools=self.client_tools,
+                state, emit=emit, mode="assistant", client_tools=self.client_tools,
                 client_executor=self.executor, guard=explicit_guard(self.pending, self.session_id),
                 turn_id=turn_id, activity=activity,
             )
@@ -310,17 +405,50 @@ class AssistantConnection:
                 meta={"spoken": result.get("spoken", ""), "turn_id": turn_id, "workspace": self.workspace},
             ))
         except asyncio.CancelledError:
+            status = "cancelled"
             raise
         except ProviderNotConfigured as exc:
             status = "error"
-            await self.send(error_frame("provider", str(exc), turn_id))
+            await emit(error_frame("provider", str(exc), turn_id))
         except Exception as exc:  # the user hears about it instead of a silent socket
             status = "error"
             logger.exception("assistant turn %s failed", turn_id)
-            await self.send(error_frame("internal", f"Assistant failed: {exc}", turn_id))
+            await emit(error_frame("internal", f"Assistant failed: {exc}", turn_id))
+        finally:
+            run_log.stop(log_token)
+            self._save_run(recorder, status, owner)
         await self.send(done_frame(turn_id, status))
+        self.turn = None
+        await self._advance_queue()
+
+    @staticmethod
+    def _save_run(recorder: run_log.RunRecorder, status: str, owner: str | None) -> None:
+        """Write the run to the buffer off the event loop; recording must never break a turn."""
+        try:
+            run = recorder.summary(status)
+        except Exception:
+            logger.exception("could not summarise assistant run %s", recorder.turn_id)
+            return
+
+        def write() -> None:
+            try:
+                agent_runs.save_run(run, owner_id=owner)
+            except Exception:
+                logger.exception("could not save assistant run %s", recorder.turn_id)
+
+        asyncio.get_running_loop().run_in_executor(None, write)
 
     async def cancel_turn(self, reason: str, *, notify: bool = True) -> None:
+        async with self._queue_lock:
+            await self._cancel_turn(reason, notify=notify)
+
+    async def _cancel_turn(self, reason: str, *, notify: bool = True) -> None:
+        self.queue.clear()
+        self._confirmation_actions.clear()
+        if reason != "disconnect":
+            self.pending.pop(self.session_id)
+        if notify:
+            await self._queue_state()
         task = self.turn
         if task is None or task.done():
             return
@@ -332,3 +460,4 @@ class AssistantConnection:
             pass
         if notify:
             await self.send(done_frame(self.turn_id, "cancelled", reason))
+        self.turn = None

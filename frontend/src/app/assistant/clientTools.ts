@@ -37,7 +37,8 @@ export const CLIENT_TOOL_SPECS: ClientToolSpec[] = [
   },
   {
     name: "create_note",
-    description: "Create a new research note with a title and Markdown body, then show it in the Notes view.",
+    description:
+      "Write a note with a title and Markdown body into the user's notes side panel next to chat, where it appears immediately and is saved to Notes.",
     effect: "write",
     input_schema: {
       type: "object",
@@ -135,7 +136,10 @@ export type ClientToolDeps = {
     tags?: string[];
   }) => Promise<{ note: { note_id: string; title: string } }>;
   timeoutMs?: number;
+  sidePanelWaitMs?: number;
 };
+
+type SidePanelAppend = (note: { title: string; body: string }) => Promise<{ note_id: string; saved: boolean }>;
 
 const REQUIRED: Record<string, string[]> = Object.fromEntries(
   CLIENT_TOOL_SPECS.map((spec) => [spec.name, ((spec.input_schema as { required?: string[] }).required ?? [])]),
@@ -164,6 +168,7 @@ export function createClientToolDispatcher(
   deps: ClientToolDeps,
 ): (name: string, args: Record<string, unknown>) => Promise<ClientToolOutcome> {
   const timeoutMs = deps.timeoutMs ?? 10000;
+  const sidePanelWaitMs = deps.sidePanelWaitMs ?? 2000;
   let queue: Promise<unknown> = Promise.resolve();
 
   const call = async (name: string, ...args: unknown[]): Promise<unknown> => {
@@ -212,20 +217,32 @@ export function createClientToolDispatcher(
         return open(String(args.note_id));
       }
       case "create_note": {
+        const title = String(args.title).slice(0, 120);
+        const body = String(args.body);
+        let append = registry.get("workspaceNotes.append");
+        if (!append) {
+          // The side panel only exists on the chat view.
+          await call("navigateToView", "chat");
+          append = await registry.waitFor("workspaceNotes.append", sidePanelWaitMs).catch(() => undefined);
+        }
+        if (append) {
+          const saved = await (append as SidePanelAppend)({ title, body });
+          return { created: true, note_id: saved.note_id, saved: saved.saved, title, location: "side_panel" };
+        }
         const snapshot = workspace.snapshot();
         const result = await deps.createNote({
           note_type: "chat_capture",
           source_type: "assistant",
           source_ref: snapshot.active_chat_session?.id ?? "assistant",
           source_title: snapshot.selected_paper?.title ?? "Assistant",
-          title: String(args.title).slice(0, 120),
-          body_md: String(args.body),
+          title,
+          body_md: body,
           tags: Array.isArray(args.tags) ? args.tags.map(String) : ["assistant"],
         });
         await call("navigateToView", "notes");
         const refresh = registry.get("notes.refresh");
         if (refresh) await refresh();
-        return { created: true, note_id: result.note.note_id, title: result.note.title };
+        return { created: true, note_id: result.note.note_id, title: result.note.title, location: "notes_library" };
       }
       case "select_cluster": {
         if (args.clear) {

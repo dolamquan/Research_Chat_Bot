@@ -7,12 +7,14 @@ import { glassBackdrop } from "./glass";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { JobsPanel } from "./JobsPanel";
 import { OverviewPanel, type ConsoleTab } from "./OverviewPanel";
+import { RunsPanel } from "./RunsPanel";
 import { ToolCatalogPanel } from "./ToolCatalogPanel";
 
 const TABS: Array<{ id: ConsoleTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "tools", label: "Tools" },
   { id: "activity", label: "Activity" },
+  { id: "runs", label: "Runs" },
   { id: "jobs", label: "Jobs" },
   { id: "diagnostics", label: "Diagnostics" },
 ];
@@ -71,6 +73,8 @@ export function ConsoleView({ onOpenView }: { onOpenView: (view: ConsoleTarget) 
           <ToolCatalogPanel selectedName={selectedTool} onSelect={setSelectedTool} />
         ) : tab === "activity" ? (
           <ActivityPanel />
+        ) : tab === "runs" ? (
+          <RunsPanel />
         ) : tab === "jobs" ? (
           <JobsPanel onOpenView={onOpenView} />
         ) : (

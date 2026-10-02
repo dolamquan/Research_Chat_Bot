@@ -14,11 +14,12 @@ function TurnView({ turn }: { turn: AssistantTurn }) {
         <div className="flex justify-end">
           <div className="rm-message-user max-w-[85%] px-3 py-2 text-sm leading-relaxed">
             {turn.user.source === "voice" && <Mic size={10} className="mr-1.5 inline-block -translate-y-px text-[#bdbdbd]" aria-label="spoken" />}
-            {turn.user.text}
+            <span className="whitespace-pre-wrap">{turn.user.text}</span>
           </div>
         </div>
       ) : null}
-      {(turn.answer || turn.streamingText || turn.tools.length > 0 || turn.error || showThinking) && (
+      {turn.status === "pending" ? <p className="text-right text-[11px] text-[#969696]">Queued</p> : null}
+      {(turn.answer || turn.streamingText || turn.tools.length > 0 || turn.error || showThinking || turn.status === "cancelled") && (
         <div className="rm-message-assistant border px-3 py-2 text-sm">
           {turn.answer ? (
             <MarkdownBody content={turn.answer} />
@@ -117,7 +118,7 @@ export function AssistantPanel() {
         {turns.length === 0 && !ctx.confirmation ? (
           <p className="text-xs leading-relaxed text-[#bdbdbd]">
             Ask for anything the app can do: find papers, open one at a page, answer from your library, save a note, start a
-            visualization. {ctx.supported && !ctx.textOnlyReason ? 'Say "Hey Zoe" or type below.' : "Type below."}
+            visualization. {ctx.supported && !ctx.textOnlyReason ? "Enable the microphone once, then keep talking. You can add instructions while I work." : "Type below. You can add instructions while I work."}
           </p>
         ) : null}
         {turns.map((turn) => (
@@ -148,12 +149,12 @@ export function AssistantPanel() {
           ref={inputRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder={ctx.supported && !ctx.textOnlyReason ? 'Type, or say "Hey Zoe"' : "Type to the assistant"}
+          placeholder={ctx.voiceEnabled && !ctx.muted ? "Type, or just keep talking" : "Type to the assistant"}
           className="h-9 min-w-0 flex-1 border border-border bg-[#0d0d0d] px-3 text-sm text-foreground outline-none placeholder:text-[#8a8a8a] focus:border-[rgba(255,255,255,0.35)]"
         />
         {ctx.supported && !ctx.textOnlyReason ? (
-          <button type="button" onClick={actions.toggleMute} title={ctx.muted ? "Unmute microphone" : "Mute microphone"} className="flex h-8 w-8 items-center justify-center text-[#969696] hover:bg-secondary hover:text-foreground">
-            {ctx.muted ? <MicOff size={14} /> : <Mic size={14} />}
+          <button type="button" onClick={actions.toggleMute} title={!ctx.voiceEnabled ? "Enable microphone" : ctx.muted ? "Unmute microphone" : "Mute microphone"} className="flex h-8 w-8 items-center justify-center text-[#969696] hover:bg-secondary hover:text-foreground">
+            {ctx.muted || !ctx.voiceEnabled ? <MicOff size={14} /> : <Mic size={14} />}
           </button>
         ) : null}
         <button type="button" onClick={() => actions.setTtsEnabled(!ttsEnabled)} title={ttsEnabled ? "Turn voice replies off" : "Turn voice replies on"} className="flex h-8 w-8 items-center justify-center text-[#969696] hover:bg-secondary hover:text-foreground">

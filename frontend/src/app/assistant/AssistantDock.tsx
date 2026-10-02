@@ -26,7 +26,7 @@ export function AssistantDock({ yieldGpu = false }: { yieldGpu?: boolean }) {
   const assistant = useAssistant();
   const { ctx, display, caption, activeTool, panelOpen, actions } = assistant;
   const elapsed = useElapsed(activeTool ? activeTool.startedAt : null);
-  const busy = ctx.inTurn || ctx.speaking || ctx.state === "capturing";
+  const busy = ctx.inTurn || ctx.queuedCount > 0 || ctx.speaking || ctx.state === "capturing";
   const confirmation = ctx.state === "awaiting_confirmation" ? ctx.confirmation : null;
   const status = display === "executing" && activeTool ? `${caption.status} · ${elapsed}` : caption.status;
   const showCaption = Boolean(caption.primary || status);
@@ -85,7 +85,7 @@ export function AssistantDock({ yieldGpu = false }: { yieldGpu?: boolean }) {
           <button
             type="button"
             onClick={actions.cancel}
-            title="Stop (Esc)"
+            title="Stop and clear queued instructions (Esc)"
             aria-label="Stop"
             className="flex h-7 w-7 shrink-0 items-center justify-center text-[#969696] hover:bg-secondary hover:text-foreground"
           >
@@ -97,11 +97,11 @@ export function AssistantDock({ yieldGpu = false }: { yieldGpu?: boolean }) {
           <button
             type="button"
             onClick={actions.toggleMute}
-            title={ctx.muted ? "Unmute microphone" : "Mute microphone"}
-            aria-label={ctx.muted ? "Unmute microphone" : "Mute microphone"}
+            title={!ctx.voiceEnabled ? "Enable microphone" : ctx.muted ? "Unmute microphone" : "Mute microphone"}
+            aria-label={!ctx.voiceEnabled ? "Enable microphone" : ctx.muted ? "Unmute microphone" : "Mute microphone"}
             className="flex h-7 w-7 shrink-0 items-center justify-center text-[#969696] hover:bg-secondary hover:text-foreground"
           >
-            {ctx.muted ? <MicOff size={14} /> : <Mic size={14} />}
+            {ctx.muted || !ctx.voiceEnabled ? <MicOff size={14} /> : <Mic size={14} />}
           </button>
         )}
         <button

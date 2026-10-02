@@ -17,7 +17,7 @@ export type AssistantSocketOptions = {
 };
 
 const QUEUEABLE = new Set(["user_message", "confirm", "cancel"]);
-const MAX_QUEUE = 5;
+const MAX_QUEUE = 32;
 
 export class AssistantSocket {
   private socket: WebSocket | null = null;
@@ -26,6 +26,7 @@ export class AssistantSocket {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private outbox: ClientMessage[] = [];
   private helloSent = false;
+  private sessionReady = false;
   private readonly Impl: typeof WebSocket;
   status: SocketStatus = "closed";
 
@@ -53,15 +54,13 @@ export class AssistantSocket {
     }
     this.socket = socket;
     this.helloSent = false;
+    this.sessionReady = false;
     socket.onopen = () => {
       if (this.socket !== socket) return;
       this.attempts = 0;
       this.sendRaw({ type: "hello", ...this.options.hello() });
       this.helloSent = true;
       this.setStatus("open");
-      const pending = this.outbox;
-      this.outbox = [];
-      pending.forEach((frame) => this.sendRaw(frame));
     };
     socket.onmessage = (event) => {
       if (this.socket !== socket) return;
@@ -73,6 +72,12 @@ export class AssistantSocket {
       }
       if (parsed && typeof parsed === "object" && typeof (parsed as { type?: unknown }).type === "string") {
         this.options.onMessage(parsed as ServerMessage);
+        if ((parsed as ServerMessage).type === "session") {
+          this.sessionReady = true;
+          const pending = this.outbox;
+          this.outbox = [];
+          pending.forEach((frame) => this.sendRaw(frame));
+        }
       }
     };
     socket.onerror = () => {
@@ -108,6 +113,7 @@ export class AssistantSocket {
 
   close(): void {
     this.closedByUs = true;
+    this.outbox = [];
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -126,14 +132,29 @@ export class AssistantSocket {
     this.setStatus("closed");
   }
 
+  /** Requests still in the local outbox have not run on the server. */
+  pendingMessageIds(): Set<string> {
+    return new Set(this.outbox.flatMap((frame) => "id" in frame && frame.id ? [frame.id] : []));
+  }
+
   /** True when the frame went out immediately; false when queued or dropped. */
   send(frame: ClientMessage): boolean {
-    if (this.socket && this.socket.readyState === this.Impl.OPEN && this.helloSent) {
+    if (frame.type === "cancel") {
+      // Nothing buffered has run yet. Stop must discard it, including before
+      // the first session handshake or when starting a new conversation.
+      this.outbox = [];
+    }
+    if (this.socket && this.socket.readyState === this.Impl.OPEN && this.helloSent && this.sessionReady) {
       this.sendRaw(frame);
       return true;
     }
     if (QUEUEABLE.has(frame.type)) {
-      this.outbox = [...this.outbox, frame].slice(-MAX_QUEUE);
+      if (this.outbox.length >= MAX_QUEUE) {
+        this.options.onMessage({ type: "request_rejected", message_id: "id" in frame ? frame.id ?? null : null,
+          message: "The instruction queue is full. Please wait before adding more." });
+        return false;
+      }
+      this.outbox.push(frame);
       if (!this.closedByUs) this.connect();
     }
     return false;

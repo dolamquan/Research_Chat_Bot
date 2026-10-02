@@ -7,7 +7,7 @@ import { summarizeChanges } from "./ActivityPanel";
 import { glass } from "./glass";
 import { loadSnapshot, unavailableByReason, type Snapshot } from "./snapshot";
 
-export type ConsoleTab = "overview" | "tools" | "activity" | "jobs" | "diagnostics";
+export type ConsoleTab = "overview" | "tools" | "activity" | "runs" | "jobs" | "diagnostics";
 
 const RECENT = 5;
 const ACTIVE = new Set(["queued", "running"]);

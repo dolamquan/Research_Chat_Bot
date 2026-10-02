@@ -24,7 +24,7 @@ describe("transcript reconciliation", () => {
 
 describe("audio", () => {
   it("skips silence, retains pre-roll, and commits after trailing silence", () => {
-    const send = vi.fn(), started = vi.fn(), gate = new SpeechAudioGate(send, started);
+    const send = vi.fn(), started = vi.fn(), ended = vi.fn(), gate = new SpeechAudioGate(send, started, ended);
     for (let i = 0; i < 100; i++) gate.accept(new ArrayBuffer(4800), 0);
     expect(send).not.toHaveBeenCalled();
     gate.accept(new ArrayBuffer(4800), 0.1);
@@ -34,6 +34,7 @@ describe("audio", () => {
     expect(send).not.toHaveBeenCalledWith("commit");
     gate.accept(new ArrayBuffer(4800), 0);
     expect(send).toHaveBeenLastCalledWith("commit");
+    expect(ended).toHaveBeenCalledOnce();
     send.mockClear();
     gate.accept(new ArrayBuffer(4800), 0);
     expect(send).not.toHaveBeenCalled();

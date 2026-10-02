@@ -6,12 +6,12 @@
  * timer). Keeping timers and browser APIs outside makes every path testable.
  */
 import type { PendingConfirmation, VoiceContext, VoiceEffect, VoiceEvent, VoiceState } from "./assistantTypes";
-import { isEchoOf, matchConfirmation, matchWakeWord, stripWakeWord } from "./wakeWord";
+import { isEchoOf, matchConfirmation, matchWakeWord, normalizeTranscript, stripWakeWord } from "./wakeWord";
 
 export const SILENCE_AFTER_SPEECH_MS = 1400;
 export const WAIT_FOR_COMMAND_MS = 4000;
 export const PUSH_TO_TALK_WAIT_MS = 6000;
-export const CAPTURE_HARD_CAP_MS = 12000;
+export const CAPTURE_HARD_CAP_MS = 60000;
 export const CONFIRMATION_WINDOW_MS = 20000;
 export const POST_TTS_COOLDOWN_MS = 600;
 export const ERROR_DISPLAY_MS = 4000;
@@ -35,12 +35,14 @@ export function initialVoiceContext(options: {
     voiceEnabled: Boolean(options.voiceEnabled),
     oneShot: false,
     recognitionActive: false,
+    userSpeaking: false,
     restartDelayMs: RESTART_MIN_MS,
     speaking: false,
     spokenText: "",
     cooldownUntil: 0,
     inTurn: false,
     pendingTools: 0,
+    queuedCount: 0,
     committed: "",
     interim: "",
     captureSource: null,
@@ -78,12 +80,12 @@ function settle(ctx: VoiceContext, effects: VoiceEffect[]): Transition {
   return { ctx: { ...ctx, state: restingState(ctx) }, effects };
 }
 
-function beginCapture(ctx: VoiceContext, remainder: string, source: "wake" | "push", effects: VoiceEffect[], partial = false): Transition {
-  const next: VoiceContext = { ...ctx, state: "capturing", committed: "", interim: remainder, captureSource: source };
+function beginCapture(ctx: VoiceContext, remainder: string, source: "wake" | "push" | "conversation", effects: VoiceEffect[], partial = false): Transition {
+  const next: VoiceContext = { ...ctx, state: "capturing", committed: partial ? "" : remainder, interim: partial ? remainder : "", captureSource: source };
   const wait = source === "push" ? PUSH_TO_TALK_WAIT_MS : remainder ? SILENCE_AFTER_SPEECH_MS : WAIT_FOR_COMMAND_MS;
   return {
     ctx: next,
-    effects: [...effects, partial ? { type: "CLEAR_SILENCE_TIMER" } : { type: "START_SILENCE_TIMER", ms: wait }, { type: "START_CAPTURE_TIMER", ms: CAPTURE_HARD_CAP_MS }],
+    effects: [...effects, partial || ctx.userSpeaking ? { type: "CLEAR_SILENCE_TIMER" } : { type: "START_SILENCE_TIMER", ms: wait }, { type: "START_CAPTURE_TIMER", ms: CAPTURE_HARD_CAP_MS }],
   };
 }
 
@@ -94,10 +96,10 @@ function sendCommand(ctx: VoiceContext, text: string, source: "voice" | "text", 
   };
   const timers: VoiceEffect[] = [{ type: "CLEAR_SILENCE_TIMER" }, { type: "CLEAR_CAPTURE_TIMER" }];
   if (!trimmed) return settle(cleared, [...effects, ...timers]);
-  const bargeIn: VoiceEffect[] = ctx.inTurn ? [{ type: "SEND_CANCEL", reason: "barge_in" }] : [];
   return {
-    ctx: { ...cleared, state: "sending", inTurn: true, pendingTools: 0, confirmation: ctx.confirmation },
-    effects: [...effects, ...timers, ...bargeIn, { type: "SEND_MESSAGE", text: trimmed, source }],
+    ctx: { ...cleared, state: ctx.confirmation ? "awaiting_confirmation" : ctx.inTurn ? ctx.pendingTools > 0 ? "executing" : "thinking" : "sending",
+      inTurn: ctx.inTurn || !ctx.confirmation, pendingTools: ctx.inTurn ? ctx.pendingTools : 0 },
+    effects: [...effects, ...timers, { type: "SEND_MESSAGE", text: trimmed, source }],
   };
 }
 
@@ -141,7 +143,7 @@ export function transition(ctx: VoiceContext, event: VoiceEvent): Transition {
     case "MIC_DENIED":
       return micDenied(ctx);
     case "MUTE": {
-      const next: VoiceContext = { ...ctx, muted: true, oneShot: false, committed: "", interim: "", captureSource: null };
+      const next: VoiceContext = { ...ctx, muted: true, oneShot: false, userSpeaking: false, committed: "", interim: "", captureSource: null };
       const effects: VoiceEffect[] = [{ type: "ABORT_RECOGNITION" }, { type: "CLEAR_SILENCE_TIMER" }, { type: "CLEAR_CAPTURE_TIMER" }];
       return next.state === "capturing" || !isTurnState(next.state) ? settle(next, effects) : { ctx: next, effects };
     }
@@ -156,9 +158,11 @@ export function transition(ctx: VoiceContext, event: VoiceEvent): Transition {
         { type: "START_CAPTURE_TIMER", ms: CAPTURE_HARD_CAP_MS },
       ] : [] };
     case "RECOGNITION_SPEECH_STARTED":
-      return { ctx, effects: ctx.state === "capturing" ? [{ type: "CLEAR_SILENCE_TIMER" }] : [] };
+      return { ctx: { ...ctx, userSpeaking: true }, effects: ctx.state === "capturing" ? [{ type: "CLEAR_SILENCE_TIMER" }] : [] };
+    case "RECOGNITION_SPEECH_ENDED":
+      return { ctx: { ...ctx, userSpeaking: false }, effects: [] };
     case "RECOGNITION_ENDED": {
-      const next: VoiceContext = { ...ctx, recognitionActive: false };
+      const next: VoiceContext = { ...ctx, recognitionActive: false, userSpeaking: false };
       if (!shouldListen(next)) return { ctx: next, effects: [] };
       return {
         ctx: { ...next, restartDelayMs: Math.min(next.restartDelayMs * 2, RESTART_MAX_MS) },
@@ -225,15 +229,15 @@ export function transition(ctx: VoiceContext, event: VoiceEvent): Transition {
     }
     case "CANCEL": {
       const effects: VoiceEffect[] = [{ type: "CANCEL_TTS" }, { type: "CLEAR_SILENCE_TIMER" }, { type: "CLEAR_CAPTURE_TIMER" }, { type: "CLEAR_CONFIRM_TIMER" }];
-      if (ctx.inTurn) effects.push({ type: "SEND_CANCEL", reason: "user" });
+      if (ctx.inTurn || ctx.queuedCount > 0 || ctx.confirmation) effects.push({ type: "SEND_CANCEL", reason: "user" });
       if (ctx.oneShot) effects.push({ type: "ABORT_RECOGNITION" });
-      const next: VoiceContext = { ...ctx, oneShot: false, inTurn: false, pendingTools: 0, committed: "", interim: "", captureSource: null, confirmation: null, error: null };
+      const next: VoiceContext = { ...ctx, oneShot: false, inTurn: false, pendingTools: 0, queuedCount: 0, committed: "", interim: "", captureSource: null, confirmation: null, error: null };
       return settle(next, effects);
     }
     case "SOCKET_STATUS": {
-      const next: VoiceContext = { ...ctx, socket: event.status };
+      const next: VoiceContext = { ...ctx, socket: event.status, queuedCount: event.status === "closed" ? 0 : ctx.queuedCount };
       if (event.status === "closed" && ctx.inTurn) {
-        return { ctx: { ...next, inTurn: false, pendingTools: 0, state: "error", error: "Lost the connection to the assistant" }, effects: [{ type: "RESET_ERROR_LATER", ms: ERROR_DISPLAY_MS }] };
+        return { ctx: { ...next, inTurn: false, pendingTools: 0, queuedCount: 0, state: "error", error: "Lost the connection to the assistant" }, effects: [{ type: "RESET_ERROR_LATER", ms: ERROR_DISPLAY_MS }] };
       }
       return { ctx: next, effects: [] };
     }
@@ -249,14 +253,22 @@ function onTranscript(ctx: VoiceContext, text: string, isFinal: boolean, now: nu
   if (!text.trim()) return isFinal && ctx.state === "capturing"
     ? { ctx: { ...ctx, interim: "" }, effects: [{ type: "START_SILENCE_TIMER", ms: WAIT_FOR_COMMAND_MS }] }
     : { ctx, effects: [] };
-  if (now < ctx.cooldownUntil) return { ctx, effects: [] };
+  // Echo cancellation is also enabled on the microphone. Keep a brief echo
+  // check after TTS, but let a real follow-up through immediately.
+  if ((ctx.speaking || now < ctx.cooldownUntil) && isEchoOf(text, ctx.spokenText)) return { ctx, effects: [] };
 
   const wake = matchWakeWord(text);
+  const commandText = wake.matched ? wake.remainder : text.trim();
+  if (isFinal && !ctx.confirmation) {
+    const control = normalizeTranscript(commandText);
+    if (["stop listening", "mute microphone", "mute the microphone"].includes(control)) return transition(ctx, { type: "MUTE" });
+    if (["stop", "cancel", "cancel everything", "stop everything", "clear the queue", "never mind"].includes(control)) return transition(ctx, { type: "CANCEL" });
+  }
 
   if (ctx.speaking) {
-    // Everything heard while we talk is our own voice unless it is clearly a wake word.
-    if (!wake.matched || isEchoOf(text, ctx.spokenText)) return { ctx, effects: [] };
-    return beginCapture({ ...ctx, speaking: false }, wake.remainder, "wake", [{ type: "CANCEL_TTS" }], !isFinal);
+    // Stop the spoken reply to listen; the underlying task continues running.
+    return beginCapture({ ...ctx, speaking: false }, wake.matched ? wake.remainder : text.trim(),
+      wake.matched ? "wake" : "conversation", [{ type: "CANCEL_TTS" }], !isFinal);
   }
 
   switch (ctx.state) {
@@ -265,14 +277,16 @@ function onTranscript(ctx: VoiceContext, text: string, isFinal: boolean, now: nu
     case "thinking":
     case "executing":
     case "error": {
-      if (!wake.matched) return { ctx, effects: [] };
-      return beginCapture(ctx, wake.remainder, "wake", [], !isFinal);
+      return beginCapture(ctx, wake.matched ? wake.remainder : text.trim(), wake.matched ? "wake" : "conversation", [], !isFinal);
     }
     case "capturing": {
-      const spoken = ctx.captureSource === "wake" && wake.matched ? wake.remainder : stripWakeWord(text);
+      const spoken = wake.matched ? wake.remainder : text.trim();
       if (isFinal) {
         const next: VoiceContext = { ...ctx, committed: `${ctx.committed} ${spoken}`.trim(), interim: "" };
-        return currentCommand(next) ? finishCapture(next, []) : { ctx: next, effects: [{ type: "START_SILENCE_TIMER", ms: WAIT_FOR_COMMAND_MS }] };
+        // A transcription final marks an audio segment, not the whole request.
+        // Give the user room to add another sentence or instruction.
+        return { ctx: next, effects: ctx.userSpeaking ? [{ type: "CLEAR_SILENCE_TIMER" }]
+          : [{ type: "START_SILENCE_TIMER", ms: currentCommand(next) ? SILENCE_AFTER_SPEECH_MS : WAIT_FOR_COMMAND_MS }] };
       }
       // Live partials can pause while speech continues; the completed turn
       // (or the capture hard cap) submits the command.
@@ -288,11 +302,7 @@ function onTranscript(ctx: VoiceContext, text: string, isFinal: boolean, now: nu
           effects: [{ type: "CLEAR_CONFIRM_TIMER" }, { type: "SEND_CONFIRM", approved: decision === "yes" }],
         };
       }
-      if (wake.matched && wake.remainder) {
-        // A different request supersedes the pending question.
-        return sendCommand({ ...ctx, confirmation: null }, wake.remainder, "voice", [{ type: "CLEAR_CONFIRM_TIMER" }]);
-      }
-      return { ctx, effects: [] };
+      return command ? beginCapture(ctx, wake.matched ? wake.remainder : text.trim(), "conversation", []) : { ctx, effects: [] };
     }
     default:
       return { ctx, effects: [] };
@@ -300,42 +310,54 @@ function onTranscript(ctx: VoiceContext, text: string, isFinal: boolean, now: nu
 }
 
 function onServer(ctx: VoiceContext, message: { type: string } & Record<string, any>): Transition {
+  const workingState = (pendingTools: number): VoiceState => ctx.state === "capturing" ? "capturing"
+    : ctx.confirmation ? "awaiting_confirmation" : pendingTools > 0 ? "executing" : "thinking";
   switch (message.type) {
+    case "session": {
+      const next: VoiceContext = { ...ctx, inTurn: false, pendingTools: 0, queuedCount: 0, confirmation: null };
+      return ctx.state === "capturing" ? { ctx: next, effects: [] } : settle(next, []);
+    }
+    case "queue_state":
+      return { ctx: { ...ctx, queuedCount: message.count }, effects: [] };
+    case "request_rejected":
+      return { ctx: { ...ctx, error: message.message }, effects: [{ type: "RESET_ERROR_LATER", ms: ERROR_DISPLAY_MS }] };
     case "turn_start":
-      return { ctx: { ...ctx, inTurn: true, pendingTools: 0, state: ctx.confirmation ? "awaiting_confirmation" : "thinking" }, effects: [] };
+      return { ctx: { ...ctx, inTurn: true, pendingTools: 0, state: workingState(0) }, effects: [] };
     case "thinking":
     case "token":
       if (!ctx.inTurn) return { ctx, effects: [] };
-      return { ctx: { ...ctx, state: ctx.confirmation ? "awaiting_confirmation" : ctx.pendingTools > 0 ? "executing" : "thinking" }, effects: [] };
+      return { ctx: { ...ctx, state: workingState(ctx.pendingTools) }, effects: [] };
     case "tool_start":
+      return { ctx: { ...ctx, inTurn: true, pendingTools: ctx.pendingTools + 1, state: workingState(ctx.pendingTools + 1) }, effects: [] };
     case "client_tool_call":
-      return { ctx: { ...ctx, inTurn: true, pendingTools: ctx.pendingTools + 1, state: ctx.confirmation ? "awaiting_confirmation" : "executing" }, effects: [] };
+      // The preceding tool_start already counted this browser action.
+      return { ctx, effects: [] };
     case "tool_result": {
       const pendingTools = Math.max(0, ctx.pendingTools - 1);
-      return { ctx: { ...ctx, pendingTools, state: ctx.confirmation ? "awaiting_confirmation" : pendingTools > 0 ? "executing" : "thinking" }, effects: [] };
+      return { ctx: { ...ctx, pendingTools, state: workingState(pendingTools) }, effects: [] };
     }
     case "confirmation_required": {
       const confirmation: PendingConfirmation = {
         actionId: message.action_id ?? null, tool: message.tool, effect: message.effect,
         summary: message.summary, arguments: message.arguments ?? {}, receivedAt: Date.now(),
       };
-      return { ctx: { ...ctx, confirmation, state: "awaiting_confirmation" }, effects: [{ type: "START_CONFIRM_TIMER", ms: CONFIRMATION_WINDOW_MS }] };
+      return { ctx: { ...ctx, confirmation, state: ctx.state === "capturing" ? "capturing" : "awaiting_confirmation" }, effects: [{ type: "START_CONFIRM_TIMER", ms: CONFIRMATION_WINDOW_MS }] };
     }
     case "speak":
-      return { ctx, effects: message.text ? [{ type: "SPEAK", text: message.text }] : [] };
+      return { ctx, effects: message.text && ctx.state !== "capturing" && (ctx.queuedCount === 0 || ctx.confirmation) ? [{ type: "SPEAK", text: message.text }] : [] };
     case "error": {
-      if (!message.turn_id && !ctx.inTurn) return { ctx: { ...ctx, error: message.message }, effects: [{ type: "RESET_ERROR_LATER", ms: ERROR_DISPLAY_MS }] };
-      return { ctx: { ...ctx, state: "error", error: message.message, inTurn: false, pendingTools: 0 }, effects: [{ type: "RESET_ERROR_LATER", ms: ERROR_DISPLAY_MS }] };
+      if (!message.turn_id) return { ctx: { ...ctx, error: message.message }, effects: [{ type: "RESET_ERROR_LATER", ms: ERROR_DISPLAY_MS }] };
+      return { ctx: { ...ctx, state: ctx.state === "capturing" ? "capturing" : "error", error: message.message, inTurn: false, pendingTools: 0 }, effects: [{ type: "RESET_ERROR_LATER", ms: ERROR_DISPLAY_MS }] };
     }
     case "done": {
       const next: VoiceContext = { ...ctx, inTurn: false, pendingTools: 0 };
+      if (next.state === "capturing") return { ctx: next, effects: [] };
       if (next.confirmation) return { ctx: { ...next, state: "awaiting_confirmation" }, effects: [] };
-      if (next.oneShot && !next.speaking && next.state !== "capturing") {
+      if (next.oneShot && !next.speaking) {
         return settle({ ...next, oneShot: false }, [{ type: "ABORT_RECOGNITION" }]);
       }
       if (next.state === "error") return { ctx: next, effects: [] };
-      if (next.speaking) return { ctx: { ...next, state: next.state === "capturing" ? "capturing" : "thinking" }, effects: [] };
-      if (next.state === "capturing") return { ctx: next, effects: [] };
+      if (next.speaking) return { ctx: { ...next, state: "thinking" }, effects: [] };
       return settle(next, []);
     }
     default:

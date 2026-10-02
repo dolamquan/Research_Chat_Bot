@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# A second push to the same branch cancels the run still in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     name: Backend
@@ -23,19 +28,41 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
 
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Compile backend
         run: |
           python -m compileall app evaluate_rag.py evaluate_ragas.py ingest.py build_clusters.py
 
+      - name: Run backend tests
+        env:
+          # The stores fall back to their SQLite files when this is empty. Left
+          # unset, a Postgres URL leaking in from the environment makes the
+          # suite hang instead of fail.
+          DATABASE_URL: ""
+          # conftest.py also sets these; making them explicit keeps a CI run
+          # from ever reaching LangSmith or a real provider.
+          AUTH_MODE: disabled
+          LANGSMITH_TRACING: "false"
+          LANGCHAIN_TRACING_V2: "false"
+        run: python -m pytest
+
   frontend:
     name: Frontend
-    runs-on: ubuntu-latest
+    # Windows, not Linux: five of the devDependencies in pnpm-lock.yaml are
+    # `os: [win32]` binaries (@esbuild/win32-x64, @rollup/rollup-win32-x64-msvc,
+    # @tailwindcss/oxide-win32-x64-msvc, @typescript/typescript-win32-x64,
+    # lightningcss-win32-x64-msvc), so `--frozen-lockfile` cannot resolve on a
+    # Linux runner. This also matches the platform the project is developed on.
+    runs-on: windows-latest
 
     defaults:
       run:
@@ -48,7 +75,7 @@ jobs:
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -59,6 +86,12 @@ jobs:
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Typecheck frontend
+        run: pnpm run typecheck
+
+      - name: Run frontend tests
+        run: pnpm run test
 
       - name: Build frontend
         run: pnpm run build

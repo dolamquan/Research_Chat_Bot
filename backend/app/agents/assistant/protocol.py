@@ -51,6 +51,7 @@ class ClientToolResultFrame(_Frame):
 
 class ConfirmFrame(_Frame):
     type: Literal["confirm"]
+    id: str | None = None
     action_id: str | None = None
     approved: bool
     workspace: Dict[str, Any] = Field(default_factory=dict)

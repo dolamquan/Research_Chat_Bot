@@ -27,6 +27,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 
+import { useRegisterUiActions } from "../assistant";
 import type { Source } from "../types";
 import { NoteEditor } from "./notes";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "./ui/dialog";
@@ -70,6 +71,7 @@ type WorkspaceNotesPaneProps = {
   scopeId: string;
   scopeTitle: string;
   onToggle: () => void;
+  onOpen: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLButtonElement>) => void;
   onPinNote: (source: Source) => void;
 };
@@ -187,6 +189,7 @@ export function WorkspaceNotesPane({
   scopeId,
   scopeTitle,
   onToggle,
+  onOpen,
   onResizeStart,
   onPinNote,
 }: WorkspaceNotesPaneProps) {
@@ -209,7 +212,16 @@ export function WorkspaceNotesPane({
   const uploadedAttachmentsRef = useRef(new Map<string, NoteAttachment>());
   const knownAttachmentIdsRef = useRef(new Set<string>());
   const savingRef = useRef(false);
+  // The assistant can write twice before React re-renders, so it reads and
+  // writes the draft through this ref rather than the `note` closure.
+  const noteRef = useRef("");
+  // Every draft change bumps the edit version; the synced version is the last
+  // one known to match the server, so a mismatch means unsaved local edits.
+  const editVersionRef = useRef(0);
+  const syncedVersionRef = useRef(0);
+  const savePromiseRef = useRef<Promise<string> | null>(null);
   const noteKey = useMemo(() => storageKey(scopeId), [scopeId]);
+  const noteKeyRef = useRef(noteKey);
   const initialSketchData = useMemo(
     () => ({
       elements: sketch.elements,
@@ -226,6 +238,11 @@ export function WorkspaceNotesPane({
 
   useEffect(() => {
     const stored = parseStoredNote(localStorage.getItem(noteKey));
+    noteKeyRef.current = noteKey;
+    noteRef.current = stored.body;
+    editVersionRef.current = 0;
+    // A non-empty local draft may hold edits the server never received.
+    syncedVersionRef.current = stored.body.trim() ? -1 : 0;
     setNote(stored.body);
     setAttachments(stored.attachments);
     const storedSketch = stored.sketch || emptyScene();
@@ -281,7 +298,21 @@ export function WorkspaceNotesPane({
     });
   }
 
-  async function resolveServerNoteId(): Promise<string> {
+  function changeNote(value: string) {
+    noteRef.current = value;
+    editVersionRef.current += 1;
+    setNote(value);
+  }
+
+  async function resolveServerNoteId(body: string, key: string): Promise<string> {
+    const id = await findOrCreateServerNote(body);
+    // A save that finishes after the user switched scope must not hand its
+    // note id to the new scope.
+    if (key === noteKeyRef.current) serverNoteIdRef.current = id;
+    return id;
+  }
+
+  async function findOrCreateServerNote(body: string): Promise<string> {
     if (serverNoteIdRef.current) return serverNoteIdRef.current;
 
     // Notes migrated from localStorage kept their legacy scoped id, so a
@@ -291,10 +322,7 @@ export function WorkspaceNotesPane({
       sourceRef: scopeId || "global",
       limit: 1,
     });
-    if (existing.notes.length > 0) {
-      serverNoteIdRef.current = existing.notes[0].note_id;
-      return serverNoteIdRef.current;
-    }
+    if (existing.notes.length > 0) return existing.notes[0].note_id;
 
     const created = await createNote({
       note_type: "freeform",
@@ -302,16 +330,27 @@ export function WorkspaceNotesPane({
       source_ref: scopeId || "global",
       source_title: scopeTitle,
       title: scopeTitle || "Workspace note",
-      body_md: note,
+      body_md: body,
       sketch: sketchRef.current,
     });
-    serverNoteIdRef.current = created.note.note_id;
-    return serverNoteIdRef.current;
+    return created.note.note_id;
   }
 
-  async function saveCurrentNoteToLibrary(): Promise<string> {
-    if (savingRef.current) return "";
-    if (!note.trim() && attachments.length === 0 && sketchRef.current.elements.length === 0) {
+  function saveCurrentNoteToLibrary(body: string = noteRef.current): Promise<string> {
+    if (savingRef.current) return Promise.resolve("");
+    const run = persistNote(body);
+    savePromiseRef.current = run;
+    const clear = () => {
+      if (savePromiseRef.current === run) savePromiseRef.current = null;
+    };
+    run.then(clear, clear);
+    return run;
+  }
+
+  async function persistNote(body: string): Promise<string> {
+    const key = noteKeyRef.current;
+    const version = editVersionRef.current;
+    if (!body.trim() && attachments.length === 0 && sketchRef.current.elements.length === 0) {
       return "";
     }
 
@@ -336,13 +375,14 @@ export function WorkspaceNotesPane({
           setAttachments(savedAttachments);
         }
       }
-      const noteId = await resolveServerNoteId();
+      const noteId = await resolveServerNoteId(body, key);
       const saved = await updateNote(noteId, {
         title: scopeTitle || "Workspace note",
         source_title: scopeTitle,
-        body_md: note,
+        body_md: body,
         sketch: scene,
       });
+      if (key === noteKeyRef.current && body === noteRef.current) syncedVersionRef.current = version;
 
       for (const attachment of savedAttachments) {
         if (uploadedAttachmentsRef.current.get(attachment.id) === attachment) continue;
@@ -385,6 +425,35 @@ export function WorkspaceNotesPane({
       setIsSyncing(false);
     }
   }
+
+  useRegisterUiActions({
+    "workspaceNotes.append": async ({ title, body }: { title: string; body: string }) => {
+      const block = [title.trim() ? `## ${title.trim()}` : "", body.trim()].filter(Boolean).join("\n\n");
+      const current = noteRef.current.trimEnd();
+      const next = current ? `${current}\n\n${block}` : block;
+      changeNote(next);
+      setMode("notes");
+      onOpen();
+      // Wait out any save already running, then save the latest draft, which
+      // includes this note and any appended while waiting.
+      while (savePromiseRef.current) await savePromiseRef.current;
+      const noteId = await saveCurrentNoteToLibrary();
+      return { note_id: noteId, saved: Boolean(noteId) };
+    },
+    "workspaceNotes.refresh": async () => {
+      const key = noteKeyRef.current;
+      const version = editVersionRef.current;
+      const found = await listNotes({ noteType: "freeform", sourceRef: scopeId || "global", limit: 1 });
+      const server = found.notes[0];
+      const changedMeanwhile = key !== noteKeyRef.current || version !== editVersionRef.current || savingRef.current;
+      if (!server || changedMeanwhile) return;
+      serverNoteIdRef.current = server.note_id;
+      const hasUnsavedEdits = editVersionRef.current !== syncedVersionRef.current;
+      if (server.body_md === noteRef.current || hasUnsavedEdits) return;
+      changeNote(server.body_md);
+      syncedVersionRef.current = editVersionRef.current;
+    },
+  });
 
   async function exportCurrentNoteToNotion() {
     const noteId = await saveCurrentNoteToLibrary();
@@ -543,7 +612,14 @@ export function WorkspaceNotesPane({
       excalidrawApiRef.current?.addFiles(Object.values(attachment.scene?.files || {}));
       excalidrawApiRef.current?.updateScene({
         elements: attachment.scene?.elements || [],
-        appState: attachment.scene?.appState || {},
+        // `updateScene` is generic over which AppState keys are supplied
+        // (`Pick<AppState, K>`), which a stored `Partial<AppState>` snapshot
+        // can never satisfy statically. Restoring a partial snapshot is what
+        // the runtime is built for, so assert the shape rather than widen
+        // SketchScene into a full AppState.
+        appState: (attachment.scene?.appState || {}) as Parameters<
+          NonNullable<typeof excalidrawApiRef.current>["updateScene"]
+        >[0]["appState"],
         collaborators: new Map(),
       });
     }, 100);
@@ -620,12 +696,12 @@ export function WorkspaceNotesPane({
           <div className="flex justify-end border-b border-border px-3 py-1">
             <button type="button" className="flex items-center gap-1 text-xs text-muted-foreground" onClick={() => setDocumentOpen(true)}><Maximize2 size={12} /> Expand editor</button>
           </div>
-          <NoteEditor value={note} onChange={setNote} onSave={() => void saveCurrentNoteToLibrary()} />
+          <NoteEditor value={note} onChange={changeNote} onSave={() => void saveCurrentNoteToLibrary()} />
           <Dialog open={documentOpen} onOpenChange={setDocumentOpen}>
             <DialogContent className="flex h-[85vh] flex-col sm:max-w-5xl" onInteractOutside={event => event.preventDefault()}>
               <DialogTitle>{scopeTitle || "Research note"}</DialogTitle>
               <DialogDescription>Your draft autosaves in this browser. Save to add it to Notes.</DialogDescription>
-              <NoteEditor value={note} onChange={setNote} onSave={() => void saveCurrentNoteToLibrary()} label="Expanded note document" />
+              <NoteEditor value={note} onChange={changeNote} onSave={() => void saveCurrentNoteToLibrary()} label="Expanded note document" />
               <div className="flex items-center justify-between gap-4"><span className="text-xs text-muted-foreground" role="status">{syncStatus || (librarySavedAt ? `Saved to Notes ${librarySavedAt}` : "Local draft")}</span>
                 <button type="button" disabled={isSyncing} className="rounded bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-40" onClick={() => void saveCurrentNoteToLibrary()}>{isSyncing ? "Saving…" : "Save to Notes"}</button></div>
             </DialogContent>

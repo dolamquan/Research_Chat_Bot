@@ -667,8 +667,7 @@ function TranslocateGlyph({ color }: GlyphProps) {
 
 /** The makeup of a population changing. */
 function PopulationGlyph({ step, color }: GlyphProps) {
-  const values = stepValues(step);
-  const raw = values.length > 0 ? values : [0.6, 0.3, 0.1];
+  const raw = values(step, 3);
   const total = raw.reduce((sum, value) => sum + Math.abs(value), 0) || 1;
   let offset = -0.35;
   return (

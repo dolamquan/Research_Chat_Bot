@@ -13,7 +13,8 @@ from langchain_core.messages import AIMessage
 
 from app.agents import catalog, runtime
 from app.agents.assistant import connection
-from app.storage import agent_history, article_store, notes
+from app.agents.assistant.confirmations import PendingActions
+from app.storage import agent_history, agent_runs, article_store, notes
 
 
 class ScriptedModel:
@@ -59,12 +60,14 @@ def client():
 @pytest.fixture(autouse=True)
 def isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(agent_history, "DB_PATH", tmp_path / "agent_history.sqlite3")
+    monkeypatch.setattr(agent_runs, "DB_PATH", tmp_path / "agent_runs.sqlite3")
     monkeypatch.setattr(connection, "activity_digest", lambda *a, **k: {"chat_sessions": ["Earlier chat"]})
     papers = [{"article_id": "a1", "title": "Graph RAG for Science", "source": "graph.pdf", "url": "http://x/1",
                "domain": "research", "category": "nlp", "status": "indexed", "tags": ["rag"], "abstract": "graphs"}]
     monkeypatch.setattr(article_store, "list_articles", lambda domain=None, category=None, limit=100: papers)
     monkeypatch.setattr(article_store, "list_domains", lambda: [{"domain": "research", "category": "nlp", "article_count": 1}])
     monkeypatch.setattr(notes, "list_notion_targets", lambda: [])
+    connection.PENDING._store.clear()
 
 
 def _model(monkeypatch, script, cls=ScriptedModel):
@@ -82,7 +85,7 @@ HELLO = {"type": "hello", "token": "", "session_id": None, "client_tools": [OPEN
 def _drain_until(ws, wanted: str, *, collect: list | None = None, limit: int = 50) -> dict:
     for _ in range(limit):
         event = ws.receive_json()
-        if collect is not None:
+        if collect is not None and (event["type"] != "queue_state" or wanted == "queue_state"):
             collect.append(event)
         if event["type"] == wanted:
             return event
@@ -251,20 +254,35 @@ def test_cancel_and_supersede_a_running_turn(client, monkeypatch):
         assert next(e for e in events if e["type"] == "answer")["answer"] == "Second."
 
 
-def test_a_new_message_supersedes_the_running_turn(client, monkeypatch):
-    _model(monkeypatch, ["Replaced.\nSPEAK: Replaced."], cls=BlockingModel)
+def test_new_instructions_queue_and_are_reasoned_over_together(client, monkeypatch):
+    model = _model(monkeypatch, [[("ui_open_paper", {"article_id": "a1"})], "Opened.\nSPEAK: Opened.",
+                                "Summarized and saved.\nSPEAK: Summarized and saved."])
     with client.websocket_connect("/agent/ws") as ws:
         ws.send_json(HELLO)
-        ws.receive_json()
-        ws.send_json({"type": "user_message", "text": "first", "source": "text"})
-        _drain_until(ws, "thinking")
-        ws.send_json({"type": "user_message", "text": "actually this", "source": "text"})
+        session = ws.receive_json()
+        ws.send_json({"type": "user_message", "id": "m1", "text": "open the graph paper", "source": "voice"})
+        call = _drain_until(ws, "client_tool_call")
+        ws.send_json({"type": "user_message", "id": "m2", "text": "summarize that paper", "source": "voice"})
+        assert _drain_until(ws, "queue_state")["message_ids"] == ["m2"]
+        ws.send_json({"type": "user_message", "id": "m3", "text": "then save it as a note", "source": "voice",
+                      "workspace": {"active_view": "notes"}})
+        assert _drain_until(ws, "queue_state")["message_ids"] == ["m2", "m3"]
+        assert len(model.calls) == 1  # still waiting for the original browser action
+        ws.send_json({"type": "client_tool_result", "call_id": call["call_id"], "ok": True, "result": {"opened": True}})
         events: list = []
         done = _drain_until(ws, "done", collect=events)
-        assert done["status"] == "cancelled" and done["reason"] == "superseded" and done["turn_id"] == "t-1"
+        assert done["status"] == "ok" and done["turn_id"] == "t-1"
         events = []
         done = _drain_until(ws, "done", collect=events)
         assert done["status"] == "ok" and done["turn_id"] == "t-2"
+        assert events[0]["message_ids"] == ["m2", "m3"]
+    messages = model.calls[-1]
+    assert messages[-1].content == "summarize that paper\n\nthen save it as a note"
+    assert any("open the graph paper" in m.content for m in messages)
+    assert "Notes view" in messages[0].content
+    stored = agent_history.get_session(session["session_id"])["messages"]
+    assert [m["role"] for m in stored] == ["user", "assistant", "user", "assistant"]
+    assert stored[2]["content"] == "summarize that paper\n\nthen save it as a note"
 
 
 def test_bad_frames_are_reported_and_the_socket_stays_open(client, monkeypatch):
@@ -279,6 +297,114 @@ def test_bad_frames_are_reported_and_the_socket_stays_open(client, monkeypatch):
         assert "No action is waiting" in ws.receive_json()["message"]
         ws.send_json({"type": "ping"})
         assert ws.receive_json()["type"] == "pong"
+
+
+def test_stop_clears_queued_instructions_and_browser_work(client, monkeypatch):
+    model = _model(monkeypatch, [[("ui_open_paper", {"article_id": "a1"})], "Fresh.\nSPEAK: Fresh."])
+    with client.websocket_connect("/agent/ws") as ws:
+        ws.send_json(HELLO)
+        ws.receive_json()
+        ws.send_json({"type": "user_message", "id": "m1", "text": "open paper"})
+        old_call = _drain_until(ws, "client_tool_call")
+        ws.send_json({"type": "user_message", "id": "m2", "text": "save a note too"})
+        assert _drain_until(ws, "queue_state")["count"] == 1
+        ws.send_json({"type": "cancel", "reason": "user"})
+        assert _drain_until(ws, "queue_state")["count"] == 0
+        assert _drain_until(ws, "done")["status"] == "cancelled"
+        ws.send_json({"type": "user_message", "id": "m3", "text": "fresh request"})
+        events = []
+        assert _drain_until(ws, "done", collect=events)["status"] == "ok"
+        ws.send_json({"type": "client_tool_result", "call_id": old_call["call_id"], "ok": True})
+        stale = _drain_until(ws, "error")
+        assert stale["turn_id"] is None
+    assert next(e for e in events if e["type"] == "turn_start")["message_ids"] == ["m3"]
+    assert model.calls[-1][-1].content == "fresh request"
+    assert not any("save a note too" in m.content for m in model.calls[-1])
+
+
+def test_confirmation_jumps_ahead_of_queue_and_does_not_lose_tasks(client, monkeypatch):
+    executed = []
+
+    async def fake_aexecute(name, arguments, workspace=None):
+        executed.append(name)
+        return {"status": "deleted"}
+
+    monkeypatch.setattr(catalog, "aexecute_tool", fake_aexecute)
+    model = _model(monkeypatch, [
+        [("execute_tool", {"name": "api.notes.delete_note", "arguments": {"path": {"note_id": "n1"}}})],
+        "Delete note n1?\nSPEAK: Delete note n1?",
+        "Deleted.\nSPEAK: Deleted.", "Searched.\nSPEAK: Searched.",
+    ])
+    with client.websocket_connect("/agent/ws") as ws:
+        ws.send_json(HELLO)
+        ws.receive_json()
+        ws.send_json({"type": "user_message", "text": "delete n1"})
+        events = []
+        _drain_until(ws, "done", collect=events)
+        action = next(e for e in events if e["type"] == "confirmation_required")
+        ws.send_json({"type": "user_message", "id": "m2", "text": "then find graph papers"})
+        assert _drain_until(ws, "queue_state")["message_ids"] == ["m2"]
+        ws.send_json({"type": "ping"})
+        assert _drain_until(ws, "pong")["type"] == "pong"
+        assert executed == [] and len(model.calls) == 2
+        ws.send_json({"type": "confirm", "id": "yes1", "action_id": action["action_id"], "approved": True})
+        events = []
+        _drain_until(ws, "done", collect=events)
+        assert next(e for e in events if e["type"] == "turn_start")["message_id"] == "yes1"
+        events = []
+        _drain_until(ws, "done", collect=events)
+        assert next(e for e in events if e["type"] == "turn_start")["message_ids"] == ["m2"]
+    assert executed == ["api.notes.delete_note"]
+    assert model.calls[-1][-1].content == "then find graph papers"
+
+
+def test_full_queue_rejects_only_the_new_instruction(monkeypatch):
+    async def exercise():
+        class Socket:
+            async def send_json(self, frame):
+                events.append(frame)
+
+        events = []
+        conn = connection.AssistantConnection(Socket(), pending=PendingActions())
+        conn.turn = asyncio.create_task(asyncio.Event().wait())
+        try:
+            for i in range(connection.MAX_QUEUED_MESSAGES + 1):
+                await conn._handle(connection.UserMessageFrame(type="user_message", id=f"m{i}", text=f"task {i}"))
+            assert len(conn.queue) == connection.MAX_QUEUED_MESSAGES
+            assert [f.id for f in conn.queue] == [f"m{i}" for i in range(connection.MAX_QUEUED_MESSAGES)]
+            assert events[-1]["type"] == "request_rejected"
+            assert events[-1]["message_id"] == f"m{connection.MAX_QUEUED_MESSAGES}"
+        finally:
+            await conn.cancel_turn("user")
+
+    asyncio.run(exercise())
+
+
+def test_full_queue_still_accepts_a_confirmation_and_pre_question_yes_is_not_approval():
+    async def exercise():
+        class Socket:
+            async def send_json(self, frame):
+                events.append(frame)
+
+        events = []
+        pending = PendingActions()
+        conn = connection.AssistantConnection(Socket(), pending=pending)
+        conn.session_id = "s"
+        conn.turn = asyncio.create_task(asyncio.Event().wait())
+        early_yes = connection.UserMessageFrame(type="user_message", id="early", text="yes")
+        await conn._handle(early_yes)
+        action = pending.park("s", "delete", {}, "destructive", "Delete note")
+        for i in range(connection.MAX_QUEUED_MESSAGES - 1):
+            await conn._handle(connection.UserMessageFrame(type="user_message", id=f"m{i}", text=f"task {i}"))
+        assert id(early_yes) not in conn._confirmation_actions
+        reply = connection.UserMessageFrame(type="user_message", id="answer", text="yes")
+        await conn._handle(reply)
+        assert conn.queue[-1] is reply
+        assert conn._confirmation_actions[id(reply)] == action.id
+        assert not any(e["type"] == "request_rejected" for e in events)
+        await conn.cancel_turn("user")
+
+    asyncio.run(exercise())
 
 
 def test_handshake_rejects_missing_tokens_bad_hellos_and_silence(client, monkeypatch):

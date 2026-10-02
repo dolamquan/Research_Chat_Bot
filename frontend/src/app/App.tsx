@@ -1,10 +1,5 @@
-import { Component, useEffect, useMemo, useRef, useState } from "react";
-import type {
-  ErrorInfo,
-  KeyboardEvent,
-  PointerEvent as ReactPointerEvent,
-  ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import {
   Bot,
   CheckCircle2,
@@ -23,7 +18,6 @@ import {
   Search,
   Workflow,
   Send,
-  User,
   X,
 } from "lucide-react";
 
@@ -39,7 +33,6 @@ import {
   getDocumentDetail,
   getHealth,
   getIngestionJobs,
-  getVisualImageUrl,
   ingestUrlPaper,
   searchPapers,
   sendChat,
@@ -48,7 +41,6 @@ import {
 import { ConsoleView } from "./components/console/ConsoleView";
 import { toChatHistory } from "./chatHistory";
 import { AssistantDock, AssistantProvider, useRegisterUiActions, useReportWorkspace } from "./assistant";
-import { FormattedText } from "./components/MarkdownBody";
 import { useAuth } from "./auth/AuthProvider";
 import ZoetropeMark from "./components/ZoetropeMark";
 import { CrawlerView } from "./components/CrawlerView";
@@ -82,456 +74,22 @@ import type {
 
 const EMPTY_GRAPH: ClusterGraph = { clusters: [], documents: [] };
 
-class AppErrorBoundary extends Component<
-  { children: ReactNode },
-  { error?: Error; info?: ErrorInfo }
-> {
-  state: { error?: Error; info?: ErrorInfo } = {};
-
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("Zoetrope render error", error, info);
-    this.setState({ error, info });
-  }
-
-  render() {
-    if (!this.state.error) return this.props.children;
-
-    return (
-      <div
-        style={{
-          minHeight: "100vh",
-          background: "#0b0d10",
-          color: "#f8fafc",
-          padding: 32,
-          fontFamily:
-            "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
-        }}
-      >
-        <div
-          style={{
-            maxWidth: 920,
-            border: "1px solid #7f1d1d",
-            background: "#1f1212",
-            borderRadius: 12,
-            padding: 24,
-          }}
-        >
-          <h1 style={{ margin: 0, fontSize: 24 }}>Zoetrope crashed while rendering</h1>
-          <p style={{ color: "#a09c92", lineHeight: 1.6 }}>
-            The app is loaded, but a frontend runtime error stopped React from drawing the UI.
-            This message is here so we can see the real issue instead of a black screen.
-          </p>
-          <pre
-            style={{
-              whiteSpace: "pre-wrap",
-              color: "#fca5a5",
-              background: "#0b0d10",
-              border: "1px solid #3f1b1b",
-              borderRadius: 8,
-              padding: 16,
-              overflow: "auto",
-            }}
-          >
-            {this.state.error.message}
-            {this.state.info?.componentStack ? `\n${this.state.info.componentStack}` : ""}
-          </pre>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            style={{
-              marginTop: 12,
-              border: "1px solid #d7d3c7",
-              background: "#d7d3c7",
-              color: "#181916",
-              borderRadius: 8,
-              padding: "10px 14px",
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            Reload
-          </button>
-        </div>
-      </div>
-    );
-  }
-}
-
-function initialMessage(cluster?: Cluster): Message {
-  return {
-    id: `welcome-${cluster?.cluster_id ?? "all"}`,
-    role: "assistant",
-    synthetic: true,
-    content: cluster
-      ? `You are now exploring **${cluster.cluster_label}**. I will retrieve answers only from this cluster. Select an article on the right to read it, or ask a question across the cluster.`
-      : "Welcome to **Zoetrope**. Explore the paper topology to focus on a research cluster, or ask a question across all indexed papers. Every response is grounded in retrieved passages from your collection.",
-    timestamp: new Date(),
-  };
-}
-
-function articleInitialMessage(article: Article): Message {
-  const title = articleTitle(article);
-  return {
-    id: `welcome-article-${article.article_id}-${Date.now()}`,
-    role: "assistant",
-    synthetic: true,
-    content: `You are now chatting with **${title}**. The PDF is open on the side, and questions will retrieve from this paper first.`,
-    timestamp: new Date(),
-  };
-}
-
-function titleFromSource(source: string): string {
-  return source
-    .replace(/\.pdf$/i, "")
-    .replace(/^\d{4}\.\d+(?:v\d+)?_/i, "")
-    .replace(/[_-]+/g, " ");
-}
-
-function articleTitle(article: Article): string {
-  return article.title || titleFromSource(article.source);
-}
-
-function sourceKey(source: Source): string {
-  const text = sourceTextValue(source?.text);
-  return [
-    source?.id,
-    sourceTextValue(source?.source),
-    typeof source?.page === "number" ? source.page : "",
-    text.slice(0, 100),
-  ].join(":");
-}
-
-function scopeLabelFor(domain: string, category: string): string {
-  if (domain && category) return `${domain} / ${category}`;
-  if (domain) return domain;
-  if (category) return category;
-  return "all papers";
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function jobStatusLabel(job: IngestionJob): string {
-  if (job.status === "queued") return "Queued";
-  if (job.status === "running") return job.stage === "downloading" ? "Downloading" : "Indexing";
-  if (job.status === "indexed") return "Indexed";
-  if (job.status === "failed") return "Failed";
-  return job.status;
-}
-
-function jobTitle(job: IngestionJob): string {
-  return job.article_title || job.title || titleFromSource(job.url);
-}
-
-function documentFromArticle(article: Article): ClusterDocument {
-  return {
-    article_id: article.article_id,
-    title: article.title,
-    url: article.url,
-    domain: article.domain,
-    category: article.category,
-    tags: article.tags,
-    source: article.source,
-    chunk_count: 0,
-    cluster_id: -1,
-    cluster_label: article.category || article.domain || "Library",
-    x: 0,
-    y: 0,
-  };
-}
-
-function contextLabel(source: Source, index: number): string {
-  if (source.document_type === "visual_asset" || source.image_url) {
-    return typeof source.page === "number" ? `Figure/image - p.${source.page}` : "Figure/image";
-  }
-  if (source.selection) {
-    return typeof source.page === "number" ? `PDF selection - p.${source.page}` : "PDF selection";
-  }
-  return sourceTextValue(source.title) || sourceTextValue(source.source) || `Context ${index + 1}`;
-}
-
-function MessageContextCard({ source, index }: { source: Source; index: number }) {
-  const imageUrl =
-    typeof source.image_url === "string" ? getVisualImageUrl(source.image_url) : "";
-  const text = typeof source.text === "string" ? source.text : "";
-
-  return (
-    <div className="w-full rounded border border-primary/25 bg-primary/10 overflow-hidden">
-      {imageUrl && (
-        <div className="border-b border-primary/20 bg-background/60">
-          <img
-            src={imageUrl}
-            alt={sourceTextValue(source.title) || "Pinned visual context"}
-            className="max-h-36 w-full object-contain"
-          />
-        </div>
-      )}
-      <div className="px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className="font-mono text-[10px] uppercase tracking-widest text-primary">
-            Referencing
-          </span>
-          <span className="min-w-0 truncate text-[11px] font-medium text-foreground">
-            {contextLabel(source, index)}
-          </span>
-        </div>
-        {text && (
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground line-clamp-3">
-            {text}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function sourceCitationLabel(source: Source, index: number): string {
-  if (typeof source.page === "number") return `[p.${source.page}]`;
-  return `[${index + 1}]`;
-}
-
-function citationTitle(source: Source): string {
-  return sourceTextValue(source.title) || sourceTextValue(source.source) || "Open source";
-}
-
-function sourceTextValue(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-function paperSourceKey(source: Source): string {
-  return String(source?.article_id || source?.source || source?.id || "");
-}
-
-function isPaperSource(source: Source): boolean {
-  if (!source || typeof source !== "object") return false;
-  return Boolean(
-    typeof source.source === "string" &&
-      source.source &&
-      !source.selection &&
-      source.document_type !== "visual_asset" &&
-      !source.image_url,
-  );
-}
-
-function paperTitle(source: Source): string {
-  const title = sourceTextValue(source.title);
-  const file = sourceTextValue(source.source);
-  return title || (file ? titleFromSource(file) : "Indexed paper");
-}
-
-function paperSubtitle(source: Source): string {
-  return [sourceTextValue(source.category), sourceTextValue(source.domain)]
-    .filter(Boolean)
-    .join(" - ");
-}
-
-function MessagePaperCards({
-  sources,
-  onOpenSource,
-}: {
-  sources: Source[];
-  onOpenSource: (source: Source) => void;
-}) {
-  const safeSources = Array.isArray(sources) ? sources : [];
-  const paperSources = Array.from(
-    safeSources
-      .filter(isPaperSource)
-      .reduce((papers, source) => {
-        const key = paperSourceKey(source);
-        if (key && !papers.has(key)) papers.set(key, source);
-        return papers;
-      }, new Map<string, Source>())
-      .values(),
-  ).slice(0, 5);
-
-  if (paperSources.length === 0) return null;
-
-  return (
-    <div className="mt-2 w-full space-y-2">
-      <p className="px-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-        Retrieved papers
-      </p>
-      <div className="grid gap-2">
-        {paperSources.map((source) => (
-          <article
-            key={paperSourceKey(source)}
-            className="rounded border border-border bg-card px-3 py-2"
-          >
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded border border-primary/25 bg-primary/10 text-primary">
-                <FileText size={13} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="line-clamp-2 break-words text-xs font-semibold text-foreground">
-                  {paperTitle(source)}
-                </p>
-                <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
-                  {paperSubtitle(source) || sourceTextValue(source.source)}
-                </p>
-                {(sourceTextValue(source.summary) || sourceTextValue(source.text)) && (
-                  <p className="mt-1 line-clamp-2 break-words text-xs leading-relaxed text-muted-foreground">
-                    {sourceTextValue(source.summary) || sourceTextValue(source.text)}
-                  </p>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => onOpenSource(source)}
-                className="shrink-0 rounded border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-[11px] font-medium text-primary hover:bg-primary/20"
-              >
-                Read PDF
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function MessageBubble({
-  message,
-  onOpenSource,
-  onSaveNote,
-}: {
-  message: Message;
-  onOpenSource: (source: Source) => void;
-  onSaveNote?: (message: Message) => Promise<void>;
-}) {
-  const isUser = message.role === "user";
-  const [noteState, setNoteState] = useState<"idle" | "saving" | "saved" | "error">(
-    "idle",
-  );
-
-  async function saveAsNote() {
-    if (!onSaveNote || noteState === "saving") return;
-    setNoteState("saving");
-    try {
-      await onSaveNote(message);
-      setNoteState("saved");
-    } catch {
-      setNoteState("error");
-    }
-  }
-  const pinnedSources = Array.isArray(message.pinnedSources) ? message.pinnedSources : [];
-  const messageSources = Array.isArray(message.sources) ? message.sources : [];
-  const citationSources = messageSources.filter(
-    (source) => typeof source?.source === "string" && typeof source?.page === "number",
-  );
-
-  return (
-    <div
-      className={`w-full min-w-0 flex gap-3 ${isUser ? "flex-row-reverse" : ""}`}
-    >
-      <div
-        className={`w-8 h-8 shrink-0 rounded border flex items-center justify-center ${
-          isUser
-            ? "border-border bg-secondary text-foreground"
-            : "bg-background border-border text-muted-foreground"
-        }`}
-      >
-        {isUser ? <User size={14} /> : <Bot size={14} />}
-      </div>
-      <div
-        className={`min-w-0 max-w-[calc(100vw_-_5.5rem)] md:max-w-[78%] flex flex-col gap-2 ${
-          isUser ? "items-end" : "items-start"
-        }`}
-      >
-        {isUser && pinnedSources.length > 0 && (
-          <div className="w-full space-y-2">
-            {pinnedSources.map((source, index) => (
-              <MessageContextCard
-                key={`${sourceKey(source)}:${index}`}
-                source={source}
-                index={index}
-              />
-            ))}
-          </div>
-        )}
-        <div
-          className={`rounded px-4 py-3 text-sm ${
-            isUser
-              ? "rm-message-user text-foreground"
-              : "rm-message-assistant border text-secondary-foreground"
-          }`}
-        >
-          <div className="break-words overflow-hidden">
-            <FormattedText content={message.content} />
-          </div>
-        </div>
-        {!isUser && messageSources.length > 0 && (
-          <MessagePaperCards sources={messageSources} onOpenSource={onOpenSource} />
-        )}
-        {messageSources.length > 0 && (
-          <div className="px-1 flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-[10px] text-muted-foreground">
-              {messageSources.length} grounded source
-              {messageSources.length === 1 ? "" : "s"}
-            </span>
-            {citationSources.slice(0, 8).map((source, index) => (
-              <button
-                key={`${sourceKey(source)}:${index}`}
-                type="button"
-                title={citationTitle(source)}
-                onClick={() => onOpenSource(source)}
-                className="h-5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground hover:bg-secondary hover:text-foreground"
-              >
-                {sourceCitationLabel(source, index)}
-              </button>
-            ))}
-          </div>
-        )}
-        {!isUser && message.toolTrace && message.toolTrace.length > 0 && (
-          <div className="px-1 flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-[10px] text-muted-foreground">
-              Agent tools:
-            </span>
-            {message.toolTrace.map((step) => (
-              <span
-                key={`${step.tool}:${step.timestamp}`}
-                title={step.message}
-                className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-              >
-                {step.tool}
-              </span>
-            ))}
-          </div>
-        )}
-        <div className="flex items-center gap-2 px-1">
-          <span className="font-mono text-[10px] text-muted-foreground">
-            {message.timestamp.toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </span>
-          {!isUser && onSaveNote && (
-            <button
-              type="button"
-              title="Save this answer as a research note"
-              disabled={noteState === "saving" || noteState === "saved"}
-              onClick={() => void saveAsNote()}
-              className="h-5 rounded border border-border bg-background px-1.5 font-mono text-[10px] text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-50 inline-flex items-center gap-1"
-            >
-              <NotebookPen size={10} />
-              {noteState === "saving"
-                ? "Saving..."
-                : noteState === "saved"
-                  ? "Saved to notes"
-                  : noteState === "error"
-                    ? "Retry save"
-                    : "Save as note"}
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+import AppErrorBoundary from "./components/AppErrorBoundary";
+import MessageBubble from "./components/chat/MessageBubble";
+import {
+  articleInitialMessage,
+  articleTitle,
+  clamp,
+  documentFromArticle,
+  initialMessage,
+  jobStatusLabel,
+  jobTitle,
+  scopeLabelFor,
+  sourceKey,
+  sourceTextValue,
+  titleFromSource,
+} from "./appHelpers";
+import { useResizablePane } from "./hooks/useResizablePane";
 
 function AppContent() {
   const auth = useAuth();
@@ -576,11 +134,13 @@ function AppContent() {
   const [sidebarOpen, setSidebarOpen] = useState(
     () => window.innerWidth >= 768,
   );
-  const [sidebarWidth, setSidebarWidth] = useState(380);
+  const { width: sidebarWidth, startResize: startSidebarResize } =
+    useResizablePane(380, 300, 560);
   const [workspaceNotesOpen, setWorkspaceNotesOpen] = useState(
     () => window.innerWidth >= 1100,
   );
-  const [workspaceNotesWidth, setWorkspaceNotesWidth] = useState(320);
+  const { width: workspaceNotesWidth, startResize: startWorkspaceNotesResize } =
+    useResizablePane(320, 240, 460);
   const [loadError, setLoadError] = useState("");
   const [paperUrl, setPaperUrl] = useState("");
   const [paperTitle, setPaperTitle] = useState("");
@@ -1160,56 +720,6 @@ function AppContent() {
       event.preventDefault();
       void submitQuestion();
     }
-  }
-
-  function startSidebarResize(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (window.innerWidth < 768) return;
-
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = sidebarWidth;
-
-    const resize = (moveEvent: PointerEvent) => {
-      const nextWidth = startWidth + moveEvent.clientX - startX;
-      setSidebarWidth(clamp(nextWidth, 300, 560));
-    };
-
-    const stopResize = () => {
-      window.removeEventListener("pointermove", resize);
-      window.removeEventListener("pointerup", stopResize);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("pointermove", resize);
-    window.addEventListener("pointerup", stopResize);
-  }
-
-  function startWorkspaceNotesResize(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (window.innerWidth < 768) return;
-
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = workspaceNotesWidth;
-
-    const resize = (moveEvent: PointerEvent) => {
-      const nextWidth = startWidth + moveEvent.clientX - startX;
-      setWorkspaceNotesWidth(clamp(nextWidth, 240, 460));
-    };
-
-    const stopResize = () => {
-      window.removeEventListener("pointermove", resize);
-      window.removeEventListener("pointerup", stopResize);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("pointermove", resize);
-    window.addEventListener("pointerup", stopResize);
   }
 
   function openLibraryArticle(article: Article) {
@@ -2096,6 +1606,7 @@ function AppContent() {
           scopeId={workspaceNoteScopeId}
           scopeTitle={workspaceNoteScopeTitle}
           onToggle={() => setWorkspaceNotesOpen((value) => !value)}
+          onOpen={() => setWorkspaceNotesOpen(true)}
           onResizeStart={startWorkspaceNotesResize}
           onPinNote={pinSource}
         />

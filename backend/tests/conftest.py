@@ -14,11 +14,17 @@ import os
 # errors. Tracing is a production concern, not a test one.
 os.environ.setdefault("LANGSMITH_TRACING", "false")
 os.environ.setdefault("LANGCHAIN_TRACING_V2", "false")
+os.environ.setdefault("OPS_TELEMETRY_ENABLED", "false")
 os.environ.pop("LANGSMITH_API_KEY", None)
 os.environ.pop("LANGCHAIN_API_KEY", None)
 # Routes require a signed-in user. The suite runs as the local development
 # administrator; tests that exercise real token verification opt back in.
 os.environ.setdefault("AUTH_MODE", "disabled")
+# Tests swap the library between cases; a cached prompt context would leak across them.
+os.environ["AGENT_CONTEXT_CACHE_SECONDS"] = "0"
+# app.main loads .env at import. Explicitly select SQLite before that import,
+# so test fixtures that swap DB_PATH cannot accidentally write to Postgres.
+os.environ["DATABASE_URL"] = ""
 from typing import Any, Dict, List
 
 import pytest

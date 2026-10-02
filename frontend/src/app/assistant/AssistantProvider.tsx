@@ -13,6 +13,7 @@ import {
 import { UNAUTHORIZED_EVENT, assistantSocketUrl, createNote, getAccessToken } from "../api";
 import { useAuth } from "../auth/AuthProvider";
 import { AssistantSocket } from "./assistantSocket";
+import { startServerTurn } from "./assistantTurns";
 import { assistantStorage } from "./assistantStorage";
 import type {
   AssistantTurn,
@@ -27,6 +28,7 @@ import type {
   VoiceEvent,
 } from "./assistantTypes";
 import { CLIENT_TOOL_SPECS, createClientToolDispatcher } from "./clientTools";
+import { refreshActionsFor, runLiveRefresh } from "./liveRefresh";
 import { createUiActionRegistry, createWorkspaceStore, type UiActionRegistry, type WorkspaceStore } from "./uiActionRegistry";
 import { useAssistantHotkeys } from "./useAssistantHotkeys";
 import { speechRecognitionSupported, useLiveTranscription } from "./useLiveTranscription";
@@ -157,6 +159,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
     onEnd: () => dispatchRef.current({ type: "RECOGNITION_ENDED" }),
     onError: (code, message, retryable) => dispatchRef.current({ type: "RECOGNITION_ERROR", code, message, retryable }),
     onSpeechStart: () => dispatchRef.current({ type: "RECOGNITION_SPEECH_STARTED" }),
+    onSpeechEnd: () => dispatchRef.current({ type: "RECOGNITION_SPEECH_ENDED" }),
     onTranscript: (text, isFinal) => dispatchRef.current({ type: "TRANSCRIPT", text, isFinal, now: Date.now() }),
   }, ready);
   const recognitionRef = useRef(recognition);
@@ -244,11 +247,13 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
             socketRef.current?.send({ type: "user_message", id, text: effect.text, source: effect.source, workspace: workspace.snapshot() });
             break;
           }
-          case "SEND_CONFIRM":
-            startLocalTurn(effect.approved ? "Yes" : "No", "text");
-            socketRef.current?.send({ type: "confirm", action_id: before.confirmation?.actionId ?? null, approved: effect.approved, workspace: workspace.snapshot() });
+          case "SEND_CONFIRM": {
+            const id = startLocalTurn(effect.approved ? "Yes" : "No", "text");
+            socketRef.current?.send({ type: "confirm", id, action_id: before.confirmation?.actionId ?? null, approved: effect.approved, workspace: workspace.snapshot() });
             break;
+          }
           case "SEND_CANCEL":
+            setTurns((current) => current.map((turn) => turn.status === "pending" ? { ...turn, status: "cancelled" } : turn));
             socketRef.current?.send({ type: "cancel", reason: effect.reason });
             break;
           case "START_SILENCE_TIMER":
@@ -312,7 +317,8 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
           setSessionId(message.session_id);
           assistantStorage.setSessionId(message.session_id);
           setCatalogToolCount(message.catalog_tool_count);
-          setTurns(fromHistory(message.history || []));
+          setTurns((current) => [...fromHistory(message.history || []), ...current.filter((turn) => turn.status === "pending")]);
+          dispatch({ type: "SERVER", message });
           if (message.pending_action) {
             dispatch({
               type: "SERVER",
@@ -325,10 +331,10 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
           return;
         }
         case "turn_start":
-          updateTurn(
-            (turn) => (message.message_id ? turn.id === message.message_id : turn.status === "pending"),
-            (turn) => ({ ...turn, id: message.turn_id, status: "running" }),
-          );
+          setTurns((current) => startServerTurn(current, message));
+          break;
+        case "request_rejected":
+          updateTurn((turn) => turn.id === message.message_id, (turn) => ({ ...turn, status: "error", error: message.message }));
           break;
         case "thinking":
           updateCurrentTurn(message.turn_id, (turn) => ({ ...turn, streamingText: "" }));
@@ -354,6 +360,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
               tool.call_id === message.call_id ? { ...tool, status: message.status, message: message.message, effect: message.effect, endedAt: Date.now() } : tool,
             ),
           }));
+          void runLiveRefresh(registry, refreshActionsFor(message));
           break;
         case "client_tool_call": {
           void clientToolDispatch(message.tool, message.arguments).then((outcome) => {
@@ -389,7 +396,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       }
       dispatch({ type: "SERVER", message });
     },
-    [clientToolDispatch, dispatch, updateCurrentTurn, updateTurn],
+    [clientToolDispatch, dispatch, registry, updateCurrentTurn, updateTurn],
   );
   const handleServerRef = useRef(handleServer);
   handleServerRef.current = handleServer;
@@ -411,6 +418,12 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       onMessage: (message) => handleServerRef.current(message),
       onStatus: (status) => {
         setSocketStatus(status);
+        if (status === "closed") {
+          const unsent = socket.pendingMessageIds();
+          setTurns((current) => current.map((turn) =>
+            turn.status === "running" || (turn.status === "pending" && !unsent.has(turn.id))
+              ? { ...turn, status: "error", error: "Connection lost. This request was interrupted; please send it again." } : turn));
+        }
         dispatchRef.current({ type: "SOCKET_STATUS", status });
       },
       onUnauthorized: () => window.dispatchEvent(new Event(UNAUTHORIZED_EVENT)),
@@ -476,7 +489,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
         if (text.trim()) dispatch({ type: "SUBMIT_TEXT", text });
       },
       pushToTalk: () => dispatch({ type: "PUSH_TO_TALK" }),
-      toggleMute: () => dispatch({ type: ctxRef.current.muted ? "UNMUTE" : "MUTE" }),
+      toggleMute: () => dispatch({ type: ctxRef.current.muted || !ctxRef.current.voiceEnabled ? "UNMUTE" : "MUTE" }),
       confirm: (approved) => dispatch({ type: "CONFIRM_CLICK", approved }),
       cancel: () => dispatch({ type: "CANCEL" }),
       setPanelOpen,
@@ -527,13 +540,13 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
 
   const display = displayState(ctx);
   const activeTool = useMemo(() => {
-    const last = turns[turns.length - 1];
-    if (!last || last.status !== "running") return null;
+    const last = [...turns].reverse().find((turn) => turn.status === "running");
+    if (!last) return null;
     return [...last.tools].reverse().find((tool) => tool.status === "running") ?? null;
   }, [turns]);
 
   const caption = useMemo(() => {
-    const lastTurn = turns[turns.length - 1];
+    const lastTurn = [...turns].reverse().find((turn) => turn.status === "running") ?? turns[turns.length - 1];
     let primary = "";
     let status = "";
     switch (display) {
@@ -547,7 +560,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
         status = "Muted";
         break;
       case "idle_listening":
-        status = !ctx.recognitionActive ? "Connecting microphone…" : assistantStorage.getHintSeen() ? "" : 'Listening for "Hey Zoe"';
+        status = !ctx.recognitionActive ? "Connecting microphone…" : "Listening · keep talking";
         break;
       case "capturing":
         primary = currentCommand(ctx) || (!ctx.recognitionActive ? "Connecting microphone…" : ctx.captureSource === "wake" ? "Yes?" : "Listening…");
@@ -585,6 +598,7 @@ export function AssistantProvider({ children }: { children: ReactNode }) {
       primary = ctx.error;
       status = "Voice unavailable — click the orb to retry";
     }
+    if (ctx.queuedCount > 0 && socketStatus === "open") status += ` · ${ctx.queuedCount} queued`;
     return { primary, status };
   }, [activeTool, ctx, display, socketStatus, turns]);
 

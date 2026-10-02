@@ -2,15 +2,18 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import SceneRefinePanel, { type RefineOutcome } from "../SceneRefinePanel";
+import type { RefinementClassification } from "../sceneTypes";
 
-const cosmetic = { kind: "cosmetic" as const, reason: "Only moves labels.", basis: "model" };
-const fundamental = {
-  kind: "fundamental" as const,
+const cosmetic: RefinementClassification = { kind: "cosmetic", reason: "Only moves labels.", basis: "model" };
+const fundamental: RefinementClassification = {
+  kind: "fundamental",
   reason: "It adds a normalisation step the paper does not have.",
   basis: "model",
 };
 
-function refined(classification = cosmetic): RefineOutcome<unknown> {
+// Annotated, not inferred from the default: inferring gives this the literal
+// type of `cosmetic`, which `fundamental` cannot be passed to.
+function refined(classification: RefinementClassification = cosmetic): RefineOutcome<unknown> {
   return { status: "refined", record: {}, classification };
 }
 

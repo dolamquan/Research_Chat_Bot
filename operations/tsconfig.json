@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext", "moduleResolution": "bundler", "jsx": "react-jsx",
+    "noEmit": true, "strict": true, "skipLibCheck": true, "esModuleInterop": true,
+    "typeRoots": ["./node_modules/@types", "../frontend/node_modules/@types"],
+    "paths": {
+      "react": ["./node_modules/@types/react", "../frontend/node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*", "../frontend/node_modules/@types/react/*"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*", "../frontend/node_modules/@types/react-dom/*"],
+      "lucide-react": ["./node_modules/lucide-react", "../frontend/node_modules/lucide-react"],
+      "recharts": ["./node_modules/recharts", "../frontend/node_modules/recharts"],
+      "vitest": ["./node_modules/vitest", "../frontend/node_modules/vitest"],
+      "@supabase/supabase-js": ["./node_modules/@supabase/supabase-js", "../frontend/node_modules/@supabase/supabase-js"]
+    }
+  },
+  "include": ["src"]
+}

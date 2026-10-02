@@ -122,6 +122,11 @@ export function matchConfirmation(text: string): "yes" | "no" | null {
 
 /** True when most of what the microphone heard is what the speaker is saying. */
 export function isEchoOf(transcript: string, spokenText: string): boolean {
+  const normalized = normalizeTranscript(transcript);
+  const spokenNormalized = normalizeTranscript(spokenText);
+  if (normalized && normalized === spokenNormalized) return true;
+  // Partial transcripts often begin with just one or two words of TTS.
+  if (normalized && normalized.split(" ").length <= 2 && ` ${spokenNormalized} `.includes(` ${normalized} `)) return true;
   const heard = normalizeTranscript(transcript).split(" ").filter((t) => t.length > 2);
   if (heard.length < 2) return false;
   const spoken = new Set(normalizeTranscript(spokenText).split(" ").filter(Boolean));

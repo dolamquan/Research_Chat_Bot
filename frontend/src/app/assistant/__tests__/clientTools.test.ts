@@ -32,7 +32,7 @@ function setup() {
     },
   });
   const createNote = vi.fn(async (payload: { title?: string }) => ({ note: { note_id: "n-new", title: payload.title ?? "" } }));
-  const dispatch = createClientToolDispatcher(registry, workspace, { createNote, timeoutMs: 200 });
+  const dispatch = createClientToolDispatcher(registry, workspace, { createNote, timeoutMs: 200, sidePanelWaitMs: 20 });
   return { registry, workspace, calls, dispatch, createNote };
 }
 
@@ -86,7 +86,41 @@ describe("client tool dispatcher", () => {
     const result = await dispatch("create_note", { title: "Ideas", body: "- one" });
     expect(createNote).toHaveBeenCalledWith(expect.objectContaining({ title: "Ideas", body_md: "- one", source_type: "assistant" }));
     expect(refresh).toHaveBeenCalled();
-    expect(result).toEqual({ ok: true, result: { created: true, note_id: "n-new", title: "Ideas" } });
+    expect(result).toEqual({ ok: true, result: { created: true, note_id: "n-new", title: "Ideas", location: "notes_library" } });
+  });
+
+  it("writes new notes into the side panel when it is mounted, without leaving the screen", async () => {
+    const { dispatch, registry, createNote, calls } = setup();
+    const append = vi.fn(async () => ({ note_id: "scope-note", saved: true }));
+    registry.register({ "workspaceNotes.append": append });
+
+    const result = await dispatch("create_note", { title: "Ideas", body: "- one" });
+
+    expect(append).toHaveBeenCalledWith({ title: "Ideas", body: "- one" });
+    expect(createNote).not.toHaveBeenCalled();
+    expect(calls.some(([name]) => name === "navigateToView")).toBe(false);
+    expect(result).toEqual({
+      ok: true,
+      result: { created: true, note_id: "scope-note", saved: true, title: "Ideas", location: "side_panel" },
+    });
+  });
+
+  it("switches to the chat view to reach the side panel when another view is open", async () => {
+    const { dispatch, registry, createNote, calls } = setup();
+    const append = vi.fn(async () => ({ note_id: "scope-note", saved: true }));
+    registry.register({
+      navigateToView: (view: string) => {
+        calls.push(["navigateToView", [view]]);
+        if (view === "chat") registry.register({ "workspaceNotes.append": append });
+      },
+    });
+
+    const result = await dispatch("create_note", { title: "Ideas", body: "- one" });
+
+    expect(calls.at(-1)).toEqual(["navigateToView", ["chat"]]);
+    expect(append).toHaveBeenCalled();
+    expect(createNote).not.toHaveBeenCalled();
+    expect(result.ok && (result.result as { location: string }).location).toBe("side_panel");
   });
 
   it("passes filters through and describes the screen", async () => {

@@ -530,6 +530,36 @@ export type ChatSessionDetail = {
 /** `kind` separates the retired Agent tab's sessions ("agent") from Zoe's ("assistant"). */
 export type AgentSession = ChatSession & { kind?: string };
 
+/** One recorded step of an assistant run; fields depend on `kind`. */
+export type AgentRunEvent = {
+  t_ms: number;
+  kind: string;
+  [field: string]: unknown;
+};
+
+export type AgentRunSummary = {
+  id: string;
+  session_id: string | null;
+  turn_id: string | null;
+  question: string;
+  status: "ok" | "error" | "cancelled" | string;
+  answer?: string;
+  total_ms: number;
+  model_ms: number;
+  prompt_ms?: number;
+  tool_ms?: number;
+  steps: number;
+  worker_steps?: number;
+  tool_calls: number;
+  errors: number;
+  model: string;
+  effort?: string;
+  tokens?: { input: number; cached: number; output: number; reasoning: number };
+  created_at: string;
+};
+
+export type AgentRunDetail = AgentRunSummary & { events: AgentRunEvent[] };
+
 export type StoredAgentMessage = StoredChatMessage & {
   intent?: string | null;
   tool_trace?: AgentToolTrace[];

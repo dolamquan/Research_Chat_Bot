@@ -1,4 +1,7 @@
 # Backend test dependencies.
 #   pip install -r requirements.txt -r requirements-dev.txt
-pytest
-httpx          # required by fastapi.testclient
+#
+# Bounded for the same reason as requirements.txt: a CI run should fail because
+# the code changed, not because a test runner released a new major overnight.
+pytest>=9.0.2,<10
+httpx>=0.28.1,<0.29   # required by fastapi.testclient

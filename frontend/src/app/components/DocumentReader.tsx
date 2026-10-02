@@ -27,6 +27,7 @@ import {
   getVisualAssets,
   getVisualImageUrl,
 } from "../api";
+import { useRegisterUiActions } from "../assistant";
 import type { Annotation, ClusterDocument, Source, VisualAsset } from "../types";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
@@ -138,6 +139,7 @@ export function DocumentReader({
   const readerRef = useRef<HTMLElement>(null);
   const pageContainerRef = useRef<HTMLDivElement>(null);
   const pageShellRef = useRef<HTMLDivElement>(null);
+  const openSourceRef = useRef(document.source);
 
   useEffect(() => {
     const container = pageContainerRef.current;
@@ -153,6 +155,7 @@ export function DocumentReader({
 
   useEffect(() => {
     let active = true;
+    openSourceRef.current = document.source;
 
     getAnnotations(document.source)
       .then((result) => {
@@ -185,6 +188,15 @@ export function DocumentReader({
       active = false;
     };
   }, [document.source]);
+
+  useRegisterUiActions({
+    "reader.refreshAnnotations": async () => {
+      const source = document.source;
+      const result = await getAnnotations(source);
+      // Drop a late reply if the user opened another paper meanwhile.
+      if (openSourceRef.current === source) setAnnotations(result.annotations);
+    },
+  });
 
   useEffect(() => {
     if (!initialPage) return;

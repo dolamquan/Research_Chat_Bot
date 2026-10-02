@@ -83,84 +83,19 @@ import { VariantPanel } from "./VariantPanel";
 import { VerificationReport } from "./VerificationReport";
 import { Visualizer3D } from "./Visualizer3D";
 
-const NODE_W = 180;
-const NODE_H = 48;
-const MIN_SCALE = 0.3;
-const MAX_SCALE = 2.5;
-
-function sceneIsPlayable(record: StageSceneRecord): boolean {
-  return record.valid !== false && checkSceneCode(record.scene.code).length === 0;
-}
-
-// Playable means the code passes the contract; ready means the browser has
-// also run it through a full cycle without a crash. "All stages ready" and
-// the prepare counter use ready, so a scene that throws on its first frame
-// is never announced as prepared.
-function sceneIsReady(record: StageSceneRecord): boolean {
-  return sceneIsPlayable(record) && sceneRuntimeStatus(record) === "passed";
-}
-
-const EDGE_KIND_LIST = [
-  "flow",
-  "data",
-  "residual",
-  "attention",
-  "feedback",
-  "reference",
-] as const;
-
-function edgeWidth(kind: string): number {
-  if (kind === "reference") return 1.1;
-  if (kind === "feedback") return 1.4;
-  if (kind === "flow") return 1.9;
-  return 1.6;
-}
-
-const KIND_OPTIONS: { value: "auto" | DiagramKind; label: string }[] = [
-  { value: "auto", label: "Auto-detect" },
-  { value: "architecture", label: "Architecture" },
-  { value: "method_flow", label: "Method flow" },
-  { value: "pipeline", label: "Pipeline" },
-];
-
-function wrapLabel(label: string, maxChars = 24): string[] {
-  const words = label.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    const candidate = current ? `${current} ${word}` : word;
-    if (candidate.length > maxChars && current) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = candidate;
-    }
-  }
-  if (current) lines.push(current);
-  if (lines.length > 2) {
-    const second = lines.slice(1).join(" ");
-    return [lines[0], second.length > maxChars ? `${second.slice(0, maxChars - 1)}…` : second];
-  }
-  return lines;
-}
-
-function ExpansionSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: string;
-}) {
-  if (!children) return null;
-  return (
-    <div>
-      <div className="mb-1 text-[11px] font-medium text-ivory-500">
-        {title}
-      </div>
-      <p className="text-xs leading-relaxed text-ivory-300">{children}</p>
-    </div>
-  );
-}
+import { ExpansionSection } from "./visualization/ExpansionSection";
+import {
+  EDGE_KIND_LIST,
+  KIND_OPTIONS,
+  MAX_SCALE,
+  MIN_SCALE,
+  NODE_H,
+  NODE_W,
+  edgeWidth,
+  sceneIsPlayable,
+  sceneIsReady,
+  wrapLabel,
+} from "./visualization/diagramLayout";
 
 export function VisualizerView() {
   const [articles, setArticles] = useState<Article[]>([]);
@@ -2381,7 +2316,7 @@ export function VisualizerView() {
                       : "No dynamic scene yet — press ✨ to write one."}
                 </p>
               ) : null}
-              {stageSceneShowing && viz.worked_example?.input_text && (
+              {stageSceneShowing && viz?.worked_example?.input_text && (
                 <p className="mt-1 truncate text-[10px] text-ivory-700">
                   following:{" "}
                   <span className="font-mono text-ivory-500">

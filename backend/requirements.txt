@@ -1,36 +1,44 @@
-fastapi
-starlette>=0.40.0,<0.50.0
-uvicorn
-websockets>=13  # uvicorn's WebSocket protocol for the assistant socket (/agent/ws)
-python-dotenv
-qdrant-client
-sentence-transformers
-langchain
-langchain-community
-langchain-openai
-langgraph
-pypdf
-numpy
-scikit-learn
-requests
-httpx
-jsonschema>=4
+# Every dependency carries a lower bound (the version this project is known to
+# work with) and an upper bound (the next release allowed to break it), so a
+# fresh install or a CI run resolves to something this code has been tested
+# against. Bump a floor deliberately; do not remove a ceiling.
+#
+# The LangChain family in particular ships breaking changes on minor bumps,
+# which is why those ceilings are one minor version away rather than one major.
+
+fastapi>=0.121.2,<0.122
+starlette>=0.49.3,<0.50.0
+uvicorn>=0.38,<0.39
+websockets>=15.0.1,<16   # uvicorn's WebSocket protocol for the assistant socket (/agent/ws)
+python-dotenv>=1.2.2,<2
+qdrant-client>=1.18,<2
+sentence-transformers>=5.4.1,<6
+langchain>=1.2.14,<1.3
+langchain-community>=0.4.1,<0.5
+langchain-openai>=1.1.12,<1.2
+langgraph>=1.1.4,<1.2
+pypdf>=6.9.2,<7
+numpy>=2.2.1,<3
+scikit-learn>=1.6.1,<2
+requests>=2.33.1,<3
+httpx>=0.28.1,<0.29
+jsonschema>=4.23,<5
 # Postgres (Supabase) backend for the stores; unused while DATABASE_URL is empty.
-psycopg[binary]>=3.1
-psycopg-pool>=3.1
+psycopg[binary]>=3.3.5,<4
+psycopg-pool>=3.3.1,<4
 # Lets scripts trust the OS certificate store (antivirus TLS inspection on Windows).
-truststore>=0.9
-datasets
-ragas
-PyMuPDF
-python-multipart
-langsmith
-networkx
+truststore>=0.10.4,<0.11
+datasets>=5.0,<6
+ragas>=0.4.3,<0.5
+PyMuPDF>=1.27.2,<2
+python-multipart>=0.0.32,<0.1
+langsmith>=0.10.10,<0.11
+networkx>=3.5,<4
 tree-sitter==0.25.2
 tree-sitter-javascript==0.25.0
 
 # Optional. Install to enable the anthropic provider (LLM_PROVIDER=anthropic).
-# langchain-anthropic
+# langchain-anthropic>=1.6.1,<2
 
 # Optional. Install for structured PDF parsing (sections, figures, equations).
 # Without it, document_structure falls back to the existing chunk pipeline.

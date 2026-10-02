@@ -9,6 +9,7 @@ from app.agents import catalog, playbooks
 from app.agents.graph import agent_graph
 from app.agents.runtime import run_agent
 from app.rag.llm_provider import ProviderNotConfigured
+from app.storage import agent_runs
 from app.storage.agent_history import (
     append_message,
     create_session,
@@ -196,6 +197,21 @@ def get_agent_playbook(name: str) -> Dict[str, Any]:
 def get_agent_context() -> Dict[str, Any]:
     """What the agent knows about the application: features, papers, tools and integrations."""
     return catalog.application_context()
+
+
+@router.get("/runs")
+def list_agent_runs(limit: int = 30, session_id: str | None = None, status: str | None = None) -> Dict[str, Any]:
+    """The assistant's recent runs, newest first: what each request asked, how it ended (ok, error, cancelled), how long it took, how many model steps and tool calls it used. Use get_agent_run for one run's step-by-step timeline."""
+    return {"runs": agent_runs.list_runs(limit=limit, session_id=session_id, status=status)}
+
+
+@router.get("/runs/{run_id}")
+def get_agent_run(run_id: str) -> Dict[str, Any]:
+    """One assistant run's full timeline: each model step with timing and token usage, each tool call with its arguments, result and duration, confirmations, errors and the final answer."""
+    try:
+        return agent_runs.get_run(run_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/sessions")

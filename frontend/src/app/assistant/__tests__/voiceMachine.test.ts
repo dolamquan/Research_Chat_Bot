@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ServerMessage, VoiceContext, VoiceEffect, VoiceEvent } from "../assistantTypes";
-import { displayState, initialVoiceContext, transition } from "../voiceMachine";
+import { currentCommand, displayState, initialVoiceContext, shouldListen, transition } from "../voiceMachine";
 
 function run(ctx: VoiceContext, ...events: VoiceEvent[]): { ctx: VoiceContext; effects: VoiceEffect[] } {
   const effects: VoiceEffect[] = [];
@@ -19,9 +19,79 @@ const types = (effects: VoiceEffect[]) => effects.map((e) => e.type);
 const ready = () => initialVoiceContext({ recognition: true, synthesis: true, voiceEnabled: true });
 
 describe("voice machine", () => {
+  it("keeps a hands-free conversation open across multiple requests", () => {
+    const first = run(ready(),
+      { type: "TRANSCRIPT", text: "Find graph papers.", isFinal: true, now: 1 },
+      { type: "TRANSCRIPT", text: "Then open the newest one.", isFinal: true, now: 2 },
+      { type: "SILENCE_TIMEOUT" },
+    );
+    expect(first.effects.filter((effect) => effect.type === "SEND_MESSAGE")).toEqual([
+      { type: "SEND_MESSAGE", text: "Find graph papers. Then open the newest one.", source: "voice" },
+    ]);
+    const replied = run(first.ctx, server({ type: "done", turn_id: "t1", status: "ok", reason: null }));
+    expect(shouldListen(replied.ctx)).toBe(true);
+    const followUp = run(replied.ctx, { type: "TRANSCRIPT", text: "Summarize that paper.", isFinal: true, now: 3 }, { type: "SILENCE_TIMEOUT" });
+    expect(followUp.effects).toContainEqual({ type: "SEND_MESSAGE", text: "Summarize that paper.", source: "voice" });
+    expect(types(followUp.effects)).not.toContain("START_RECOGNITION");
+  });
+
+  it("adds spoken and typed instructions while work is running without cancelling it", () => {
+    const busy = run(ready(), { type: "SUBMIT_TEXT", text: "find papers" }, server({ type: "turn_start", turn_id: "t1", message_id: "m1" }));
+    const more = run(busy.ctx, { type: "TRANSCRIPT", text: "Then save a note.", isFinal: true, now: 1 }, { type: "SILENCE_TIMEOUT" }, { type: "SUBMIT_TEXT", text: "also compare them" });
+    expect(more.effects.filter((effect) => effect.type === "SEND_MESSAGE")).toHaveLength(2);
+    expect(types(more.effects)).not.toContain("SEND_CANCEL");
+    const queued = transition(more.ctx, server({ type: "queue_state", message_ids: ["m2", "m3"], count: 2 }));
+    expect(queued.ctx.queuedCount).toBe(2);
+    expect(queued.ctx.inTurn).toBe(true);
+  });
+
+  it("preserves speech capture across tool events and turn completion", () => {
+    const capture = run(ready(), { type: "SUBMIT_TEXT", text: "find papers" }, { type: "TRANSCRIPT", text: "also open", isFinal: false, now: 1 });
+    const events = run(capture.ctx,
+      server({ type: "turn_start", turn_id: "t1", message_id: "m1" }),
+      server({ type: "thinking", turn_id: "t1", step: 1 }),
+      server({ type: "tool_start", turn_id: "t1", call_id: "c1", tool: "app_papers", execution: "builtin", effect: "read", arguments: "{}", say: "Searching" }),
+      server({ type: "client_tool_call", turn_id: "t1", call_id: "c1", tool: "open_paper", arguments: {} }),
+      server({ type: "tool_result", turn_id: "t1", call_id: "c1", tool: "app_papers", status: "success", message: "found", effect: "read", execution: "builtin", duration_ms: 1 }),
+      server({ type: "speak", turn_id: "t1", text: "Found it." }),
+      server({ type: "done", turn_id: "t1", status: "ok", reason: null }),
+    );
+    expect(events.ctx.state).toBe("capturing");
+    expect(events.ctx.pendingTools).toBe(0);
+    expect(currentCommand(events.ctx)).toBe("also open");
+    expect(types(events.effects)).not.toContain("SPEAK");
+    const sent = run(events.ctx, { type: "TRANSCRIPT", text: "also open the newest paper", isFinal: true, now: 2 }, { type: "SILENCE_TIMEOUT" });
+    expect(sent.effects).toContainEqual({ type: "SEND_MESSAGE", text: "also open the newest paper", source: "voice" });
+  });
+
+  it("does not arm a pause timer for an old final while the user keeps speaking", () => {
+    const capture = run(ready(), { type: "TRANSCRIPT", text: "find papers", isFinal: false, now: 1 }, { type: "RECOGNITION_SPEECH_STARTED" });
+    const oldFinal = transition(capture.ctx, { type: "TRANSCRIPT", text: "Find papers.", isFinal: true, now: 2 });
+    expect(types(oldFinal.effects)).not.toContain("START_SILENCE_TIMER");
+    const ended = run(oldFinal.ctx, { type: "RECOGNITION_SPEECH_ENDED" }, { type: "TRANSCRIPT", text: "Save a note too.", isFinal: true, now: 3 }, { type: "SILENCE_TIMEOUT" });
+    expect(ended.effects).toContainEqual({ type: "SEND_MESSAGE", text: "Find papers. Save a note too.", source: "voice" });
+  });
+
+  it("stops and clears work by voice while leaving hands-free listening active", () => {
+    const busy = { ...ready(), inTurn: true, queuedCount: 2 };
+    const stop = transition(busy, { type: "TRANSCRIPT", text: "stop everything", isFinal: true, now: 1 });
+    expect(stop.effects).toContainEqual({ type: "SEND_CANCEL", reason: "user" });
+    expect(stop.ctx.queuedCount).toBe(0);
+    expect(shouldListen(stop.ctx)).toBe(true);
+    const mute = transition(stop.ctx, { type: "TRANSCRIPT", text: "stop listening", isFinal: true, now: 2 });
+    expect(shouldListen(mute.ctx)).toBe(false);
+    expect(types(mute.effects)).toContain("ABORT_RECOGNITION");
+  });
+
+  it("still speaks a required confirmation when more instructions are queued", () => {
+    const asked = run({ ...ready(), queuedCount: 2 }, server({ type: "confirmation_required", turn_id: "t1", action_id: "a1", tool: "delete", effect: "destructive", arguments: {}, summary: "Delete this note?" }));
+    const speak = transition(asked.ctx, server({ type: "speak", turn_id: "t1", text: "Delete this note?" }));
+    expect(types(speak.effects)).toContain("SPEAK");
+  });
+
   it("closes a muted one-shot microphone when a text-only response finishes", () => {
     const pushed = transition({ ...ready(), muted: true }, { type: "PUSH_TO_TALK" });
-    const sent = transition(pushed.ctx, { type: "TRANSCRIPT", text: "open the library", isFinal: true, now: 1 });
+    const sent = run(pushed.ctx, { type: "TRANSCRIPT", text: "open the library", isFinal: true, now: 1 }, { type: "SILENCE_TIMEOUT" });
     const done = transition(sent.ctx, server({ type: "done", turn_id: "t-1", status: "ok", reason: null }));
     expect(done.ctx.oneShot).toBe(false);
     expect(done.ctx.state).toBe("muted");
@@ -60,21 +130,21 @@ describe("voice machine", () => {
     expect(types(enabled.effects)).toEqual(["START_RECOGNITION"]);
   });
 
-  it("captures after the wake word and sends on the final result", () => {
+  it("accepts an optional wake word and collects the request until a pause", () => {
     const heard = run(ready(),
       { type: "RECOGNITION_STARTED" },
       { type: "TRANSCRIPT", text: "hey", isFinal: false, now: 1 },
     );
-    expect(heard.ctx.state).toBe("idle_listening");
+    expect(heard.ctx.state).toBe("capturing");
     // "hey zoe" is enough to start listening for the command that follows.
     const woke = run(heard.ctx, { type: "TRANSCRIPT", text: "hey zoe", isFinal: false, now: 2 });
     expect(woke.ctx.state).toBe("capturing");
-    expect(types(woke.effects)).toEqual(["CLEAR_SILENCE_TIMER", "START_CAPTURE_TIMER"]);
+    expect(types(woke.effects)).toEqual(["CLEAR_SILENCE_TIMER"]);
     const capturing = run(woke.ctx, { type: "TRANSCRIPT", text: "hey zoetrope open", isFinal: false, now: 3 });
     expect(capturing.ctx.state).toBe("capturing");
     expect(capturing.ctx.interim).toBe("open");
     expect(types(capturing.effects)).toEqual(["CLEAR_SILENCE_TIMER"]);
-    const sent = run(capturing.ctx, { type: "TRANSCRIPT", text: "hey zoetrope open the library", isFinal: true, now: 3 });
+    const sent = run(capturing.ctx, { type: "TRANSCRIPT", text: "hey zoetrope open the library", isFinal: true, now: 3 }, { type: "SILENCE_TIMEOUT" });
     expect(sent.ctx.state).toBe("sending");
     expect(sent.effects).toContainEqual({ type: "SEND_MESSAGE", text: "open the library", source: "voice" });
   });
@@ -88,21 +158,23 @@ describe("voice machine", () => {
     expect(types(quiet.effects)).not.toContain("SEND_MESSAGE");
   });
 
-  it("ignores its own voice but lets a wake word barge in", () => {
+  it("ignores its own voice and allows interruption without a wake word", () => {
     const speaking = run(ready(), { type: "TTS_STARTED", text: "I opened Graph RAG for Science at page four." });
     expect(displayState(speaking.ctx)).toBe("speaking");
     const echo = transition(speaking.ctx, { type: "TRANSCRIPT", text: "I opened graph rag for science at page four", isFinal: true, now: 5 });
     expect(echo.effects).toEqual([]);
     const unrelated = transition(speaking.ctx, { type: "TRANSCRIPT", text: "what is the weather", isFinal: true, now: 5 });
-    expect(unrelated.effects).toEqual([]);
+    expect(types(unrelated.effects)).toContain("CANCEL_TTS");
+    expect(unrelated.ctx.committed).toBe("what is the weather");
     const barge = transition(speaking.ctx, { type: "TRANSCRIPT", text: "hey zoetrope stop", isFinal: false, now: 5 });
     expect(barge.ctx.state).toBe("capturing");
     expect(types(barge.effects)[0]).toBe("CANCEL_TTS");
   });
 
-  it("drops results during the post-speech cooldown", () => {
+  it("filters echo after speech while accepting immediate follow-ups", () => {
     const ended = run(ready(), { type: "TTS_STARTED", text: "x" }, { type: "TTS_ENDED", now: 1000 });
-    expect(transition(ended.ctx, { type: "TRANSCRIPT", text: "hey zoetrope hi", isFinal: true, now: 1200 }).effects).toEqual([]);
+    expect(transition(ended.ctx, { type: "TRANSCRIPT", text: "x", isFinal: true, now: 1200 }).effects).toEqual([]);
+    expect(transition(ended.ctx, { type: "TRANSCRIPT", text: "tell me more", isFinal: true, now: 1200 }).ctx.state).toBe("capturing");
     expect(transition(ended.ctx, { type: "TRANSCRIPT", text: "hey zoetrope hi", isFinal: true, now: 1700 }).ctx.state).toBe("capturing");
   });
 
@@ -143,8 +215,9 @@ describe("voice machine", () => {
     const no = transition(asked.ctx, { type: "CONFIRM_CLICK", approved: false });
     expect(no.effects).toContainEqual({ type: "SEND_CONFIRM", approved: false });
 
-    const other = transition(asked.ctx, { type: "TRANSCRIPT", text: "hey zoetrope open the library", isFinal: true, now: 1 });
+    const other = run(asked.ctx, { type: "TRANSCRIPT", text: "open the library", isFinal: true, now: 1 }, { type: "SILENCE_TIMEOUT" });
     expect(other.effects).toContainEqual({ type: "SEND_MESSAGE", text: "open the library", source: "voice" });
+    expect(other.ctx.confirmation).not.toBeNull();
 
     const timedOut = transition(asked.ctx, { type: "CONFIRM_TIMEOUT" });
     expect(timedOut.ctx.state).toBe("idle_listening");
@@ -174,7 +247,7 @@ describe("voice machine", () => {
     const push = transition(muted.ctx, { type: "PUSH_TO_TALK" });
     expect(push.ctx.state).toBe("capturing");
     expect(types(push.effects)).toContain("START_RECOGNITION");
-    const spoke = transition(push.ctx, { type: "TRANSCRIPT", text: "open the library", isFinal: true, now: 2 });
+    const spoke = run(push.ctx, { type: "TRANSCRIPT", text: "open the library", isFinal: true, now: 2 }, { type: "SILENCE_TIMEOUT" });
     expect(spoke.effects).toContainEqual({ type: "SEND_MESSAGE", text: "open the library", source: "voice" });
 
     const unmuted = transition(muted.ctx, { type: "UNMUTE" });

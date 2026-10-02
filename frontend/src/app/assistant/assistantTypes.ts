@@ -43,7 +43,7 @@ export type ClientMessage =
     }
   | { type: "user_message"; id: string; text: string; source: "voice" | "text"; workspace: AssistantWorkspace }
   | { type: "client_tool_result"; call_id: string; ok: boolean; result?: unknown; error?: string }
-  | { type: "confirm"; action_id: string | null; approved: boolean; workspace: AssistantWorkspace }
+  | { type: "confirm"; id?: string; action_id: string | null; approved: boolean; workspace: AssistantWorkspace }
   | { type: "cancel"; reason: "barge_in" | "user" }
   | { type: "auth"; token: string }
   | { type: "workspace"; workspace: AssistantWorkspace }
@@ -78,7 +78,9 @@ export type ServerMessage =
       pending_action: PendingActionInfo | null;
       catalog_tool_count: number;
     }
-  | { type: "turn_start"; turn_id: string; message_id: string | null }
+  | { type: "turn_start"; turn_id: string; message_id: string | null; message_ids?: string[] }
+  | { type: "queue_state"; message_ids: string[]; count: number }
+  | { type: "request_rejected"; message_id: string | null; message: string }
   | { type: "thinking"; turn_id: string; step: number }
   | { type: "token"; turn_id: string; text: string }
   | {
@@ -195,15 +197,17 @@ export type VoiceContext = {
   voiceEnabled: boolean;
   oneShot: boolean;
   recognitionActive: boolean;
+  userSpeaking: boolean;
   restartDelayMs: number;
   speaking: boolean;
   spokenText: string;
   cooldownUntil: number;
   inTurn: boolean;
   pendingTools: number;
+  queuedCount: number;
   committed: string;
   interim: string;
-  captureSource: "wake" | "push" | null;
+  captureSource: "wake" | "push" | "conversation" | null;
   confirmation: PendingConfirmation | null;
   error: string | null;
   socket: SocketStatus;
@@ -219,6 +223,7 @@ export type VoiceEvent =
   | { type: "RECOGNITION_ENDED" }
   | { type: "RECOGNITION_ERROR"; code: string; message?: string; retryable?: boolean }
   | { type: "RECOGNITION_SPEECH_STARTED" }
+  | { type: "RECOGNITION_SPEECH_ENDED" }
   | { type: "TRANSCRIPT"; text: string; isFinal: boolean; now: number }
   | { type: "SILENCE_TIMEOUT" }
   | { type: "CAPTURE_TIMEOUT" }

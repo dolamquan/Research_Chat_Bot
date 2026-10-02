@@ -1,0 +1,73 @@
+{
+  // `pnpm run typecheck` was a no-op until this file existed: tsc with no
+  // project checks nothing. Everything below the "Correctness" block is the
+  // baseline the codebase already satisfies; the commented-out options are the
+  // ones still to earn, and should be switched on one at a time.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "useDefineForClassFields": true,
+
+    // Vite owns emit; tsc is only ever used here to check types.
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "verbatimModuleSyntax": false,
+    // The browser extension is hand-written ES modules with no build step;
+    // allowJs lets this project resolve and test them (their types come from
+    // the JSDoc on the source).
+    "allowJs": true,
+    "checkJs": false,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // Correctness. `strict` stays off until the existing violations are paid
+    // down, but the checks the codebase already passes are locked in here so
+    // it cannot regress past them.
+    "strict": false,
+    "strictBindCallApply": true,
+    "strictFunctionTypes": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "useUnknownInCatchVariables": true,
+    "noFallthroughCasesInSwitch": true,
+    // Also what makes a union with a boolean discriminant (`{ok: true} |
+    // {ok: false, error}`) narrow at all; without it every such access is a
+    // phantom error.
+    "strictNullChecks": true,
+    // "noImplicitAny": true,
+    // "noUnusedLocals": true,
+    // "noUnusedParameters": true,
+
+    // `types` restricts which @types packages load globally, so @types/react
+    // has to be named here or every intrinsic element (`div`, `mesh`, ...)
+    // comes back as "does not exist on type 'JSX.IntrinsicElements'".
+    "types": [
+      "node",
+      "react",
+      "react-dom",
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ],
+
+    // TypeScript 7 removed `baseUrl`; these resolve relative to this file.
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": [
+    "src",
+    "vite.config.js",
+    "vitest.config.ts",
+    "../browser-extension/**/*.ts",
+    "../browser-extension/session.js"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

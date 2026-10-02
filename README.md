@@ -52,17 +52,31 @@ Create `backend/.env` from `backend/.env.example` and add your OpenAI API key.
 Voice input uses `gpt-live-transcribe` through the authenticated
 `/agent/transcribe` WebSocket. It uses the backend's `OPENAI_API_KEY`, independently
 of the chat model. The browser captures 24 kHz PCM with an AudioWorklet, detects
-speech locally, and commits utterances after 700 ms of silence. Partial captions
-are reconciled with final transcripts before sending commands. The same audio
+speech locally, and commits audio segments after 700 ms of silence. The assistant
+collects final transcripts across nearby segments and sends the request after a
+1.4-second pause following transcription, so several instructions can arrive together.
+Partial captions are reconciled with final transcripts before sending commands. The same audio
 stream drives the microphone orb; mute and sign-out close the audio connection.
 Use HTTPS or localhost for microphone access, and allow WebSocket upgrades through
 your proxy. `ASSISTANT_TRANSCRIPTION_LANGUAGES=en` and
 `ASSISTANT_TRANSCRIPTION_DELAY=low` are the defaults; set the delay to `medium`
 or `high` for more context at the cost of later partial captions.
 
-Unmuted wake-word listening sends detected speech to OpenAI, including speech
-before the wake word, and incurs transcription charges. Quiet periods are gated
-locally. For occasional commands, keep the mic muted and use push-to-talk.
+Enable the microphone once (allow access when prompted), then just talk: no wake
+word or button press is needed for each request, and listening continues after
+replies. Unmuted hands-free listening sends detected speech to OpenAI and incurs
+transcription charges. Quiet periods are gated locally. For occasional commands,
+keep the mic muted and use push-to-talk. Say "stop listening" or mute the mic to
+end hands-free listening.
+
+New spoken or typed instructions queue while the assistant works instead of
+cancelling the current task. Pending instructions are grouped into the next model
+turn, where the model organizes dependencies, ordering, and corrections using the
+ongoing conversation. The dock shows the queue count and the panel shows pending
+requests. Talking over a reply stops speech output while work continues. Stop/Esc
+or "stop everything" cancels active work and clears the queue. Tasks waiting behind
+a destructive/external-write confirmation resume after a yes/no reply. The queue
+is held on the live connection; interrupted requests are reported when it drops.
 
 For multi-source paper search, use the Docker-backed Paper Search runner:
 
@@ -134,7 +148,9 @@ uploaded images and captured regions, and Notion/GitHub credentials
 (`user_integrations`, encrypted with `INTEGRATION_SECRET_KEY`; the env vars stay
 the administrator's defaults). Figures extracted from a public paper stay public.
 
-Still shared: the browser extension has no token path yet and gets 401s.
+The browser extension reads the session from an open app tab and sends that
+account's bearer token, so a captured paper lands in that user's library
+(`browser-extension/README.md`).
 
 ### The agent, and the Console
 
@@ -306,6 +322,14 @@ Postgres-specific behaviour is covered by `tests/test_postgres_storage.py`,
 which runs only when `TEST_DATABASE_URL` points at a disposable database (it
 drops the schema).
 
+## Research Ops
+
+The separate administrator dashboard in [`operations/`](operations/README.md)
+tracks API cost estimates, model calls, request/tool timelines, errors and
+user activity. Launch it with `.\start-operations.ps1` and open
+http://127.0.0.1:5174. Restart the chatbot backend once to load the telemetry
+middleware. http://127.0.0.1:5174/?demo=1 provides an explicit sample preview.
+
 ## Tests
 
 ```bash
@@ -321,3 +345,12 @@ pnpm run build
 ```
 
 All tests run offline; none calls a model provider or a vector store.
+
+`pnpm run test` also covers the browser extension's token handling, which lives
+outside `frontend/` (see `browser-extension/README.md`). `pnpm run typecheck`
+reads `frontend/tsconfig.json`; `strictNullChecks` is on, and the remaining
+`strict` options are listed there, commented out, to be enabled one at a time.
+
+Every one of these commands runs in CI (`.github/workflows/ci.yml`). The
+frontend job runs on Windows because the lockfile pins `os: [win32]` build
+binaries as direct devDependencies.

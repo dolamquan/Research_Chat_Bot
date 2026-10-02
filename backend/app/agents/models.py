@@ -13,6 +13,7 @@ reject outright, so it is only attached when the model name says it applies.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any, Dict
 
 from app.rag.llm_provider import resolve_provider
@@ -68,3 +69,33 @@ def model_kwargs(name: str | None, env: str = "AGENT_REASONING_EFFORT", fallback
     if effort in _EFFORT_OFF or not is_reasoning_model(name):
         return {}
     return {"reasoning_effort": effort}
+
+
+def _is_gpt5(name: str | None) -> bool:
+    return is_reasoning_model(name) and (name or "").strip().lower().startswith("gpt-5")
+
+
+# The original gpt-5 family (optionally date-suffixed) accepts "minimal"; later
+# releases such as gpt-5.1 use "none" instead and reject "minimal" outright.
+_MINIMAL_EFFORT_MODELS = re.compile(r"^gpt-5(-mini|-nano)?(-\d{4}-\d{2}-\d{2})?$")
+
+
+def followup_kwargs(name: str | None) -> Dict[str, Any]:
+    """Effort for the steps after the first: AGENT_FOLLOWUP_REASONING_EFFORT, else
+    "minimal" on the original gpt-5 family, else the agent's own effort."""
+    raw = (os.getenv("AGENT_FOLLOWUP_REASONING_EFFORT") or "").strip().lower()
+    if not raw:
+        if _MINIMAL_EFFORT_MODELS.match((name or "").strip().lower()):
+            return {"reasoning_effort": "minimal"}
+        return model_kwargs(name, "AGENT_REASONING_EFFORT")
+    if raw in _EFFORT_OFF or not is_reasoning_model(name):
+        return {}
+    return {"reasoning_effort": raw}
+
+
+def verbosity_kwargs(name: str | None) -> Dict[str, Any]:
+    """gpt-5's answer length knob (low/medium/high), only when AGENT_VERBOSITY is set."""
+    raw = (os.getenv("AGENT_VERBOSITY") or "").strip().lower()
+    if raw in ("low", "medium", "high") and _is_gpt5(name):
+        return {"verbosity": raw}
+    return {}

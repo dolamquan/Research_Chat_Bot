@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { RuntimeVerdict } from "../sceneRuntime";
-import { MAX_REPAIRS, describeVerdict, ensureVerified, firstLine } from "../sceneVerification";
+import { MAX_REPAIRS, describeVerdict, ensureVerified, firstLine, type RepairEvidence } from "../sceneVerification";
 import type { PlayableSceneRecord } from "../sceneTypes";
 
 type Rec = PlayableSceneRecord & { version: number };
@@ -35,7 +35,9 @@ const colliding: RuntimeVerdict = {
 function deps(verdicts: RuntimeVerdict[]) {
   const probe = vi.fn(async () => verdicts.shift() ?? passed);
   let version = 1;
-  const repair = vi.fn(async () => rec(++version));
+  // Declares the evidence parameter the real dep takes, so assertions can read
+  // back which kind of repair was asked for.
+  const repair = vi.fn(async (_evidence: RepairEvidence) => rec(++version));
   const report = vi.fn(async (verdict: RuntimeVerdict) => ({ ...rec(version), reported: verdict.status }) as Rec);
   const phases: string[] = [];
   return { probe, repair, report, onPhase: (p: string) => phases.push(p), phases };

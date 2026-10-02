@@ -1,0 +1,22 @@
+export type Page = 'overview' | 'costs' | 'calls' | 'issues' | 'users' | 'settings';
+export type Event = {
+  id: string; request_id: string; parent_id: string | null; kind: 'http' | 'websocket' | 'llm' | 'tool' | 'retrieval';
+  name: string; provider: string; model: string; user_id: string; user_email: string;
+  started_at: number; ended_at: number | null; duration_ms: number | null;
+  status: 'success' | 'error' | 'running' | 'cancelled'; http_status: number | null;
+  input_tokens: number | null; output_tokens: number | null; cached_tokens: number | null;
+  cost_usd: number | null; cost_source: string; error_type: string; error: string;
+  fingerprint: string; metadata: Record<string, unknown>; source: string;
+};
+export type Metrics = { events: number; calls: number; requests: number; errors: number; running: number; cost: number; unpriced: number; input_tokens: number; output_tokens: number; cached_tokens: number; latency_ms: number | null; };
+export type Rate = { provider: string; model: string; input: number; cached: number; output: number; };
+export type Settings = { monthly_budget: number; alert_percent: number; rates: Rate[]; };
+export type Model = Metrics & { model: string; provider: string; };
+export type User = Metrics & { user_id: string; email: string; last_seen: number; };
+export type Issue = { fingerprint: string; name: string; kind: string; error_type: string; error: string; occurrences: number; users: number; last_seen: number; event_id: string; resolved: number; };
+export type Overview = { stats: Metrics & { users: number }; previous: Metrics; models: Model[]; areas: (Metrics & { name: string })[]; series: (Metrics & { bucket: string })[]; monthly: Metrics; settings: Settings; generated_at: number; first_event_at: number | null; timezone: string; };
+export type Connection = { telemetry_enabled: boolean; events_stored: number; langsmith_configured: boolean; langsmith_project: string; pricing_source: string; pricing_verified: string; storage: string; coverage: string; excluded: string; };
+export type Identity = { id: string; email: string; role: string; };
+export type Filters = { kind: string; status: string; query: string; user_id: string; model: string; };
+export type EventList = { events: Event[]; total: number; offset: number; limit: number; };
+export type Dashboard = { overview: Overview; events: EventList; users: User[]; issues: Issue[]; connection: Connection; };

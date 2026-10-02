@@ -53,7 +53,7 @@ function make(extra: Partial<ConstructorParameters<typeof AssistantSocket>[0]> =
   const unauthorized = vi.fn();
   const socket = new AssistantSocket({
     url: () => "ws://test/agent/ws?access_token=t1",
-    hello: () => ({ token: "t1", session_id: "s-old", client_tools: [], workspace: { active_view: "chat" }, client: { tts: true, locale: "en-US" } }),
+    hello: () => ({ token: "t1", session_id: "s-old", new_session: false, client_tools: [], workspace: { active_view: "chat" }, client: { tts: true, locale: "en-US" } }),
     onMessage: (m) => messages.push(m),
     onStatus: (s) => statuses.push(s),
     onUnauthorized: unauthorized,
@@ -83,14 +83,38 @@ describe("AssistantSocket", () => {
     socket.close();
   });
 
-  it("queues user messages while offline and flushes them after hello", () => {
+  it("queues messages until the authenticated session arrives", () => {
     const { socket } = make();
     expect(socket.send({ type: "user_message", id: "m1", text: "hi", source: "text", workspace: {} })).toBe(false);
     expect(socket.send({ type: "client_tool_result", call_id: "stale", ok: true })).toBe(false);
     const ws = FakeWebSocket.instances[0];
     ws.serverOpen();
+    expect(ws.frames().map((f) => f.type)).toEqual(["hello"]);
+    ws.serverSend({ type: "session", session_id: "s-old" });
     const types = ws.frames().map((f) => f.type);
     expect(types).toEqual(["hello", "user_message"]);
+    socket.close();
+  });
+
+  it("reports overflow without dropping earlier instructions", () => {
+    const { socket, messages } = make();
+    for (let i = 0; i < 33; i++) socket.send({ type: "user_message", id: `m${i}`, text: `task ${i}`, source: "text", workspace: {} });
+    expect(messages.at(-1)).toMatchObject({ type: "request_rejected", message_id: "m32" });
+    const ws = FakeWebSocket.instances[0];
+    ws.serverOpen();
+    ws.serverSend({ type: "session", session_id: "s-old" });
+    expect(ws.frames().filter((frame) => frame.type === "user_message").map((frame) => frame.id)).toEqual(Array.from({ length: 32 }, (_, i) => `m${i}`));
+    socket.close();
+  });
+
+  it("clears unsent instructions when stopped", () => {
+    const { socket } = make();
+    socket.send({ type: "user_message", id: "m1", text: "first", source: "text", workspace: {} });
+    socket.send({ type: "cancel", reason: "user" });
+    const ws = FakeWebSocket.instances[0];
+    ws.serverOpen();
+    ws.serverSend({ type: "session", session_id: "s-old" });
+    expect(ws.frames().map((frame) => frame.type)).toEqual(["hello", "cancel"]);
     socket.close();
   });
 

@@ -4,6 +4,7 @@ export type TranscriptionHandlers = {
   onError: (code: string, message?: string, retryable?: boolean) => void;
   onTranscript: (text: string, isFinal: boolean) => void;
   onSpeechStart?: () => void;
+  onSpeechEnd?: () => void;
 };
 
 /** Serialize finals in audio order, even when the provider completes out of order. */
@@ -50,7 +51,8 @@ export class SpeechAudioGate {
   private quietFrames = 0;
   private turnFrames = 0;
 
-  constructor(private send: (audio: ArrayBuffer | "commit") => void, private onSpeechStart: () => void) {}
+  constructor(private send: (audio: ArrayBuffer | "commit") => void, private onSpeechStart: () => void,
+    private onSpeechEnd: () => void = () => undefined) {}
 
   accept(audio: ArrayBuffer, rms: number): void {
     const voiced = rms >= 0.015;
@@ -74,6 +76,7 @@ export class SpeechAudioGate {
     if (this.quietFrames >= 7 || this.turnFrames >= 200) {
       this.send("commit");
       this.speaking = false;
+      this.onSpeechEnd();
     }
   }
 }
@@ -141,6 +144,7 @@ export class LiveTranscription {
       const gate = new SpeechAudioGate(
         (frame) => socket.send(frame === "commit" ? JSON.stringify({ type: "commit" }) : frame),
         () => handlers.onSpeechStart?.(),
+        () => handlers.onSpeechEnd?.(),
       );
       socket.onopen = () => {
         if (this.capture === current) socket.send(JSON.stringify({ type: "hello", token: this.options.token() ?? "" }));

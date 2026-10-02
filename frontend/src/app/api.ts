@@ -7,6 +7,8 @@ import type { LayoutReport, RuntimeVerdict } from "./components/visualization/sc
 import { hasSketch, sketchFingerprint, renderSketch, CANVAS_ATTACHMENT_ID } from "./sketchExport";
 import type {
   AgentContext,
+  AgentRunDetail,
+  AgentRunSummary,
   AgentSession,
   AgentSessionDetail,
   AgentTool,
@@ -911,6 +913,16 @@ export function getAgentSessions(
   kind: "agent" | "assistant" | "all" = "agent",
 ): Promise<{ sessions: AgentSession[] }> {
   return requestJson(`/agent/sessions?kind=${kind}`);
+}
+
+export function listAgentRuns(params: { status?: string; limit?: number } = {}): Promise<{ runs: AgentRunSummary[] }> {
+  const search = new URLSearchParams({ limit: String(params.limit ?? 50) });
+  if (params.status) search.set("status", params.status);
+  return requestJson(`/agent/runs?${search.toString()}`);
+}
+
+export function getAgentRun(runId: string): Promise<AgentRunDetail> {
+  return requestJson(`/agent/runs/${encodeURIComponent(runId)}`);
 }
 
 export function getAgentSession(sessionId: string): Promise<AgentSessionDetail> {

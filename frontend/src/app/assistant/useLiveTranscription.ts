@@ -19,6 +19,7 @@ export function useLiveTranscription(handlers: TranscriptionHandlers, authentica
         onEnd: () => handlersRef.current.onEnd(),
         onTranscript: (text, final) => handlersRef.current.onTranscript(text, final),
         onSpeechStart: () => handlersRef.current.onSpeechStart?.(),
+        onSpeechEnd: () => handlersRef.current.onSpeechEnd?.(),
         onError: (code, message, retryable) => {
           if (code === "unauthorized") window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
           handlersRef.current.onError(code, message, retryable);

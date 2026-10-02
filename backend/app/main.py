@@ -30,11 +30,19 @@ from app.routes import (
 
 load_dotenv()
 
+from app.ops.routes import router as operations_router
+from app.ops.telemetry import OperationsMiddleware, install_callbacks
+
+install_callbacks()
+
 app = FastAPI(
     title="Mini Chatbot API",
     description="A document-grounded RAG chatbot backed by Qdrant.",
     version="0.1.0",
 )
+
+app.add_middleware(OperationsMiddleware)
+app.include_router(operations_router)
 
 # In development the Vite proxy makes API calls same-origin; these origins
 # cover a browser talking to :8002 directly. Bearer tokens, not cookies, carry
