@@ -77,6 +77,8 @@ def test_missing_key_raises_provider_not_configured():
 
 
 def test_missing_key_message_names_the_variable_not_its_value(monkeypatch):
+    # langchain-anthropic is optional; without it the error names the package instead.
+    pytest.importorskip("langchain_anthropic")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     with pytest.raises(ProviderNotConfigured) as excinfo:
         build_chat_model(provider="anthropic")

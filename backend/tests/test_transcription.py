@@ -147,4 +147,8 @@ def test_disconnect_cancels_provider_setup(bridge, monkeypatch):
     with client.websocket_connect("/transcribe") as ws:
         ws.send_json({"type": "hello"})
         assert provider.started.wait(2)
-    assert provider.closed.wait(2)
+        # Disconnect explicitly and wait for the server to finish; leaving it to
+        # the context exit races TestClient's cancellation of the app.
+        ws.close()
+        assert provider.closed.wait(2)
+        assert ws.receive()["type"] == "websocket.close"

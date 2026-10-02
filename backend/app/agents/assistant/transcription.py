@@ -90,7 +90,10 @@ class TranscriptionConnection:
         finally:
             for task in tasks:
                 task.cancel()
-            await asyncio.gather(*tasks, return_exceptions=True)
+            # asyncio.wait, not gather: gather can swallow a cancellation of
+            # serve() itself that arrives during cleanup.
+            if tasks:
+                await asyncio.wait(tasks)
             with suppress(Exception):
                 await self.ws.close()
 

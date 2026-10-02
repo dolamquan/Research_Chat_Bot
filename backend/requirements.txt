@@ -26,6 +26,10 @@ jsonschema>=4.23,<5
 # Postgres (Supabase) backend for the stores; unused while DATABASE_URL is empty.
 psycopg[binary]>=3.3.5,<4
 psycopg-pool>=3.3.1,<4
+# Supabase JWT verification (app/auth); the crypto extra enables RS256/ES256 JWKS keys.
+PyJWT[crypto]>=2.13,<3
+# Fernet encryption of stored integration tokens (app/storage/integrations.py).
+cryptography>=49,<50
 # Lets scripts trust the OS certificate store (antivirus TLS inspection on Windows).
 truststore>=0.10.4,<0.11
 datasets>=5.0,<6
