@@ -20,6 +20,8 @@ from typing import Any, Dict
 from urllib.parse import urlencode
 
 import requests
+
+from app.ops.api_calls import call_api
 from cryptography.fernet import InvalidToken
 
 from app.storage import integrations
@@ -88,7 +90,7 @@ def exchange_code(code: str) -> Dict[str, Any]:
     """Trade the consent code for an access token. Never logs the secret or token."""
     basic = base64.b64encode(f"{client_id()}:{client_secret()}".encode("utf-8")).decode("ascii")
     try:
-        response = requests.post(
+        response = call_api("notion", "Notion OAuth exchange", requests.post,
             TOKEN_URL,
             headers={"Authorization": f"Basic {basic}", "Content-Type": "application/json"},
             json={"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri()},

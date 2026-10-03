@@ -3,6 +3,8 @@ import xml.etree.ElementTree as ET
 from typing import Any, Dict, List
 
 import requests
+
+from app.ops.api_calls import call_api
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -152,7 +154,7 @@ def search_arxiv(request: ArxivSearchRequest) -> Dict[str, Any]:
     query = _build_arxiv_query(request.description, request.category)
 
     try:
-        response = requests.get(
+        response = call_api("arxiv", "arXiv search", requests.get,
             ARXIV_API_URL,
             params={
                 "search_query": query,

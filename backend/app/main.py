@@ -2,6 +2,7 @@ import os
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 
 from app.auth import routes as auth_routes
@@ -43,6 +44,13 @@ app = FastAPI(
 
 app.add_middleware(OperationsMiddleware)
 app.include_router(operations_router)
+
+from app.ops.services import APIControlError
+
+
+@app.exception_handler(APIControlError)
+async def api_policy_error(request, exc):
+    return JSONResponse(status_code=429, content={"detail": str(exc)})
 
 # In development the Vite proxy makes API calls same-origin; these origins
 # cover a browser talking to :8002 directly. Bearer tokens, not cookies, carry

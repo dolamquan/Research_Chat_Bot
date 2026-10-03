@@ -61,7 +61,7 @@ try {
   const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Export', exact: true }).click()]);
   assert.equal(download.suggestedFilename(), 'sample-research-ops-calls.csv');
   await page.getByRole('button', { name: 'Cost explorer', exact: true }).click();
-  await page.getByRole('heading', { name: 'Every token, accounted for.' }).waitFor();
+  await page.getByRole('heading', { name: 'Every call, accounted for.' }).waitFor();
   await page.screenshot({ path: `${output}/cost-explorer.png`, fullPage: true });
   await page.getByRole('button', { name: 'Issues', exact: false }).first().click();
   const before = await page.locator('.issue-card').count();
@@ -77,6 +77,27 @@ try {
   await page.getByRole('heading', { name: 'Know your workspace.' }).waitFor();
   await page.locator('.user-name').first().click();
   assert.notEqual(await page.getByLabel('User filter').inputValue(), '');
+  await page.getByRole('button', { name: 'APIs', exact: true }).click();
+  const searchAPI = page.locator('.api-card').filter({ has: page.getByRole('heading', { name: 'Research search', exact: true }) });
+  await searchAPI.getByRole('button', { name: 'Pause', exact: true }).click();
+  await searchAPI.getByText('Paused', { exact: true }).waitFor();
+  await searchAPI.getByRole('button', { name: 'Resume', exact: true }).click();
+  await searchAPI.getByRole('button', { name: 'Calls', exact: true }).click();
+  assert.equal(await page.getByLabel('API filter').inputValue(), 'sample-search');
+  assert.ok((await page.locator('tbody tr').allTextContents()).every(t => t.includes('Search papers')));
+  await page.getByRole('button', { name: 'APIs', exact: true }).click();
+  await page.getByRole('button', { name: 'Register API', exact: true }).click();
+  await page.getByLabel('API ID', { exact: true }).fill('sample-images');
+  await page.getByLabel('Display name', { exact: true }).fill('Example images');
+  await page.getByLabel('Provider', { exact: true }).fill('custom-image-provider');
+  await page.getByLabel('Category', { exact: true }).fill('images');
+  await page.getByLabel('Billing method').selectOption('unit');
+  await page.getByLabel('Price (USD)', { exact: true }).fill('.04');
+  await page.getByLabel('Unit name').fill('images');
+  await page.getByLabel('Monthly call limit').fill('100');
+  await page.getByRole('button', { name: 'Save API', exact: true }).click();
+  await page.locator('.api-card').filter({ hasText: 'Example images' }).waitFor();
+  await page.screenshot({ path: `${output}/api-registry.png`, fullPage: true });
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByLabel('Monthly budget (USD)').fill('150');
   await page.getByRole('button', { name: 'Save settings' }).click();
@@ -93,6 +114,11 @@ try {
   await page.getByRole('button', { name: 'Calls & traces', exact: true }).click();
   assert.equal(await page.locator('.sidebar.mobile-open').count(), 0);
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('button', { name: 'APIs', exact: true }).click();
+  await page.getByRole('button', { name: 'Register API', exact: true }).click();
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'API editor overflows the mobile viewport');
+  await page.screenshot({ path: `${output}/api-registry-mobile.png`, fullPage: true });
 
   // Exercise real-data UI states without calling providers or a production API.
   await page.setViewportSize({ width: 1440, height: 980 });

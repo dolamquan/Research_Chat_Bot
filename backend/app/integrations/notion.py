@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Tuple
 
 import requests
 
+from app.ops.api_calls import call_api
+
 NOTION_API = "https://api.notion.com/v1"
 NOTION_VERSION = "2022-06-28"
 
@@ -60,7 +62,7 @@ def _request(
     timeout: int = 30,
 ) -> Dict[str, Any]:
     try:
-        response = requests.request(
+        response = call_api("notion", "Notion API request", requests.request,
             method,
             f"{NOTION_API}{path}",
             headers=_headers(),
@@ -399,7 +401,7 @@ def upload_file(name: str, data: bytes, mime_type: str) -> str:
         raise NotionError("upload_failed", "Notion did not return a file upload id.")
 
     try:
-        response = requests.post(
+        response = call_api("notion", "Notion file upload", requests.post,
             f"{NOTION_API}/file_uploads/{upload_id}/send",
             headers={
                 "Authorization": f"Bearer {_api_key()}",

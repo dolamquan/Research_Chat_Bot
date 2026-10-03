@@ -13,12 +13,11 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.tracers.context import register_configure_hook
 
 from app.auth.context import current_user, reset_current_user, set_current_user
-from app.ops import store
+from app.ops import services, store
 
 logger = logging.getLogger(__name__)
 request_id: ContextVar[str] = ContextVar("ops_request_id", default="")
 parent_id: ContextVar[str] = ContextVar("ops_parent_id", default="")
-_callback: ContextVar[BaseCallbackHandler | None] = ContextVar("ops_callback", default=None)
 _installed = False
 
 
@@ -35,13 +34,17 @@ def enabled() -> bool:
     return os.getenv("OPS_TELEMETRY_ENABLED", "true").lower() in ("true", "1", "yes")
 
 
-def start(kind: str, name: str, *, event_id="", provider="", model="", parent="", metadata=None) -> str:
+def start(kind: str, name: str, *, event_id="", provider="", model="", parent="", metadata=None, api_id="") -> str:
     event_id = event_id or str(uuid4())
     user = current_user()
-    safe(store.begin, {"id": event_id, "request_id": request_id.get() or event_id,
+    event = {"id": event_id, "request_id": request_id.get() or event_id,
         "parent_id": parent or parent_id.get() or None, "kind": kind, "name": name,
         "provider": provider, "model": model, "user_id": user.id if user else "",
-        "user_email": user.email if user else "", "metadata": metadata or {}})
+        "user_email": user.email if user else "", "metadata": metadata or {}, "api_id": api_id}
+    if api_id:
+        services.admit(event)
+    else:
+        safe(store.begin, event)
     return event_id
 
 
@@ -150,14 +153,18 @@ def traced_tool(fn):
 
 class OperationsCallback(BaseCallbackHandler):
     run_inline = True  # Preserve request context in async LangChain invocations.
+    raise_error = True  # Pause and quota errors must stop the provider invocation.
 
     def on_chat_model_start(self, serialized, messages, *, run_id, parent_run_id=None, **kwargs):
         params = kwargs.get("invocation_params") or {}
         metadata = kwargs.get("metadata") or {}
         model = str(params.get("model") or params.get("model_name") or metadata.get("ls_model_name") or (serialized or {}).get("kwargs", {}).get("model_name") or "unknown")
         provider = str(metadata.get("ls_provider") or ("anthropic" if "claude" in model else "openai" if model.startswith(("gpt-", "o1", "o3", "o4")) else "unknown"))
+        api = services.get(str(metadata["ops_api_id"])) if metadata.get("ops_api_id") else services.for_model(provider)
+        if api is None:
+            raise ValueError("Register the ops_api_id before using this model.")
         start("llm", model, event_id=str(run_id), provider=provider, model=model,
-              metadata={"service_tier": str(params.get("service_tier") or ""), "langchain_parent_id": str(parent_run_id or "")})
+              api_id=api["id"], metadata={"service_tier": str(params.get("service_tier") or ""), "langchain_parent_id": str(parent_run_id or "")})
 
     def on_llm_start(self, serialized, prompts, *, run_id, **kwargs):
         self.on_chat_model_start(serialized, [], run_id=run_id, **kwargs)
@@ -211,10 +218,14 @@ class OperationsCallback(BaseCallbackHandler):
         self.on_llm_error(error, run_id=run_id)
 
 
+_callback: ContextVar[BaseCallbackHandler | None] = ContextVar("ops_callback", default=OperationsCallback())
+
+
 def install_callbacks():
     global _installed
     if _installed:
         return
     os.environ.setdefault("OPS_TELEMETRY_ENABLED", "true")
-    register_configure_hook(_callback, True, OperationsCallback, "OPS_TELEMETRY_ENABLED")
+    # Outbound controls remain active when inbound request tracing is disabled.
+    register_configure_hook(_callback, True, OperationsCallback)
     _installed = True

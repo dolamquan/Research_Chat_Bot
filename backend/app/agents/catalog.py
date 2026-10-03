@@ -62,6 +62,7 @@ APP_GUIDE = {
 # Administrator monitoring belongs to Research Ops, outside the assistant's
 # application tools. Keep each endpoint explicit for the route-coverage gate.
 EXCLUDED.update({key: "Administrator monitoring is managed in the standalone Research Ops app." for key in (
+    ("GET", "/ops/apis"), ("POST", "/ops/apis"), ("PUT", "/ops/apis/{api_id}"),
     ("GET", "/ops/identity"), ("GET", "/ops/overview"), ("GET", "/ops/events"),
     ("GET", "/ops/events/{event_id}"), ("GET", "/ops/users"), ("GET", "/ops/issues"),
     ("PATCH", "/ops/issues/{fingerprint}"), ("GET", "/ops/settings"), ("PUT", "/ops/settings"),

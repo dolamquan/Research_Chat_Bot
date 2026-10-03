@@ -1,6 +1,7 @@
-export type Page = 'overview' | 'costs' | 'calls' | 'issues' | 'users' | 'settings';
+export type Page = 'overview' | 'costs' | 'apis' | 'calls' | 'issues' | 'users' | 'settings';
 export type Event = {
-  id: string; request_id: string; parent_id: string | null; kind: 'http' | 'websocket' | 'llm' | 'tool' | 'retrieval';
+  id: string; request_id: string; parent_id: string | null; kind: 'http' | 'websocket' | 'llm' | 'api' | 'tool' | 'retrieval';
+  api_id: string; category: string; billing_unit: string; units: number | null; admitted: number;
   name: string; provider: string; model: string; user_id: string; user_email: string;
   started_at: number; ended_at: number | null; duration_ms: number | null;
   status: 'success' | 'error' | 'running' | 'cancelled'; http_status: number | null;
@@ -17,6 +18,12 @@ export type Issue = { fingerprint: string; name: string; kind: string; error_typ
 export type Overview = { stats: Metrics & { users: number }; previous: Metrics; models: Model[]; areas: (Metrics & { name: string })[]; series: (Metrics & { bucket: string })[]; monthly: Metrics; settings: Settings; generated_at: number; first_event_at: number | null; timezone: string; };
 export type Connection = { telemetry_enabled: boolean; events_stored: number; langsmith_configured: boolean; langsmith_project: string; pricing_source: string; pricing_verified: string; storage: string; coverage: string; excluded: string; };
 export type Identity = { id: string; email: string; role: string; };
-export type Filters = { kind: string; status: string; query: string; user_id: string; model: string; };
+export type Filters = { kind: string; status: string; query: string; user_id: string; model: string; api_id?: string; provider?: string; category?: string; };
 export type EventList = { events: Event[]; total: number; offset: number; limit: number; };
-export type Dashboard = { overview: Overview; events: EventList; users: User[]; issues: Issue[]; connection: Connection; };
+export type APIConfig = {
+  id: string; name: string; provider: string; category: string; enabled: boolean;
+  billing: 'unknown' | 'free' | 'tokens' | 'request' | 'unit'; unit: string; unit_price: number; unit_size: number;
+  monthly_budget: number | null; monthly_call_limit: number | null;
+};
+export type ManagedAPI = APIConfig & { stats: Pick<Metrics, 'events' | 'calls' | 'cost' | 'errors' | 'unpriced' | 'latency_ms'> & { last_seen: number | null }; monthly: { cost: number; calls: number }; };
+export type Dashboard = { overview: Overview; events: EventList; users: User[]; issues: Issue[]; connection: Connection; apis: ManagedAPI[]; };

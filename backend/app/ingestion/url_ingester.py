@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from app.ops.api_calls import call_api
+
 from app.auth.context import UNSET, resolve_owner
 from app.rag.metadata import build_article_metadata
 from app.rag.vector_store import index_pdf
@@ -54,7 +56,7 @@ def _pdf_url_from_url(url: str) -> str:
 
 
 def _fetch_arxiv_metadata(arxiv_id: str) -> Dict[str, Any]:
-    response = requests.get(
+    response = call_api("arxiv", "arXiv metadata", requests.get,
         ARXIV_API_URL,
         params={"id_list": arxiv_id},
         timeout=REQUEST_TIMEOUT_SECONDS,
@@ -161,7 +163,7 @@ def _title_from_url(url: str) -> str:
 def _download_pdf(pdf_url: str, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    with requests.get(pdf_url, timeout=REQUEST_TIMEOUT_SECONDS, stream=True) as response:
+    with call_api("document-fetch", "Document download", requests.get, pdf_url, timeout=REQUEST_TIMEOUT_SECONDS, stream=True) as response:
         response.raise_for_status()
 
         content_type = response.headers.get("content-type", "").lower()

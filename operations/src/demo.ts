@@ -1,4 +1,15 @@
-import type { Dashboard, Event, Filters, Issue, Metrics, Settings } from './types';
+import type { APIConfig, Dashboard, Event, Filters, Issue, Metrics, Settings } from './types';
+
+export const demoAPIs: APIConfig[] = [
+  { id: 'openai-chat', name: 'OpenAI chat', provider: 'openai', category: 'llm', billing: 'tokens' },
+  { id: 'sample-search', name: 'Research search', provider: 'example-search', category: 'search', billing: 'request', unit_price: .004 },
+  { id: 'sample-audio', name: 'Transcription', provider: 'example-audio', category: 'audio', billing: 'unit', unit: 'seconds', unit_price: .01, unit_size: 60 },
+  { id: 'notion', name: 'Notion', provider: 'notion', category: 'productivity', billing: 'unknown' },
+].map(a => ({ enabled: true, unit: 'request', unit_price: 0, unit_size: 1, monthly_budget: null, monthly_call_limit: null, ...a })) as APIConfig[];
+export function saveDemoAPI(value: APIConfig) {
+  const index = demoAPIs.findIndex(a => a.id === value.id);
+  if (index < 0) demoAPIs.push(value); else demoAPIs[index] = value;
+}
 
 export const demoSettings: Settings = { monthly_budget: 100, alert_percent: 80, rates: [
   { provider: 'openai', model: 'gpt-5', input: 1.25, cached: .125, output: 10 },
@@ -14,6 +25,7 @@ export const demoEvents: Event[] = [];
 
 function event(part: Partial<Event>): Event {
   return { id: '', request_id: '', parent_id: null, kind: 'llm', name: '', provider: '', model: '', user_id: '', user_email: '',
+    api_id: '', category: '', billing_unit: '', units: null, admitted: 1,
     started_at: now, ended_at: now, duration_ms: 0, status: 'success', http_status: null, input_tokens: null, output_tokens: null,
     cached_tokens: null, cost_usd: null, cost_source: 'unknown', error_type: '', error: '', fingerprint: '', metadata: {}, source: 'demo', ...part };
 }
@@ -38,12 +50,15 @@ for (let day = 13; day >= 0; day--) {
       const failure = failed && step === 0;
       const duration = 1800 + (serial * 43 % 5200);
       demoEvents.push(event({ ...base, id: `${root}-llm-${step}`, parent_id: root, name: rate.model, model: rate.model, provider: rate.provider,
+        api_id: 'openai-chat', category: 'llm', billing_unit: 'tokens',
         started_at: time + .85 + step * .2, ended_at: time + .85 + duration / 1000, duration_ms: duration, status: failure ? 'error' : 'success',
         input_tokens: failure ? null : input, output_tokens: failure ? null : output, cached_tokens: failure ? null : cached,
         cost_usd: failure ? null : ((input - cached) * rate.input + cached * rate.cached + output * rate.output) / 1e6,
         cost_source: failure ? 'unknown' : 'estimated', error_type: failure ? 'TimeoutError' : '', error: failure ? 'The model request exceeded the configured timeout. Try a shorter context or check the provider status.' : '',
         fingerprint: failure ? `model-timeout-${rate.model}` : '', metadata: { service_tier: 'default' } }));
     }
+    if (i % 3 === 0) demoEvents.push(event({ ...base, id: `${root}-search`, parent_id: root, kind: 'api', name: 'Search papers', api_id: 'sample-search', category: 'search', provider: 'example-search', started_at: time + .1, units: 1, billing_unit: 'request', cost_usd: .004, cost_source: 'estimated', duration_ms: 240 }));
+    if (i % 7 === 0) demoEvents.push(event({ ...base, id: `${root}-audio`, parent_id: root, kind: 'api', name: 'Transcribe audio', api_id: 'sample-audio', category: 'audio', provider: 'example-audio', started_at: time + .2, units: 90, billing_unit: 'seconds', cost_usd: .015, cost_source: 'estimated', duration_ms: 1200 }));
   }
 }
 demoEvents.sort((a, b) => b.started_at - a.started_at);
@@ -51,7 +66,7 @@ const resolved = new Set<string>();
 export function resolveDemo(fingerprint: string, value: boolean) { value ? resolved.add(fingerprint) : resolved.delete(fingerprint); }
 
 export function metrics(events: Event[]): Metrics {
-  const calls = events.filter(e => e.kind === 'llm');
+  const calls = events.filter(e => ['llm', 'api'].includes(e.kind));
   const measured = calls.filter(e => e.duration_ms != null);
   return { events: events.length, calls: calls.length, requests: events.filter(e => ['http', 'websocket'].includes(e.kind) && !e.parent_id).length,
     errors: events.filter(e => e.status === 'error').length, running: events.filter(e => e.status === 'running').length,
@@ -63,6 +78,7 @@ export function filteredDemo(days: number, filters: Filters): Event[] {
   const start = today - (days - 1) * 86400;
   return demoEvents.filter(e => e.started_at >= start && (!filters.kind || e.kind === filters.kind) && (!filters.status || e.status === filters.status)
     && (!filters.user_id || e.user_id === filters.user_id) && (!filters.model || e.model === filters.model)
+    && (!filters.api_id || e.api_id === filters.api_id) && (!filters.provider || e.provider === filters.provider) && (!filters.category || e.category === filters.category)
     && (!filters.query || [e.name, e.model, e.user_email, e.id, e.error].some(v => v.toLowerCase().includes(filters.query.toLowerCase()))));
 }
 export function demoDashboard(days: number, filters: Filters, offset: number): Dashboard {
@@ -78,6 +94,12 @@ export function demoDashboard(days: number, filters: Filters, offset: number): D
       users: new Set(group.map(e => e.user_id)).size, last_seen: latest.started_at, event_id: latest.id, resolved: resolved.has(fingerprint) ? 1 : 0 };
   }).sort((a, b) => b.last_seen - a.last_seen);
   return {
+    apis: demoAPIs.map(api => {
+      const group = events.filter(e => e.api_id === api.id);
+      const month = new Date(); month.setUTCDate(1); month.setUTCHours(0, 0, 0, 0);
+      const monthly = metrics(demoEvents.filter(e => e.api_id === api.id && e.started_at >= month.getTime() / 1000));
+      return { ...api, stats: { ...metrics(group), last_seen: group.length ? Math.max(...group.map(e => e.started_at)) : null }, monthly: { cost: monthly.cost, calls: monthly.calls } };
+    }),
     overview: { stats: { ...metrics(events), users: userIds.length }, previous: metrics(demoEvents.filter(e => e.started_at >= start - days * 86400 && e.started_at < start)),
       monthly: metrics(demoEvents.filter(e => new Date(e.started_at * 1000).getUTCMonth() === new Date().getUTCMonth())),
       models: modelNames.map(model => ({ ...metrics(events.filter(e => e.kind === 'llm' && e.model === model)), model, provider: 'openai' })).sort((a, b) => b.cost - a.cost),

@@ -28,11 +28,12 @@ export function queryString(days: number, filters: Filters, offset = 0) {
   return params.toString();
 }
 export async function dashboard(days: number, filters: Filters, offset: number): Promise<Dashboard> {
-  const [overview, events, users, issues, connection] = await Promise.all([
+  const [overview, events, users, issues, connection, apis] = await Promise.all([
     request<Dashboard['overview']>(`/ops/overview?days=${days}`), request<Dashboard['events']>(`/ops/events?${queryString(days, filters, offset)}`),
     request<{ users: Dashboard['users'] }>(`/ops/users?days=${days}`), request<{ issues: Dashboard['issues'] }>(`/ops/issues?days=${days}`), request<Dashboard['connection']>('/ops/connection'),
+    request<{ apis: Dashboard['apis'] }>(`/ops/apis?days=${days}`),
   ]);
-  return { overview, events, users: users.users, issues: issues.issues, connection };
+  return { overview, events, users: users.users, issues: issues.issues, connection, apis: apis.apis };
 }
 export function download(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob); const anchor = document.createElement('a');

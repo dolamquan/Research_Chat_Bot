@@ -30,6 +30,12 @@ from typing import Any, Dict, List
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolated_operations_database(tmp_path, monkeypatch):
+    # Outbound policy adapters are active independently of inbound tracing.
+    monkeypatch.setenv("OPS_DB_PATH", str(tmp_path / "ops.sqlite3"))
+
+
 class StubChatModel:
     """A LangChain-shaped chat model that replays canned responses.
 

@@ -6,6 +6,8 @@ from typing import Any, Callable, Dict, List
 from fastapi import HTTPException
 import requests
 
+from app.ops.api_calls import call_api
+
 from app.ingestion.url_ingester import ingest_article_url
 from app.integrations import notion as notion_api
 from app.integrations.reddit_mcp import list_reddit_tools, search_reddit_posts
@@ -79,7 +81,7 @@ def _request_json(
     json_body: Dict[str, Any] | None = None,
     timeout: int = 30,
 ) -> Dict[str, Any]:
-    response = requests.request(
+    response = call_api("mcp-http", "MCP HTTP request", requests.request,
         method,
         url,
         headers=headers,
@@ -191,7 +193,7 @@ def _github_search_repositories(args: Dict[str, Any]) -> Dict[str, Any]:
     if _github_token():
         headers = _github_headers()
 
-    result = requests.get(
+    result = call_api("mcp-http", "MCP HTTP read", requests.get,
         "https://api.github.com/search/repositories",
         headers=headers,
         params={"q": query, "per_page": limit},
